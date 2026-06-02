@@ -1,0 +1,9 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Default permissions for Loavy Player",
+  "windows": ["main"],
+  "permissions": [
+    "core:default"
+  ]
+}
