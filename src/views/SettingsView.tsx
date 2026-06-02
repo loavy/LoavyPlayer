@@ -9,12 +9,18 @@ type Props = {
   scanProgress: ScanProgress | null;
   theme: string;
   accent: string;
+  density: string;
+  cardStyle: string;
+  playerStyle: string;
   offlineMode: boolean;
   onAddFolder: () => void;
   onScan: () => void;
   onCancelScan: () => void;
   onThemeChange: (theme: string) => void;
   onAccentChange: (accent: string) => void;
+  onDensityChange: (density: string) => void;
+  onCardStyleChange: (cardStyle: string) => void;
+  onPlayerStyleChange: (playerStyle: string) => void;
   onOfflineModeChange: (enabled: boolean) => void;
   onApiKeyChange: (provider: string, key: string) => void;
 };
@@ -70,6 +76,30 @@ export function SettingsView(props: Props) {
         <label className="field">
           <span>Accent</span>
           <input type="color" value={props.accent} onChange={(event) => props.onAccentChange(event.target.value)} />
+        </label>
+        <label className="field">
+          <span>Density</span>
+          <select value={props.density} onChange={(event) => props.onDensityChange(event.target.value)}>
+            <option value="comfortable">Comfortable</option>
+            <option value="compact">Compact</option>
+            <option value="spacious">Spacious</option>
+          </select>
+        </label>
+        <label className="field">
+          <span>Cards</span>
+          <select value={props.cardStyle} onChange={(event) => props.onCardStyleChange(event.target.value)}>
+            <option value="soft">Soft</option>
+            <option value="flat">Flat</option>
+            <option value="glass">Glass</option>
+          </select>
+        </label>
+        <label className="field">
+          <span>Player</span>
+          <select value={props.playerStyle} onChange={(event) => props.onPlayerStyleChange(event.target.value)}>
+            <option value="docked">Docked</option>
+            <option value="floating">Floating</option>
+            <option value="compact">Compact</option>
+          </select>
         </label>
         <label className="toggleRow">
           <span>Privacy / offline mode</span>

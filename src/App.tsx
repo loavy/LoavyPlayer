@@ -1,6 +1,6 @@
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { Search, SidebarIcon } from "lucide-react";
+import { Search, SidebarIcon, X } from "lucide-react";
 import { Sidebar } from "./components/Sidebar";
 import { PlayerBar } from "./components/PlayerBar";
 import { AlbumsView } from "./views/AlbumsView";
@@ -26,6 +26,7 @@ import { audioEngine } from "./lib/audioEngine";
 
 function App() {
   const [activeView, setActiveView] = useState<ViewKey>("songs");
+  const [collectionFilter, setCollectionFilter] = useState<{ type: "album" | "artist"; value: string } | null>(null);
   const [tracks, setTracks] = useState<Track[]>([]);
   const [albums, setAlbums] = useState<Album[]>([]);
   const [artists, setArtists] = useState<Artist[]>([]);
@@ -38,6 +39,9 @@ function App() {
   const [scanProgress, setScanProgress] = useState<ScanProgress | null>(null);
   const [theme, setTheme] = useState(localStorage.getItem("loavy.theme") || "dark");
   const [accent, setAccent] = useState(localStorage.getItem("loavy.accent") || "#48c6a8");
+  const [density, setDensity] = useState(localStorage.getItem("loavy.density") || "comfortable");
+  const [cardStyle, setCardStyle] = useState(localStorage.getItem("loavy.cardStyle") || "soft");
+  const [playerStyle, setPlayerStyle] = useState(localStorage.getItem("loavy.playerStyle") || "docked");
   const [offlineMode, setOfflineMode] = useState(localStorage.getItem("loavy.offlineMode") === "true");
   const [compactSidebar, setCompactSidebar] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -76,10 +80,16 @@ function App() {
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
+    document.documentElement.dataset.density = density;
+    document.documentElement.dataset.cards = cardStyle;
+    document.documentElement.dataset.player = playerStyle;
     document.documentElement.style.setProperty("--accent", accent);
     localStorage.setItem("loavy.theme", theme);
     localStorage.setItem("loavy.accent", accent);
-  }, [theme, accent]);
+    localStorage.setItem("loavy.density", density);
+    localStorage.setItem("loavy.cardStyle", cardStyle);
+    localStorage.setItem("loavy.playerStyle", playerStyle);
+  }, [theme, accent, density, cardStyle, playerStyle]);
 
   useEffect(() => {
     setLoading(true);
@@ -262,10 +272,17 @@ function App() {
   }, []);
 
   const filteredTracks = useMemo(() => {
-    if (activeView === "favorites") return tracks.filter((track) => track.favorite);
-    if (activeView === "recent") return [...tracks].sort((a, b) => (b.lastPlayedAt || 0) - (a.lastPlayedAt || 0));
-    return tracks;
-  }, [activeView, tracks]);
+    let nextTracks = tracks;
+    if (collectionFilter?.type === "album") {
+      nextTracks = nextTracks.filter((track) => (track.album || "Unknown Album") === collectionFilter.value);
+    }
+    if (collectionFilter?.type === "artist") {
+      nextTracks = nextTracks.filter((track) => displayArtist(track.artist) === collectionFilter.value);
+    }
+    if (activeView === "favorites") return nextTracks.filter((track) => track.favorite);
+    if (activeView === "recent") return [...nextTracks].sort((a, b) => (b.lastPlayedAt || 0) - (a.lastPlayedAt || 0));
+    return nextTracks;
+  }, [activeView, collectionFilter, tracks]);
 
   async function addFolder() {
     setError(null);
@@ -308,6 +325,21 @@ function App() {
     await api.setSetting("accent", nextAccent);
   }
 
+  async function changeDensity(nextDensity: string) {
+    setDensity(nextDensity);
+    await api.setSetting("density", nextDensity);
+  }
+
+  async function changeCardStyle(nextCardStyle: string) {
+    setCardStyle(nextCardStyle);
+    await api.setSetting("cardStyle", nextCardStyle);
+  }
+
+  async function changePlayerStyle(nextPlayerStyle: string) {
+    setPlayerStyle(nextPlayerStyle);
+    await api.setSetting("playerStyle", nextPlayerStyle);
+  }
+
   async function changeOfflineMode(enabled: boolean) {
     setOfflineMode(enabled);
     localStorage.setItem("loavy.offlineMode", String(enabled));
@@ -329,8 +361,28 @@ function App() {
 
   function renderView() {
     if (loading) return <section className="emptyState"><h2>Loading library</h2><p>Preparing the local database.</p></section>;
-    if (activeView === "albums") return <AlbumsView albums={albums} />;
-    if (activeView === "artists") return <ArtistsView artists={artists} />;
+    if (activeView === "albums") {
+      return (
+        <AlbumsView
+          albums={albums}
+          onOpenAlbum={(album) => {
+            setCollectionFilter({ type: "album", value: album.title || "Unknown Album" });
+            setActiveView("songs");
+          }}
+        />
+      );
+    }
+    if (activeView === "artists") {
+      return (
+        <ArtistsView
+          artists={artists}
+          onOpenArtist={(artist) => {
+            setCollectionFilter({ type: "artist", value: artist.name });
+            setActiveView("songs");
+          }}
+        />
+      );
+    }
     if (activeView === "settings") {
       return (
         <SettingsView
@@ -341,12 +393,18 @@ function App() {
           scanProgress={scanProgress}
           theme={theme}
           accent={accent}
+          density={density}
+          cardStyle={cardStyle}
+          playerStyle={playerStyle}
           offlineMode={offlineMode}
           onAddFolder={addFolder}
           onScan={scan}
           onCancelScan={cancelScan}
           onThemeChange={changeTheme}
           onAccentChange={changeAccent}
+          onDensityChange={changeDensity}
+          onCardStyleChange={changeCardStyle}
+          onPlayerStyleChange={changePlayerStyle}
           onOfflineModeChange={changeOfflineMode}
           onApiKeyChange={(provider, key) => void api.setApiKey(provider, key)}
         />
@@ -356,12 +414,25 @@ function App() {
     if (["genres", "playlists"].includes(activeView)) {
       return <section className="emptyState"><h2>{title}</h2><p>This view is reserved in the MVP structure and ready for the next feature pass.</p></section>;
     }
-    return <SongsView tracks={filteredTracks} />;
+    return (
+      <SongsView
+        tracks={filteredTracks}
+        collectionFilter={collectionFilter}
+        onClearCollectionFilter={() => setCollectionFilter(null)}
+      />
+    );
+  }
+
+  function selectView(view: ViewKey) {
+    setActiveView(view);
+    if (view !== "songs" && view !== "favorites" && view !== "recent") {
+      setCollectionFilter(null);
+    }
   }
 
   return (
     <div className="appShell">
-      <Sidebar active={activeView} onSelect={setActiveView} compact={compactSidebar} />
+      <Sidebar active={activeView} onSelect={selectView} compact={compactSidebar} />
       <main className="mainPane">
         <header className="topBar">
           <div className="titleGroup">
@@ -374,6 +445,12 @@ function App() {
                 <span>{tracks.length} songs</span>
                 <span>{albums.length} albums</span>
                 <span>{artists.length} artists</span>
+                {collectionFilter && (
+                  <button className="metaPillButton" onClick={() => setCollectionFilter(null)} title="Clear collection filter">
+                    {collectionFilter.type}: {collectionFilter.value}
+                    <X size={13} />
+                  </button>
+                )}
                 {scanning && <strong>Scanning</strong>}
                 {offlineMode && <strong>Offline</strong>}
               </div>
