@@ -11,14 +11,19 @@ use anyhow::{anyhow, Result};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use serde::{Deserialize, Serialize};
 use sha1::{Digest, Sha1};
+use tauri::{AppHandle, Emitter};
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
     net::{TcpListener, TcpStream},
     sync::mpsc,
     task::JoinHandle,
+    time::timeout,
 };
 
-use crate::models::{RoomCreateRequest, RoomJoinRequest, RoomJoinResult, RoomPlaybackState, RoomStatus, RoomUser};
+use crate::models::{
+    RoomClientStatus, RoomCreateRequest, RoomJoinRequest, RoomJoinResult, RoomPlaybackState,
+    RoomStatus, RoomUser,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -32,6 +37,7 @@ pub enum RoomWireMessage {
         room_name: String,
         playback: Option<RoomPlaybackState>,
         allow_guest_queue: bool,
+        allow_guest_control: bool,
     },
     AuthError {
         reason: String,
@@ -55,12 +61,19 @@ pub enum RoomWireMessage {
     RoomKicked {
         reason: String,
     },
+    GuestPlaybackState(RoomPlaybackState),
+    LibraryRescanRequest,
 }
 
 #[derive(Clone)]
 pub struct RoomManager {
     inner: Arc<Mutex<Option<RoomRuntime>>>,
     next_client_id: Arc<AtomicU64>,
+}
+
+#[derive(Clone)]
+pub struct RoomClientManager {
+    inner: Arc<Mutex<Option<RoomGuestRuntime>>>,
 }
 
 struct RoomRuntime {
@@ -75,6 +88,7 @@ struct RoomConfig {
     password_hash: String,
     max_users: Option<usize>,
     allow_guest_queue: bool,
+    allow_guest_control: bool,
     bind_addr: String,
     port: u16,
     share_addr: String,
@@ -91,6 +105,17 @@ struct RoomClient {
     tx: mpsc::UnboundedSender<RoomWireMessage>,
 }
 
+struct RoomGuestRuntime {
+    host: String,
+    port: u16,
+    room_name: String,
+    display_name: String,
+    connected_at: i64,
+    allow_guest_control: bool,
+    tx: mpsc::UnboundedSender<RoomWireMessage>,
+    handle: JoinHandle<()>,
+}
+
 impl RoomManager {
     pub fn new() -> Self {
         Self {
@@ -99,7 +124,7 @@ impl RoomManager {
         }
     }
 
-    pub async fn start(&self, request: RoomCreateRequest) -> Result<RoomStatus> {
+    pub async fn start(&self, app: AppHandle, request: RoomCreateRequest) -> Result<RoomStatus> {
         self.stop()?;
 
         let name = sanitize_room_name(&request.name)?;
@@ -118,6 +143,7 @@ impl RoomManager {
             password_hash: hash_password(&request.password),
             max_users: request.max_users,
             allow_guest_queue: request.allow_guest_queue,
+            allow_guest_control: request.allow_guest_control,
             bind_addr,
             port: local_addr.port(),
             share_addr,
@@ -138,9 +164,10 @@ impl RoomManager {
                 };
                 let config = server_config.clone();
                 let state = server_state.clone();
+                let app = app.clone();
                 let client_id = next_client_id.fetch_add(1, Ordering::SeqCst);
                 tokio::spawn(async move {
-                    let _ = handle_client(stream, remote_addr, client_id, config, state).await;
+                    let _ = handle_client(app, stream, remote_addr, client_id, config, state).await;
                 });
             }
         });
@@ -202,6 +229,176 @@ impl RoomManager {
     }
 }
 
+impl RoomClientManager {
+    pub fn new() -> Self {
+        Self {
+            inner: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    pub async fn join(&self, app: AppHandle, request: RoomJoinRequest) -> Result<RoomJoinResult> {
+        self.leave()?;
+
+        let stream = connect_room_stream(&request.host, request.port).await?;
+        let (reader, mut writer) = stream.into_split();
+        let mut lines = BufReader::new(reader).lines();
+        let join = RoomWireMessage::RoomJoin {
+            room_name: request.room_name.clone(),
+            password: request.password.clone(),
+            display_name: request.display_name.clone(),
+        };
+        write_message(&mut writer, &join).await?;
+
+        let Some(line) = lines.next_line().await? else {
+            return Err(anyhow!("Room closed before authentication."));
+        };
+        let response: RoomWireMessage = serde_json::from_str(&line)?;
+        let (playback, allow_guest_control) = match response {
+            RoomWireMessage::AuthSuccess { playback, allow_guest_control, .. } => (playback, allow_guest_control),
+            RoomWireMessage::AuthError { reason } => {
+                return Ok(RoomJoinResult {
+                    success: false,
+                    message: reason,
+                    playback: None,
+                });
+            }
+            _ => return Err(anyhow!("Unexpected room response.")),
+        };
+
+        if let Some(playback) = playback.clone() {
+            let _ = app.emit("room://playback-state", playback);
+        }
+
+        let host = request.host;
+        let port = request.port;
+        let room_name = request.room_name;
+        let display_name = sanitize_display_name(&request.display_name);
+        let connected_at = chrono::Utc::now().timestamp_millis();
+        let (tx, mut rx) = mpsc::unbounded_channel::<RoomWireMessage>();
+        let handle = tokio::spawn(async move {
+            let mut heartbeat = tokio::time::interval(Duration::from_secs(10));
+            loop {
+                tokio::select! {
+                    Some(outbound) = rx.recv() => {
+                        if write_message(&mut writer, &outbound).await.is_err() {
+                            break;
+                        }
+                    }
+                    _ = heartbeat.tick() => {
+                        let heartbeat = RoomWireMessage::RoomHeartbeat {
+                            timestamp_ms: chrono::Utc::now().timestamp_millis(),
+                        };
+                        if write_message(&mut writer, &heartbeat).await.is_err() {
+                            break;
+                        }
+                    }
+                    line = lines.next_line() => {
+                        match line {
+                            Ok(Some(message)) => {
+                                match serde_json::from_str::<RoomWireMessage>(&message) {
+                                    Ok(RoomWireMessage::PlaybackState(playback)) => {
+                                        let _ = app.emit("room://playback-state", playback);
+                                    }
+                                    Ok(RoomWireMessage::RoomKicked { reason }) => {
+                                        let _ = app.emit("room://kicked", reason);
+                                        break;
+                                    }
+                                    Ok(RoomWireMessage::RoomError { message }) => {
+                                        let _ = app.emit("room://error", message);
+                                    }
+                                    _ => {}
+                                }
+                            }
+                            Ok(None) | Err(_) => break,
+                        }
+                    }
+                }
+            }
+            let _ = app.emit("room://disconnected", ());
+        });
+
+        *self.inner.lock().map_err(|_| anyhow!("Room client lock failed"))? = Some(RoomGuestRuntime {
+            host,
+            port,
+            room_name,
+            display_name,
+            connected_at,
+            allow_guest_control,
+            tx,
+            handle,
+        });
+
+        Ok(RoomJoinResult {
+            success: true,
+            message: "Joined room. You will stay connected until you leave or the host removes you.".to_string(),
+            playback,
+        })
+    }
+
+    pub fn send_guest_playback(&self, playback: RoomPlaybackState) -> Result<()> {
+        let guard = self.inner.lock().map_err(|_| anyhow!("Room client lock failed"))?;
+        let Some(runtime) = guard.as_ref() else {
+            return Err(anyhow!("You are not connected to a room."));
+        };
+        if !runtime.allow_guest_control {
+            return Err(anyhow!("The host does not allow guests to change songs."));
+        }
+        runtime
+            .tx
+            .send(RoomWireMessage::GuestPlaybackState(playback))
+            .map_err(|_| anyhow!("Room connection is no longer active."))
+    }
+
+    pub fn request_host_scan(&self) -> Result<()> {
+        let guard = self.inner.lock().map_err(|_| anyhow!("Room client lock failed"))?;
+        let Some(runtime) = guard.as_ref() else {
+            return Ok(());
+        };
+        if !runtime.allow_guest_control {
+            return Err(anyhow!("The host does not allow guests to change songs."));
+        }
+        runtime
+            .tx
+            .send(RoomWireMessage::LibraryRescanRequest)
+            .map_err(|_| anyhow!("Room connection is no longer active."))
+    }
+
+    pub fn leave(&self) -> Result<()> {
+        if let Some(runtime) = self.inner.lock().map_err(|_| anyhow!("Room client lock failed"))?.take() {
+            runtime.handle.abort();
+        }
+        Ok(())
+    }
+
+    pub fn status(&self) -> Result<RoomClientStatus> {
+        let mut guard = self.inner.lock().map_err(|_| anyhow!("Room client lock failed"))?;
+        if guard.as_ref().map(|runtime| runtime.handle.is_finished()).unwrap_or(false) {
+            guard.take();
+        }
+
+        Ok(guard
+            .as_ref()
+            .map(|runtime| RoomClientStatus {
+                connected: true,
+                host: Some(runtime.host.clone()),
+                port: Some(runtime.port),
+                room_name: Some(runtime.room_name.clone()),
+                display_name: Some(runtime.display_name.clone()),
+                connected_at: Some(runtime.connected_at),
+                allow_guest_control: runtime.allow_guest_control,
+            })
+            .unwrap_or(RoomClientStatus {
+                connected: false,
+                host: None,
+                port: None,
+                room_name: None,
+                display_name: None,
+                connected_at: None,
+                allow_guest_control: false,
+            }))
+    }
+}
+
 impl RoomRuntime {
     fn status(&self) -> RoomStatus {
         let users = self
@@ -228,6 +425,7 @@ impl RoomRuntime {
             users,
             max_users: self.config.max_users,
             allow_guest_queue: self.config.allow_guest_queue,
+            allow_guest_control: self.config.allow_guest_control,
         }
     }
 }
@@ -247,11 +445,13 @@ impl RoomStatus {
             users: Vec::new(),
             max_users: None,
             allow_guest_queue: false,
+            allow_guest_control: false,
         }
     }
 }
 
 async fn handle_client(
+    app: AppHandle,
     stream: TcpStream,
     remote_addr: SocketAddr,
     client_id: u64,
@@ -316,6 +516,7 @@ async fn handle_client(
         room_name: config.name.clone(),
         playback,
         allow_guest_queue: config.allow_guest_queue,
+        allow_guest_control: config.allow_guest_control,
     }).await?;
 
     loop {
@@ -330,7 +531,25 @@ async fn handle_client(
             }
             line = lines.next_line() => {
                 match line {
-                    Ok(Some(_)) => {}
+                    Ok(Some(message)) => {
+                        match serde_json::from_str::<RoomWireMessage>(&message) {
+                            Ok(RoomWireMessage::GuestPlaybackState(playback)) => {
+                                if config.allow_guest_control {
+                                    let _ = app.emit("room://guest-playback-state", playback);
+                                } else {
+                                    let _ = write_message(&mut writer, &RoomWireMessage::RoomError {
+                                        message: "The host does not allow guests to change songs.".to_string(),
+                                    }).await;
+                                }
+                            }
+                            Ok(RoomWireMessage::LibraryRescanRequest) => {
+                                if config.allow_guest_control {
+                                    let _ = app.emit("room://guest-scan-request", ());
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
                     Ok(None) | Err(_) => break,
                 }
             }
@@ -350,7 +569,8 @@ async fn write_message(writer: &mut tokio::net::tcp::OwnedWriteHalf, message: &R
 }
 
 pub async fn join_probe(request: RoomJoinRequest) -> Result<RoomJoinResult> {
-    let stream = TcpStream::connect((request.host.as_str(), request.port)).await?;
+    let stream = connect_room_stream(&request.host, request.port).await?;
+
     let (reader, mut writer) = stream.into_split();
     let mut lines = BufReader::new(reader).lines();
     let join = RoomWireMessage::RoomJoin {
@@ -367,7 +587,7 @@ pub async fn join_probe(request: RoomJoinRequest) -> Result<RoomJoinResult> {
     match response {
         RoomWireMessage::AuthSuccess { playback, .. } => Ok(RoomJoinResult {
             success: true,
-            message: "Joined room.".to_string(),
+            message: "Connection check succeeded. Use Join room to stay connected.".to_string(),
             playback,
         }),
         RoomWireMessage::AuthError { reason } => Ok(RoomJoinResult {
@@ -377,6 +597,19 @@ pub async fn join_probe(request: RoomJoinRequest) -> Result<RoomJoinResult> {
         }),
         _ => Err(anyhow!("Unexpected room response.")),
     }
+}
+
+async fn connect_room_stream(host: &str, port: u16) -> Result<TcpStream> {
+    timeout(Duration::from_secs(5), TcpStream::connect((host, port)))
+        .await
+        .map_err(|_| anyhow!(connection_help(host, port)))?
+        .map_err(|err| anyhow!("{}\n\n{err}", connection_help(host, port)))
+}
+
+fn connection_help(host: &str, port: u16) -> String {
+    format!(
+        "Could not reach {host}:{port}. If you are testing on this same PC, use 127.0.0.1. If you are testing from another device on the same Wi-Fi, use the LAN/VPN address. The public address usually only works for people outside your network after TCP port {port} is forwarded to this PC and Windows Firewall allows Loavy Player."
+    )
 }
 
 fn sanitize_room_name(name: &str) -> Result<String> {

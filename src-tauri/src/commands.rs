@@ -7,8 +7,8 @@ use crate::{
     library,
     models::{
         Album, ApiKeyUpdate, Artist, FetcherDescriptor, MusicFolder, ScanProgress, ScanSummary,
-        RoomCreateRequest, RoomJoinRequest, RoomJoinResult, RoomPlaybackState, RoomStatus,
-        ScanTaskState, SettingUpdate, Track,
+        RoomClientStatus, RoomCreateRequest, RoomJoinRequest, RoomJoinResult, RoomPlaybackState,
+        RoomStatus, ScanTaskState, SettingUpdate, Track,
     },
     state::AppState,
 };
@@ -121,6 +121,25 @@ pub async fn list_tracks(state: State<'_, AppState>, query: Option<String>) -> C
 }
 
 #[tauri::command]
+pub async fn set_track_favorite(
+    state: State<'_, AppState>,
+    track_id: i64,
+    favorite: bool,
+) -> CommandResult<()> {
+    let db = state.db.lock().map_err(|err| err.to_string())?;
+    db.set_track_favorite(track_id, favorite).map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+pub async fn find_room_playback_track(
+    state: State<'_, AppState>,
+    playback: RoomPlaybackState,
+) -> CommandResult<Option<Track>> {
+    let db = state.db.lock().map_err(|err| err.to_string())?;
+    db.find_track_for_room_playback(&playback).map_err(|err| err.to_string())
+}
+
+#[tauri::command]
 pub async fn list_albums(state: State<'_, AppState>) -> CommandResult<Vec<Album>> {
     let db = state.db.lock().map_err(|err| err.to_string())?;
     db.list_albums().map_err(|err| err.to_string())
@@ -182,8 +201,12 @@ pub async fn fetch_metadata(
 }
 
 #[tauri::command]
-pub async fn create_room(state: State<'_, AppState>, request: RoomCreateRequest) -> CommandResult<RoomStatus> {
-    state.room.start(request).await.map_err(|err| err.to_string())
+pub async fn create_room(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    request: RoomCreateRequest,
+) -> CommandResult<RoomStatus> {
+    state.room.start(app, request).await.map_err(|err| err.to_string())
 }
 
 #[tauri::command]
@@ -199,6 +222,38 @@ pub async fn get_room_status(state: State<'_, AppState>) -> CommandResult<RoomSt
 #[tauri::command]
 pub async fn room_join_probe(request: RoomJoinRequest) -> CommandResult<RoomJoinResult> {
     crate::room::join_probe(request).await.map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+pub async fn room_join(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    request: RoomJoinRequest,
+) -> CommandResult<RoomJoinResult> {
+    state.room_client.join(app, request).await.map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+pub async fn room_leave(state: State<'_, AppState>) -> CommandResult<()> {
+    state.room_client.leave().map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+pub async fn get_room_client_status(state: State<'_, AppState>) -> CommandResult<RoomClientStatus> {
+    state.room_client.status().map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+pub async fn room_send_guest_playback_state(
+    state: State<'_, AppState>,
+    playback: RoomPlaybackState,
+) -> CommandResult<()> {
+    state.room_client.send_guest_playback(playback).map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+pub async fn room_request_host_scan(state: State<'_, AppState>) -> CommandResult<()> {
+    state.room_client.request_host_scan().map_err(|err| err.to_string())
 }
 
 #[tauri::command]

@@ -11,7 +11,18 @@ import { RoomView } from "./views/RoomView";
 import { api } from "./lib/api";
 import { useAudio } from "./lib/useAudio";
 import { displayAlbum, displayArtist, displayTrackTitle } from "./lib/format";
-import type { Album, Artist, FetcherDescriptor, MusicFolder, ScanProgress, ScanSummary, Track, ViewKey } from "./types";
+import type {
+  Album,
+  Artist,
+  FetcherDescriptor,
+  MusicFolder,
+  RoomPlaybackState,
+  ScanProgress,
+  ScanSummary,
+  Track,
+  ViewKey
+} from "./types";
+import { audioEngine } from "./lib/audioEngine";
 
 function App() {
   const [activeView, setActiveView] = useState<ViewKey>("songs");
@@ -33,6 +44,10 @@ function App() {
   const audio = useAudio();
   const audioRef = useRef(audio);
   const searchRequestRef = useRef(0);
+  const roomClientStatusRef = useRef<{ connected: boolean; allowGuestControl: boolean }>({
+    connected: false,
+    allowGuestControl: false
+  });
   const deferredQuery = useDeferredValue(query);
   audioRef.current = audio;
 
@@ -75,6 +90,96 @@ function App() {
   }, []);
 
   useEffect(() => {
+    async function refreshRoomClientPermission() {
+      try {
+        const status = await api.getRoomClientStatus();
+        roomClientStatusRef.current = {
+          connected: status.connected,
+          allowGuestControl: status.allowGuestControl
+        };
+        audioEngine.setLocalControlBlocked(status.connected && !status.allowGuestControl, () => {
+          setError("The host does not allow guests to change songs.");
+        });
+      } catch {
+        roomClientStatusRef.current = { connected: false, allowGuestControl: false };
+        audioEngine.setLocalControlBlocked(false);
+      }
+    }
+
+    refreshRoomClientPermission();
+    const timer = window.setInterval(refreshRoomClientPermission, 1500);
+    return () => {
+      window.clearInterval(timer);
+      audioEngine.setLocalControlBlocked(false);
+    };
+  }, []);
+
+  useEffect(() => {
+    function handleLocalPlaybackChanged(event: Event) {
+      const detail = (event as CustomEvent<RoomPlaybackState>).detail;
+      const client = roomClientStatusRef.current;
+      if (!client.connected) return;
+      if (!client.allowGuestControl) {
+        setError("The host does not allow guests to change songs.");
+        return;
+      }
+      api.sendGuestPlaybackState(detail).catch((err) => setError(String(err)));
+    }
+
+    window.addEventListener("loavy:local-playback-changed", handleLocalPlaybackChanged);
+    return () => window.removeEventListener("loavy:local-playback-changed", handleLocalPlaybackChanged);
+  }, []);
+
+  useEffect(() => {
+    let disposed = false;
+
+    async function syncToRoomPlayback(playback: RoomPlaybackState) {
+      if (disposed) return;
+      try {
+        const track = await api.findRoomPlaybackTrack(playback);
+        if (!track) {
+          setError(`Room sync could not find "${playback.title || "the current track"}" in your local library. Host audio streaming is not implemented yet, so guests need the same local song for now.`);
+          return;
+        }
+        setError(null);
+        await audioEngine.syncToRoomPlayback(track, playback);
+      } catch (err) {
+        setError(String(err));
+      }
+    }
+
+    const unsubs = Promise.all([
+      listen<RoomPlaybackState>("room://playback-state", (event) => void syncToRoomPlayback(event.payload)),
+      listen<RoomPlaybackState>("room://guest-playback-state", (event) => void syncToRoomPlayback(event.payload)),
+      listen("room://guest-scan-request", () => {
+        api.startLibraryScan().catch((err) => setError(String(err)));
+      }),
+      listen<string>("room://kicked", (event) => {
+        if (!disposed) {
+          setError(event.payload || "The host removed you from the room.");
+        }
+      }),
+      listen<string>("room://error", (event) => {
+        if (!disposed) {
+          setError(event.payload || "Room error.");
+        }
+      }),
+      listen("room://disconnected", () => {
+        if (!disposed) {
+          setError("Room connection was lost. Rejoin the room to sync playback again.");
+          roomClientStatusRef.current = { connected: false, allowGuestControl: false };
+          audioEngine.setLocalControlBlocked(false);
+        }
+      })
+    ]);
+
+    return () => {
+      disposed = true;
+      unsubs.then((callbacks) => callbacks.forEach((unlisten) => unlisten())).catch(() => undefined);
+    };
+  }, []);
+
+  useEffect(() => {
     const timer = window.setInterval(async () => {
       const snapshot = audioRef.current;
       if (!snapshot.current) return;
@@ -87,7 +192,7 @@ function App() {
           artist: displayArtist(snapshot.current.artist),
           album: displayAlbum(snapshot.current.album),
           coverPath: snapshot.current.coverPath,
-          durationMs: snapshot.duration || snapshot.current.durationMs || null,
+          durationMs: Math.round(snapshot.duration || snapshot.current.durationMs || 0) || null,
           positionMs: Math.round(snapshot.position),
           playing: snapshot.playing,
           hostTimestampMs: Date.now()
@@ -142,6 +247,20 @@ function App() {
     return () => window.clearTimeout(timer);
   }, [deferredQuery]);
 
+  useEffect(() => {
+    function handleFavoriteChanged(event: Event) {
+      const detail = (event as CustomEvent<{ trackId: number; favorite: boolean }>).detail;
+      setTracks((currentTracks) =>
+        currentTracks.map((track) =>
+          track.id === detail.trackId ? { ...track, favorite: detail.favorite } : track
+        )
+      );
+    }
+
+    window.addEventListener("loavy:favorite-changed", handleFavoriteChanged);
+    return () => window.removeEventListener("loavy:favorite-changed", handleFavoriteChanged);
+  }, []);
+
   const filteredTracks = useMemo(() => {
     if (activeView === "favorites") return tracks.filter((track) => track.favorite);
     if (activeView === "recent") return [...tracks].sort((a, b) => (b.lastPlayedAt || 0) - (a.lastPlayedAt || 0));
@@ -158,6 +277,10 @@ function App() {
     setScanning(true);
     setError(null);
     try {
+      const client = roomClientStatusRef.current;
+      if (client.connected && client.allowGuestControl) {
+        await api.requestHostScan();
+      }
       await api.startLibraryScan();
     } catch (err) {
       setError(String(err));
@@ -247,7 +370,13 @@ function App() {
             </button>
             <div>
               <h1>{title}</h1>
-              <p>{tracks.length} songs - {albums.length} albums - {artists.length} artists</p>
+              <div className="topMeta">
+                <span>{tracks.length} songs</span>
+                <span>{albums.length} albums</span>
+                <span>{artists.length} artists</span>
+                {scanning && <strong>Scanning</strong>}
+                {offlineMode && <strong>Offline</strong>}
+              </div>
             </div>
           </div>
           <label className="searchBox">

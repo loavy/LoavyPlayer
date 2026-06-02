@@ -1,5 +1,5 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
-import type { RepeatMode, Track } from "../types";
+import type { RepeatMode, RoomPlaybackState, Track } from "../types";
 
 type Listener = () => void;
 
@@ -8,6 +8,8 @@ class AudioEngine {
   private listeners = new Set<Listener>();
   private queue: Track[] = [];
   private index = -1;
+  private localControlBlocked = false;
+  private onBlockedLocalControl: (() => void) | null = null;
 
   repeat: RepeatMode = "off";
   shuffle = false;
@@ -62,6 +64,7 @@ class AudioEngine {
 
   async playTrack(track: Track | null, queue = this.queue, index = this.index) {
     if (!track) return;
+    if (this.blockLocalControl()) return;
     this.queue = queue;
     this.index = index;
     this.current = track;
@@ -69,15 +72,47 @@ class AudioEngine {
     await this.audio.play();
     localStorage.setItem("loavy.lastTrackPath", track.path);
     this.emit();
+    this.emitLocalPlaybackChanged();
+  }
+
+  async syncToRoomPlayback(track: Track, playback: RoomPlaybackState) {
+    const targetPosition = Math.max(0, playback.positionMs);
+    const sameTrack = this.current?.id === track.id;
+
+    if (!sameTrack) {
+      this.queue = [track];
+      this.index = 0;
+      this.current = track;
+      this.audio.src = convertFileSrc(track.path);
+    }
+
+    const driftMs = Math.abs(this.audio.currentTime * 1000 - targetPosition);
+    if (!sameTrack || driftMs > 1800) {
+      this.audio.currentTime = targetPosition / 1000;
+      this.position = targetPosition;
+    }
+
+    if (playback.playing) {
+      await this.audio.play();
+    } else {
+      this.audio.pause();
+    }
+
+    this.playing = playback.playing;
+    this.duration = playback.durationMs || this.duration;
+    localStorage.setItem("loavy.lastTrackPath", track.path);
+    this.emit();
   }
 
   async toggle() {
     if (!this.current) return;
+    if (this.blockLocalControl()) return;
     if (this.audio.paused) {
       await this.audio.play();
     } else {
       this.audio.pause();
     }
+    this.emitLocalPlaybackChanged();
   }
 
   stop() {
@@ -116,9 +151,11 @@ class AudioEngine {
   }
 
   seek(ms: number) {
+    if (this.blockLocalControl()) return;
     this.audio.currentTime = ms / 1000;
     this.position = ms;
     this.emit();
+    this.emitLocalPlaybackChanged();
   }
 
   setVolume(volume: number) {
@@ -138,8 +175,43 @@ class AudioEngine {
     this.emit();
   }
 
+  setLocalControlBlocked(blocked: boolean, onBlocked?: () => void) {
+    this.localControlBlocked = blocked;
+    this.onBlockedLocalControl = onBlocked || null;
+  }
+
+  setCurrentFavorite(favorite: boolean) {
+    if (!this.current) return;
+    this.current = { ...this.current, favorite };
+    this.queue = this.queue.map((track) => track.id === this.current?.id ? { ...track, favorite } : track);
+    this.emit();
+  }
+
   private emit() {
     this.listeners.forEach((listener) => listener());
+  }
+
+  private blockLocalControl() {
+    if (!this.localControlBlocked) return false;
+    this.onBlockedLocalControl?.();
+    return true;
+  }
+
+  private emitLocalPlaybackChanged() {
+    if (!this.current) return;
+    window.dispatchEvent(new CustomEvent("loavy:local-playback-changed", {
+      detail: {
+        trackId: this.current.id,
+        title: this.current.title || this.current.fileName.replace(/\.[^.]+$/, ""),
+        artist: this.current.artist || null,
+        album: this.current.album || null,
+        coverPath: this.current.coverPath || null,
+        durationMs: Math.round(this.duration || this.current.durationMs || 0) || null,
+        positionMs: Math.round(this.position),
+        playing: this.playing,
+        hostTimestampMs: Date.now()
+      }
+    }));
   }
 }
 

@@ -10,7 +10,7 @@ use anyhow::Result;
 use tauri::{AppHandle, Manager};
 
 use crate::db::Database;
-use crate::room::RoomManager;
+use crate::room::{RoomClientManager, RoomManager};
 
 pub struct AppState {
     pub db: Arc<Mutex<Database>>,
@@ -19,6 +19,7 @@ pub struct AppState {
     pub scan_running: Arc<AtomicBool>,
     pub scan_cancel: Arc<AtomicBool>,
     pub room: RoomManager,
+    pub room_client: RoomClientManager,
 }
 
 impl AppState {
@@ -37,6 +38,7 @@ impl AppState {
             scan_running: Arc::new(AtomicBool::new(false)),
             scan_cancel: Arc::new(AtomicBool::new(false)),
             room: RoomManager::new(),
+            room_client: RoomClientManager::new(),
         })
     }
 

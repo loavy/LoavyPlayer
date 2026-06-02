@@ -25,6 +25,8 @@ pub fn run() {
             commands::cancel_library_scan,
             commands::get_scan_state,
             commands::list_tracks,
+            commands::set_track_favorite,
+            commands::find_room_playback_track,
             commands::list_albums,
             commands::list_artists,
             commands::set_setting,
@@ -36,6 +38,11 @@ pub fn run() {
             commands::stop_room,
             commands::get_room_status,
             commands::room_join_probe,
+            commands::room_join,
+            commands::room_leave,
+            commands::get_room_client_status,
+            commands::room_send_guest_playback_state,
+            commands::room_request_host_scan,
             commands::room_broadcast_playback_state,
             commands::room_kick_user
         ])

@@ -1,20 +1,36 @@
-import { Pause, Play, Repeat, Repeat1, Shuffle, SkipBack, SkipForward, Square, Volume2 } from "lucide-react";
+import { Heart, Pause, Play, Repeat, Repeat1, Shuffle, SkipBack, SkipForward, Volume2 } from "lucide-react";
 import { audioEngine } from "../lib/audioEngine";
 import { formatDuration, displayArtist, displayTrackTitle } from "../lib/format";
 import { useAudio } from "../lib/useAudio";
 import { Cover } from "./Cover";
+import { api } from "../lib/api";
 
 export function PlayerBar() {
   const audio = useAudio();
   const repeatIcon = audio.repeat === "one" ? <Repeat1 size={17} /> : <Repeat size={17} />;
+  const favorite = Boolean(audio.current?.favorite);
+
+  async function toggleFavorite() {
+    if (!audio.current) return;
+    const nextFavorite = !favorite;
+    audioEngine.setCurrentFavorite(nextFavorite);
+    try {
+      await api.setTrackFavorite(audio.current.id, nextFavorite);
+      window.dispatchEvent(new CustomEvent("loavy:favorite-changed", {
+        detail: { trackId: audio.current.id, favorite: nextFavorite }
+      }));
+    } catch {
+      audioEngine.setCurrentFavorite(favorite);
+    }
+  }
 
   return (
     <footer className="playerBar">
       <div className="nowPlaying">
         <Cover path={audio.current?.coverPath} title={audio.current?.album || undefined} size="sm" />
         <div>
-          <strong>{audio.current ? displayTrackTitle(audio.current) : "Nothing playing"}</strong>
-          <span>{audio.current ? displayArtist(audio.current.artist) : "Add a folder and press scan"}</span>
+          <strong>{audio.current ? displayTrackTitle(audio.current) : "Ready to play"}</strong>
+          <span>{audio.current ? displayArtist(audio.current.artist) : "Add music in Settings"}</span>
         </div>
       </div>
 
@@ -32,8 +48,13 @@ export function PlayerBar() {
           <button className="iconButton" onClick={() => void audioEngine.next()} title="Next">
             <SkipForward size={19} />
           </button>
-          <button className="iconButton" onClick={() => audioEngine.stop()} title="Stop">
-            <Square size={16} />
+          <button
+            className={favorite ? "iconButton active favoriteButton" : "iconButton favoriteButton"}
+            onClick={() => void toggleFavorite()}
+            title={favorite ? "Remove from favorites" : "Add to favorites"}
+            disabled={!audio.current}
+          >
+            <Heart size={17} fill={favorite ? "currentColor" : "none"} />
           </button>
           <button
             className={audio.repeat !== "off" ? "iconButton active" : "iconButton"}
@@ -71,4 +92,3 @@ export function PlayerBar() {
     </footer>
   );
 }
-

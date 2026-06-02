@@ -112,6 +112,7 @@ pub struct RoomCreateRequest {
     pub password: String,
     pub max_users: Option<usize>,
     pub allow_guest_queue: bool,
+    pub allow_guest_control: bool,
     pub bind_addr: Option<String>,
     pub port: Option<u16>,
 }
@@ -141,6 +142,7 @@ pub struct RoomStatus {
     pub users: Vec<RoomUser>,
     pub max_users: Option<usize>,
     pub allow_guest_queue: bool,
+    pub allow_guest_control: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -172,4 +174,16 @@ pub struct RoomJoinResult {
     pub success: bool,
     pub message: String,
     pub playback: Option<RoomPlaybackState>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RoomClientStatus {
+    pub connected: bool,
+    pub host: Option<String>,
+    pub port: Option<u16>,
+    pub room_name: Option<String>,
+    pub display_name: Option<String>,
+    pub connected_at: Option<i64>,
+    pub allow_guest_control: bool,
 }

@@ -3,7 +3,7 @@ use std::path::Path;
 use anyhow::{Context, Result};
 use rusqlite::{params, Connection, OptionalExtension};
 
-use crate::models::{Album, Artist, MusicFolder, Track};
+use crate::models::{Album, Artist, MusicFolder, RoomPlaybackState, Track};
 
 pub struct Database {
     conn: Connection,
@@ -256,6 +256,38 @@ impl Database {
         }
     }
 
+    pub fn set_track_favorite(&self, track_id: i64, favorite: bool) -> Result<()> {
+        self.conn.execute(
+            "UPDATE tracks SET favorite = ?1 WHERE id = ?2",
+            params![favorite as i64, track_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn find_track_for_room_playback(&self, playback: &RoomPlaybackState) -> Result<Option<Track>> {
+        let title = playback.title.as_deref().unwrap_or_default();
+        let artist = normalize_unknown(playback.artist.as_deref().unwrap_or_default());
+        let album = normalize_unknown(playback.album.as_deref().unwrap_or_default());
+        let duration = playback.duration_ms.unwrap_or_default();
+
+        let sql = r#"
+            SELECT * FROM tracks
+            WHERE lower(COALESCE(NULLIF(title, ''), replace(file_name, '.' || file_ext, ''))) = lower(?1)
+              AND (?2 = '' OR lower(COALESCE(artist, '')) = lower(?2))
+            ORDER BY
+              CASE WHEN ?3 != '' AND lower(COALESCE(album, '')) = lower(?3) THEN 0 ELSE 1 END,
+              CASE WHEN ?4 > 0 AND duration_ms IS NOT NULL THEN abs(duration_ms - ?4) ELSE 0 END,
+              title,
+              file_name
+            LIMIT 1
+        "#;
+
+        let mut stmt = self.conn.prepare(sql)?;
+        stmt.query_row(params![title, artist, album, duration], |row| row_to_track(row))
+            .optional()
+            .context("find room playback track")
+    }
+
     pub fn list_albums(&self) -> Result<Vec<Album>> {
         let mut stmt = self.conn.prepare(
             r#"
@@ -326,4 +358,36 @@ impl Database {
         )?;
         Ok(())
     }
+}
+
+fn normalize_unknown(value: &str) -> &str {
+    if value.eq_ignore_ascii_case("unknown artist") || value.eq_ignore_ascii_case("unknown album") {
+        ""
+    } else {
+        value
+    }
+}
+
+fn row_to_track(row: &rusqlite::Row<'_>) -> rusqlite::Result<Track> {
+    Ok(Track {
+        id: row.get("id")?,
+        path: row.get("path")?,
+        file_name: row.get("file_name")?,
+        file_ext: row.get("file_ext")?,
+        file_size: row.get("file_size")?,
+        modified_at: row.get("modified_at")?,
+        title: row.get("title")?,
+        artist: row.get("artist")?,
+        album: row.get("album")?,
+        album_artist: row.get("album_artist")?,
+        genre: row.get("genre")?,
+        year: row.get("year")?,
+        track_number: row.get("track_number")?,
+        duration_ms: row.get("duration_ms")?,
+        cover_path: row.get("cover_path")?,
+        favorite: row.get::<_, i64>("favorite")? != 0,
+        date_added: row.get("date_added")?,
+        last_played_at: row.get("last_played_at")?,
+        play_count: row.get("play_count")?,
+    })
 }

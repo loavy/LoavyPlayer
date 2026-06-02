@@ -92,6 +92,7 @@ export type RoomCreateRequest = {
   password: string;
   maxUsers?: number | null;
   allowGuestQueue: boolean;
+  allowGuestControl: boolean;
   bindAddr?: string | null;
   port?: number | null;
 };
@@ -117,6 +118,7 @@ export type RoomStatus = {
   users: RoomUser[];
   maxUsers?: number | null;
   allowGuestQueue: boolean;
+  allowGuestControl: boolean;
 };
 
 export type RoomUser = {
@@ -142,4 +144,14 @@ export type RoomJoinResult = {
   success: boolean;
   message: string;
   playback?: RoomPlaybackState | null;
+};
+
+export type RoomClientStatus = {
+  connected: boolean;
+  host?: string | null;
+  port?: number | null;
+  roomName?: string | null;
+  displayName?: string | null;
+  connectedAt?: number | null;
+  allowGuestControl: boolean;
 };
