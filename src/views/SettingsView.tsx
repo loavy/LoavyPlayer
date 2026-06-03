@@ -1,4 +1,4 @@
-import { FolderPlus, KeyRound, Paintbrush, RefreshCw } from "lucide-react";
+import { FolderPlus, KeyRound, Paintbrush, RefreshCw, Trash2 } from "lucide-react";
 import type { FetcherDescriptor, MusicFolder, ScanProgress, ScanSummary } from "../types";
 
 type Props = {
@@ -13,7 +13,11 @@ type Props = {
   cardStyle: string;
   playerStyle: string;
   offlineMode: boolean;
+  fontScale: string;
+  showCovers: boolean;
+  reduceMotion: boolean;
   onAddFolder: () => void;
+  onRemoveFolder: (folderId: number) => void;
   onScan: () => void;
   onCancelScan: () => void;
   onThemeChange: (theme: string) => void;
@@ -21,6 +25,9 @@ type Props = {
   onDensityChange: (density: string) => void;
   onCardStyleChange: (cardStyle: string) => void;
   onPlayerStyleChange: (playerStyle: string) => void;
+  onFontScaleChange: (fontScale: string) => void;
+  onShowCoversChange: (enabled: boolean) => void;
+  onReduceMotionChange: (enabled: boolean) => void;
   onOfflineModeChange: (enabled: boolean) => void;
   onApiKeyChange: (provider: string, key: string) => void;
 };
@@ -40,8 +47,13 @@ export function SettingsView(props: Props) {
         <div className="folderList">
           {props.folders.map((folder) => (
             <div className="folderRow" key={folder.id}>
-              <strong>{folder.path}</strong>
-              <span>{folder.lastScannedAt ? `Last scanned ${new Date(folder.lastScannedAt).toLocaleString()}` : "Not scanned yet"}</span>
+              <div>
+                <strong>{folder.path}</strong>
+                <span>{folder.lastScannedAt ? `Last scanned ${new Date(folder.lastScannedAt).toLocaleString()}` : "Not scanned yet"}</span>
+              </div>
+              <button className="secondaryAction dangerAction" onClick={() => props.onRemoveFolder(folder.id)} title="Remove folder">
+                <Trash2 size={16} /> Remove
+              </button>
             </div>
           ))}
           {!props.folders.length && <p className="muted">No folders selected.</p>}
@@ -54,10 +66,10 @@ export function SettingsView(props: Props) {
         {props.scanProgress && (
           <div className="scanProgress">
             <div>
-              <span style={{ width: `${Math.min(100, (props.scanProgress.filesSeen % 100) + 1)}%` }} />
+              <span style={{ width: `${scanPercent(props.scanProgress)}%` }} />
             </div>
             <p>
-              {props.scanProgress.running ? "Scanning" : "Scan finished"} - {props.scanProgress.filesSeen} files - {props.scanProgress.tracksAddedOrUpdated} updated
+              {props.scanProgress.running ? "Scanning" : "Scan finished"} - {props.scanProgress.filesSeen}{props.scanProgress.totalFiles ? ` / ${props.scanProgress.totalFiles}` : ""} files - {props.scanProgress.tracksAddedOrUpdated} updated
             </p>
             {props.scanProgress.currentPath && <small>{props.scanProgress.currentPath}</small>}
           </div>
@@ -101,6 +113,18 @@ export function SettingsView(props: Props) {
             <option value="compact">Compact</option>
           </select>
         </label>
+        <label className="field">
+          <span>Font size</span>
+          <input type="range" min={90} max={115} step={5} value={props.fontScale} onChange={(event) => props.onFontScaleChange(event.target.value)} />
+        </label>
+        <label className="toggleRow">
+          <span>Show covers in lists</span>
+          <input type="checkbox" checked={props.showCovers} onChange={(event) => props.onShowCoversChange(event.target.checked)} />
+        </label>
+        <label className="toggleRow">
+          <span>Reduce motion</span>
+          <input type="checkbox" checked={props.reduceMotion} onChange={(event) => props.onReduceMotionChange(event.target.checked)} />
+        </label>
         <label className="toggleRow">
           <span>Privacy / offline mode</span>
           <input type="checkbox" checked={props.offlineMode} onChange={(event) => props.onOfflineModeChange(event.target.checked)} />
@@ -129,4 +153,10 @@ export function SettingsView(props: Props) {
       </div>
     </section>
   );
+}
+
+function scanPercent(progress: ScanProgress) {
+  if (!progress.running && !progress.cancelled) return 100;
+  if (!progress.totalFiles) return progress.running ? 8 : 100;
+  return Math.min(100, Math.max(4, Math.round((progress.filesSeen / progress.totalFiles) * 100)));
 }

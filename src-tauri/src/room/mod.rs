@@ -1,5 +1,9 @@
 use std::{
+    collections::HashMap,
+    fs::File,
+    io::{Read, Seek, SeekFrom},
     net::{SocketAddr, UdpSocket},
+    path::Path,
     sync::{
         atomic::{AtomicU64, Ordering},
         Arc, Mutex,
@@ -14,7 +18,7 @@ use sha1::{Digest, Sha1};
 use tauri::{AppHandle, Emitter};
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
-    net::{TcpListener, TcpStream},
+    net::{tcp::OwnedWriteHalf, TcpListener, TcpStream},
     sync::mpsc,
     task::JoinHandle,
     time::timeout,
@@ -98,6 +102,7 @@ struct RoomConfig {
 struct RoomSharedState {
     playback: Option<RoomPlaybackState>,
     clients: Vec<RoomClient>,
+    streams: HashMap<String, String>,
 }
 
 struct RoomClient {
@@ -152,6 +157,7 @@ impl RoomManager {
         let state = Arc::new(Mutex::new(RoomSharedState {
             playback: None,
             clients: Vec::new(),
+            streams: HashMap::new(),
         }));
 
         let server_config = config.clone();
@@ -172,14 +178,26 @@ impl RoomManager {
             }
         });
 
-        let runtime = RoomRuntime { config, state, handle };
+        let runtime = RoomRuntime {
+            config,
+            state,
+            handle,
+        };
         let status = runtime.status();
-        *self.inner.lock().map_err(|_| anyhow!("Room state lock failed"))? = Some(runtime);
+        *self
+            .inner
+            .lock()
+            .map_err(|_| anyhow!("Room state lock failed"))? = Some(runtime);
         Ok(status)
     }
 
     pub fn stop(&self) -> Result<()> {
-        if let Some(runtime) = self.inner.lock().map_err(|_| anyhow!("Room state lock failed"))?.take() {
+        if let Some(runtime) = self
+            .inner
+            .lock()
+            .map_err(|_| anyhow!("Room state lock failed"))?
+            .take()
+        {
             runtime.handle.abort();
         }
         Ok(())
@@ -195,28 +213,56 @@ impl RoomManager {
             .unwrap_or_else(RoomStatus::stopped))
     }
 
-    pub fn broadcast_playback(&self, playback: RoomPlaybackState) -> Result<()> {
-        let guard = self.inner.lock().map_err(|_| anyhow!("Room state lock failed"))?;
+    pub fn broadcast_playback(
+        &self,
+        playback: &mut RoomPlaybackState,
+        stream_file: Option<String>,
+    ) -> Result<()> {
+        let guard = self
+            .inner
+            .lock()
+            .map_err(|_| anyhow!("Room state lock failed"))?;
         let Some(runtime) = guard.as_ref() else {
             return Err(anyhow!("No room is running."));
         };
-        let mut state = runtime.state.lock().map_err(|_| anyhow!("Room shared state lock failed"))?;
+        let mut state = runtime
+            .state
+            .lock()
+            .map_err(|_| anyhow!("Room shared state lock failed"))?;
+        if let Some(stream_file) = stream_file {
+            let token = stream_token(&stream_file);
+            state.streams.insert(token.clone(), stream_file);
+            playback.stream_path = Some(format!("/stream/{token}"));
+        }
         state.playback = Some(playback.clone());
-        state
-            .clients
-            .retain(|client| client.tx.send(RoomWireMessage::PlaybackState(playback.clone())).is_ok());
+        state.clients.retain(|client| {
+            client
+                .tx
+                .send(RoomWireMessage::PlaybackState(playback.clone()))
+                .is_ok()
+        });
         Ok(())
     }
 
     pub fn kick_user(&self, user_id: u64) -> Result<()> {
-        let guard = self.inner.lock().map_err(|_| anyhow!("Room state lock failed"))?;
+        let guard = self
+            .inner
+            .lock()
+            .map_err(|_| anyhow!("Room state lock failed"))?;
         let Some(runtime) = guard.as_ref() else {
             return Err(anyhow!("No room is running."));
         };
 
         let kicked = {
-            let mut state = runtime.state.lock().map_err(|_| anyhow!("Room shared state lock failed"))?;
-            let Some(index) = state.clients.iter().position(|client| client.user.id == user_id) else {
+            let mut state = runtime
+                .state
+                .lock()
+                .map_err(|_| anyhow!("Room shared state lock failed"))?;
+            let Some(index) = state
+                .clients
+                .iter()
+                .position(|client| client.user.id == user_id)
+            else {
                 return Err(anyhow!("User is not in the room."));
             };
             state.clients.remove(index)
@@ -254,7 +300,11 @@ impl RoomClientManager {
         };
         let response: RoomWireMessage = serde_json::from_str(&line)?;
         let (playback, allow_guest_control) = match response {
-            RoomWireMessage::AuthSuccess { playback, allow_guest_control, .. } => (playback, allow_guest_control),
+            RoomWireMessage::AuthSuccess {
+                playback,
+                allow_guest_control,
+                ..
+            } => (playback, allow_guest_control),
             RoomWireMessage::AuthError { reason } => {
                 return Ok(RoomJoinResult {
                     success: false,
@@ -317,7 +367,10 @@ impl RoomClientManager {
             let _ = app.emit("room://disconnected", ());
         });
 
-        *self.inner.lock().map_err(|_| anyhow!("Room client lock failed"))? = Some(RoomGuestRuntime {
+        *self
+            .inner
+            .lock()
+            .map_err(|_| anyhow!("Room client lock failed"))? = Some(RoomGuestRuntime {
             host,
             port,
             room_name,
@@ -330,13 +383,18 @@ impl RoomClientManager {
 
         Ok(RoomJoinResult {
             success: true,
-            message: "Joined room. You will stay connected until you leave or the host removes you.".to_string(),
+            message:
+                "Joined room. You will stay connected until you leave or the host removes you."
+                    .to_string(),
             playback,
         })
     }
 
     pub fn send_guest_playback(&self, playback: RoomPlaybackState) -> Result<()> {
-        let guard = self.inner.lock().map_err(|_| anyhow!("Room client lock failed"))?;
+        let guard = self
+            .inner
+            .lock()
+            .map_err(|_| anyhow!("Room client lock failed"))?;
         let Some(runtime) = guard.as_ref() else {
             return Err(anyhow!("You are not connected to a room."));
         };
@@ -350,7 +408,10 @@ impl RoomClientManager {
     }
 
     pub fn request_host_scan(&self) -> Result<()> {
-        let guard = self.inner.lock().map_err(|_| anyhow!("Room client lock failed"))?;
+        let guard = self
+            .inner
+            .lock()
+            .map_err(|_| anyhow!("Room client lock failed"))?;
         let Some(runtime) = guard.as_ref() else {
             return Ok(());
         };
@@ -364,15 +425,27 @@ impl RoomClientManager {
     }
 
     pub fn leave(&self) -> Result<()> {
-        if let Some(runtime) = self.inner.lock().map_err(|_| anyhow!("Room client lock failed"))?.take() {
+        if let Some(runtime) = self
+            .inner
+            .lock()
+            .map_err(|_| anyhow!("Room client lock failed"))?
+            .take()
+        {
             runtime.handle.abort();
         }
         Ok(())
     }
 
     pub fn status(&self) -> Result<RoomClientStatus> {
-        let mut guard = self.inner.lock().map_err(|_| anyhow!("Room client lock failed"))?;
-        if guard.as_ref().map(|runtime| runtime.handle.is_finished()).unwrap_or(false) {
+        let mut guard = self
+            .inner
+            .lock()
+            .map_err(|_| anyhow!("Room client lock failed"))?;
+        if guard
+            .as_ref()
+            .map(|runtime| runtime.handle.is_finished())
+            .unwrap_or(false)
+        {
             guard.take();
         }
 
@@ -404,7 +477,13 @@ impl RoomRuntime {
         let users = self
             .state
             .lock()
-            .map(|state| state.clients.iter().map(|client| client.user.clone()).collect::<Vec<_>>())
+            .map(|state| {
+                state
+                    .clients
+                    .iter()
+                    .map(|client| client.user.clone())
+                    .collect::<Vec<_>>()
+            })
             .unwrap_or_default();
         let public_join = self
             .config
@@ -463,29 +542,52 @@ async fn handle_client(
     let Some(line) = lines.next_line().await? else {
         return Ok(());
     };
+
+    if line.starts_with("GET ") {
+        let mut headers = Vec::new();
+        while let Some(header) = lines.next_line().await? {
+            if header.trim().is_empty() {
+                break;
+            }
+            headers.push(header);
+        }
+        return handle_stream_request(line, headers, writer, state).await;
+    }
+
     let message: RoomWireMessage = serde_json::from_str(&line)?;
 
     let RoomWireMessage::RoomJoin {
         room_name,
         password,
         display_name,
-    } = message else {
-        write_message(&mut writer, &RoomWireMessage::AuthError {
-            reason: "Expected room_join as the first message.".to_string(),
-        }).await?;
+    } = message
+    else {
+        write_message(
+            &mut writer,
+            &RoomWireMessage::AuthError {
+                reason: "Expected room_join as the first message.".to_string(),
+            },
+        )
+        .await?;
         return Ok(());
     };
 
     if room_name != config.name || hash_password(&password) != config.password_hash {
-        write_message(&mut writer, &RoomWireMessage::AuthError {
-            reason: "Room name or password is incorrect.".to_string(),
-        }).await?;
+        write_message(
+            &mut writer,
+            &RoomWireMessage::AuthError {
+                reason: "Room name or password is incorrect.".to_string(),
+            },
+        )
+        .await?;
         return Ok(());
     }
 
     let (tx, mut rx) = mpsc::unbounded_channel();
     let full = {
-        let shared = state.lock().map_err(|_| anyhow!("Room shared state lock failed"))?;
+        let shared = state
+            .lock()
+            .map_err(|_| anyhow!("Room shared state lock failed"))?;
         config
             .max_users
             .map(|max_users| shared.clients.len() >= max_users)
@@ -493,15 +595,20 @@ async fn handle_client(
     };
 
     if full {
-        write_message(&mut writer, &RoomWireMessage::AuthError {
-            reason: "Room is full.".to_string(),
-        })
+        write_message(
+            &mut writer,
+            &RoomWireMessage::AuthError {
+                reason: "Room is full.".to_string(),
+            },
+        )
         .await?;
         return Ok(());
     }
 
     let playback = {
-        let mut shared = state.lock().map_err(|_| anyhow!("Room shared state lock failed"))?;
+        let mut shared = state
+            .lock()
+            .map_err(|_| anyhow!("Room shared state lock failed"))?;
         let user = RoomUser {
             id: client_id,
             display_name: sanitize_display_name(&display_name),
@@ -512,12 +619,16 @@ async fn handle_client(
         shared.playback.clone()
     };
 
-    write_message(&mut writer, &RoomWireMessage::AuthSuccess {
-        room_name: config.name.clone(),
-        playback,
-        allow_guest_queue: config.allow_guest_queue,
-        allow_guest_control: config.allow_guest_control,
-    }).await?;
+    write_message(
+        &mut writer,
+        &RoomWireMessage::AuthSuccess {
+            room_name: config.name.clone(),
+            playback,
+            allow_guest_queue: config.allow_guest_queue,
+            allow_guest_control: config.allow_guest_control,
+        },
+    )
+    .await?;
 
     loop {
         tokio::select! {
@@ -562,10 +673,144 @@ async fn handle_client(
     Ok(())
 }
 
-async fn write_message(writer: &mut tokio::net::tcp::OwnedWriteHalf, message: &RoomWireMessage) -> Result<()> {
-    writer.write_all(serde_json::to_string(message)?.as_bytes()).await?;
+async fn write_message(writer: &mut OwnedWriteHalf, message: &RoomWireMessage) -> Result<()> {
+    writer
+        .write_all(serde_json::to_string(message)?.as_bytes())
+        .await?;
     writer.write_all(b"\n").await?;
     Ok(())
+}
+
+async fn handle_stream_request(
+    request_line: String,
+    headers: Vec<String>,
+    mut writer: OwnedWriteHalf,
+    state: Arc<Mutex<RoomSharedState>>,
+) -> Result<()> {
+    let path = request_line
+        .split_whitespace()
+        .nth(1)
+        .unwrap_or_default()
+        .trim_start_matches("/stream/")
+        .split('?')
+        .next()
+        .unwrap_or_default()
+        .to_string();
+    let file_path = {
+        let shared = state
+            .lock()
+            .map_err(|_| anyhow!("Room shared state lock failed"))?;
+        shared.streams.get(&path).cloned()
+    };
+
+    let Some(file_path) = file_path else {
+        writer
+            .write_all(b"HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n")
+            .await?;
+        return Ok(());
+    };
+
+    let range = parse_range(&headers);
+    let mime = content_type(Path::new(&file_path));
+    let chunk = tauri::async_runtime::spawn_blocking(move || read_stream_file(&file_path, range))
+        .await
+        .map_err(|err| anyhow!(err.to_string()))??;
+    let header = if chunk.partial {
+        format!(
+            "HTTP/1.1 206 Partial Content\r\nContent-Type: {}\r\nContent-Length: {}\r\nContent-Range: bytes {}-{}/{}\r\nAccept-Ranges: bytes\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n",
+            mime,
+            chunk.bytes.len(),
+            chunk.start,
+            chunk.end,
+            chunk.total_len
+        )
+    } else {
+        format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: {}\r\nContent-Length: {}\r\nAccept-Ranges: bytes\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n",
+            mime,
+            chunk.bytes.len()
+        )
+    };
+    writer.write_all(header.as_bytes()).await?;
+    writer.write_all(&chunk.bytes).await?;
+    Ok(())
+}
+
+struct StreamChunk {
+    bytes: Vec<u8>,
+    start: u64,
+    end: u64,
+    total_len: u64,
+    partial: bool,
+}
+
+fn read_stream_file(path: &str, range: Option<(u64, Option<u64>)>) -> Result<StreamChunk> {
+    let mut file = File::open(path)?;
+    let total_len = file.metadata()?.len();
+    let (start, end, partial) = if let Some((start, requested_end)) = range {
+        let end = requested_end
+            .unwrap_or_else(|| total_len.saturating_sub(1))
+            .min(total_len.saturating_sub(1));
+        (start.min(end), end, true)
+    } else {
+        (0, total_len.saturating_sub(1), false)
+    };
+    let len = end.saturating_sub(start).saturating_add(1);
+    let mut bytes = vec![0; len as usize];
+    file.seek(SeekFrom::Start(start))?;
+    file.read_exact(&mut bytes)?;
+    Ok(StreamChunk {
+        bytes,
+        start,
+        end,
+        total_len,
+        partial,
+    })
+}
+
+fn stream_token(path: &str) -> String {
+    let mut hasher = Sha1::new();
+    hasher.update(b"loavy-stream-v1:");
+    hasher.update(path.as_bytes());
+    BASE64
+        .encode(hasher.finalize())
+        .replace(['/', '+', '='], "")
+}
+
+fn content_type(path: &Path) -> &'static str {
+    match path
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "mp3" => "audio/mpeg",
+        "flac" => "audio/flac",
+        "wav" => "audio/wav",
+        "ogg" => "audio/ogg",
+        "m4a" => "audio/mp4",
+        _ => "application/octet-stream",
+    }
+}
+
+fn parse_range(headers: &[String]) -> Option<(u64, Option<u64>)> {
+    let range = headers
+        .iter()
+        .find(|header| header.to_ascii_lowercase().starts_with("range: bytes="))?
+        .split_once('=')?
+        .1
+        .split(',')
+        .next()?;
+    let (start, end) = range.split_once('-')?;
+    let start = start.trim().parse::<u64>().ok()?;
+    let end = end.trim();
+    let end = if end.is_empty() {
+        None
+    } else {
+        end.parse::<u64>().ok()
+    };
+    Some((start, end))
 }
 
 pub async fn join_probe(request: RoomJoinRequest) -> Result<RoomJoinResult> {
@@ -617,8 +862,13 @@ fn sanitize_room_name(name: &str) -> Result<String> {
     if trimmed.len() < 2 || trimmed.len() > 48 {
         return Err(anyhow!("Room name must be 2 to 48 characters."));
     }
-    if !trimmed.chars().all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, ' ' | '-' | '_')) {
-        return Err(anyhow!("Room name can only contain letters, numbers, spaces, dashes, and underscores."));
+    if !trimmed
+        .chars()
+        .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, ' ' | '-' | '_'))
+    {
+        return Err(anyhow!(
+            "Room name can only contain letters, numbers, spaces, dashes, and underscores."
+        ));
     }
     Ok(trimmed.to_string())
 }

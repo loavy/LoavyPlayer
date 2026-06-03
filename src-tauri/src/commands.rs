@@ -6,9 +6,9 @@ use crate::{
     fetchers::{self, FetchContext, FetchRequest},
     library,
     models::{
-        Album, ApiKeyUpdate, Artist, FetcherDescriptor, MusicFolder, ScanProgress, ScanSummary,
-        RoomClientStatus, RoomCreateRequest, RoomJoinRequest, RoomJoinResult, RoomPlaybackState,
-        RoomStatus, ScanTaskState, SettingUpdate, Track,
+        Album, ApiKeyUpdate, Artist, FetcherDescriptor, MusicFolder, Playlist, RoomClientStatus,
+        RoomCreateRequest, RoomJoinRequest, RoomJoinResult, RoomPlaybackState, RoomStatus,
+        ScanProgress, ScanSummary, ScanTaskState, SettingUpdate, Track,
     },
     state::AppState,
 };
@@ -25,7 +25,8 @@ pub async fn select_music_folder(state: State<'_, AppState>) -> CommandResult<Op
     let now = chrono::Utc::now().timestamp_millis();
     {
         let db = state.db.lock().map_err(|err| err.to_string())?;
-        db.add_music_folder(&path, now).map_err(|err| err.to_string())?;
+        db.add_music_folder(&path, now)
+            .map_err(|err| err.to_string())?;
     }
 
     let db = state.db.lock().map_err(|err| err.to_string())?;
@@ -37,6 +38,13 @@ pub async fn select_music_folder(state: State<'_, AppState>) -> CommandResult<Op
 pub async fn list_music_folders(state: State<'_, AppState>) -> CommandResult<Vec<MusicFolder>> {
     let db = state.db.lock().map_err(|err| err.to_string())?;
     db.list_music_folders().map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+pub async fn remove_music_folder(state: State<'_, AppState>, folder_id: i64) -> CommandResult<()> {
+    let db = state.db.lock().map_err(|err| err.to_string())?;
+    db.remove_music_folder(folder_id)
+        .map_err(|err| err.to_string())
 }
 
 #[tauri::command]
@@ -74,6 +82,7 @@ pub async fn start_library_scan(app: AppHandle, state: State<'_, AppState>) -> C
             .map_err(|err| err.to_string())
         })();
 
+        let was_cancelled = cancel_for_cleanup.load(Ordering::SeqCst);
         running.store(false, Ordering::SeqCst);
         cancel_for_cleanup.store(false, Ordering::SeqCst);
 
@@ -82,11 +91,12 @@ pub async fn start_library_scan(app: AppHandle, state: State<'_, AppState>) -> C
                 let progress = ScanProgress {
                     running: false,
                     folders_scanned: summary.folders_scanned,
+                    total_files: summary.files_seen,
                     files_seen: summary.files_seen,
                     tracks_added_or_updated: summary.tracks_added_or_updated,
                     tracks_removed: summary.tracks_removed,
                     current_path: None,
-                    cancelled: false,
+                    cancelled: was_cancelled,
                     errors: summary.errors,
                 };
                 let _ = app.emit("library://scan-finished", progress);
@@ -115,9 +125,13 @@ pub async fn get_scan_state(state: State<'_, AppState>) -> CommandResult<ScanTas
 }
 
 #[tauri::command]
-pub async fn list_tracks(state: State<'_, AppState>, query: Option<String>) -> CommandResult<Vec<Track>> {
+pub async fn list_tracks(
+    state: State<'_, AppState>,
+    query: Option<String>,
+) -> CommandResult<Vec<Track>> {
     let db = state.db.lock().map_err(|err| err.to_string())?;
-    db.list_tracks(query.as_deref()).map_err(|err| err.to_string())
+    db.list_tracks(query.as_deref())
+        .map_err(|err| err.to_string())
 }
 
 #[tauri::command]
@@ -127,7 +141,8 @@ pub async fn set_track_favorite(
     favorite: bool,
 ) -> CommandResult<()> {
     let db = state.db.lock().map_err(|err| err.to_string())?;
-    db.set_track_favorite(track_id, favorite).map_err(|err| err.to_string())
+    db.set_track_favorite(track_id, favorite)
+        .map_err(|err| err.to_string())
 }
 
 #[tauri::command]
@@ -136,7 +151,8 @@ pub async fn find_room_playback_track(
     playback: RoomPlaybackState,
 ) -> CommandResult<Option<Track>> {
     let db = state.db.lock().map_err(|err| err.to_string())?;
-    db.find_track_for_room_playback(&playback).map_err(|err| err.to_string())
+    db.find_track_for_room_playback(&playback)
+        .map_err(|err| err.to_string())
 }
 
 #[tauri::command]
@@ -152,9 +168,44 @@ pub async fn list_artists(state: State<'_, AppState>) -> CommandResult<Vec<Artis
 }
 
 #[tauri::command]
+pub async fn list_playlists(state: State<'_, AppState>) -> CommandResult<Vec<Playlist>> {
+    let db = state.db.lock().map_err(|err| err.to_string())?;
+    db.list_playlists().map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+pub async fn create_playlist(state: State<'_, AppState>, name: String) -> CommandResult<Playlist> {
+    let db = state.db.lock().map_err(|err| err.to_string())?;
+    db.create_playlist(&name, chrono::Utc::now().timestamp_millis())
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+pub async fn add_track_to_playlist(
+    state: State<'_, AppState>,
+    playlist_id: i64,
+    track_id: i64,
+) -> CommandResult<()> {
+    let db = state.db.lock().map_err(|err| err.to_string())?;
+    db.add_track_to_playlist(playlist_id, track_id)
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+pub async fn list_playlist_tracks(
+    state: State<'_, AppState>,
+    playlist_id: i64,
+) -> CommandResult<Vec<Track>> {
+    let db = state.db.lock().map_err(|err| err.to_string())?;
+    db.list_playlist_tracks(playlist_id)
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
 pub async fn set_setting(state: State<'_, AppState>, update: SettingUpdate) -> CommandResult<()> {
     let db = state.db.lock().map_err(|err| err.to_string())?;
-    db.set_setting(&update.key, &update.value).map_err(|err| err.to_string())
+    db.set_setting(&update.key, &update.value)
+        .map_err(|err| err.to_string())
 }
 
 #[tauri::command]
@@ -166,7 +217,8 @@ pub async fn get_setting(state: State<'_, AppState>, key: String) -> CommandResu
 #[tauri::command]
 pub async fn set_api_key(state: State<'_, AppState>, update: ApiKeyUpdate) -> CommandResult<()> {
     let db = state.db.lock().map_err(|err| err.to_string())?;
-    db.set_api_key(&update.provider, &update.key_value).map_err(|err| err.to_string())
+    db.set_api_key(&update.provider, &update.key_value)
+        .map_err(|err| err.to_string())
 }
 
 #[tauri::command]
@@ -206,7 +258,11 @@ pub async fn create_room(
     state: State<'_, AppState>,
     request: RoomCreateRequest,
 ) -> CommandResult<RoomStatus> {
-    state.room.start(app, request).await.map_err(|err| err.to_string())
+    state
+        .room
+        .start(app, request)
+        .await
+        .map_err(|err| err.to_string())
 }
 
 #[tauri::command]
@@ -221,7 +277,9 @@ pub async fn get_room_status(state: State<'_, AppState>) -> CommandResult<RoomSt
 
 #[tauri::command]
 pub async fn room_join_probe(request: RoomJoinRequest) -> CommandResult<RoomJoinResult> {
-    crate::room::join_probe(request).await.map_err(|err| err.to_string())
+    crate::room::join_probe(request)
+        .await
+        .map_err(|err| err.to_string())
 }
 
 #[tauri::command]
@@ -230,7 +288,11 @@ pub async fn room_join(
     state: State<'_, AppState>,
     request: RoomJoinRequest,
 ) -> CommandResult<RoomJoinResult> {
-    state.room_client.join(app, request).await.map_err(|err| err.to_string())
+    state
+        .room_client
+        .join(app, request)
+        .await
+        .map_err(|err| err.to_string())
 }
 
 #[tauri::command]
@@ -248,20 +310,35 @@ pub async fn room_send_guest_playback_state(
     state: State<'_, AppState>,
     playback: RoomPlaybackState,
 ) -> CommandResult<()> {
-    state.room_client.send_guest_playback(playback).map_err(|err| err.to_string())
+    state
+        .room_client
+        .send_guest_playback(playback)
+        .map_err(|err| err.to_string())
 }
 
 #[tauri::command]
 pub async fn room_request_host_scan(state: State<'_, AppState>) -> CommandResult<()> {
-    state.room_client.request_host_scan().map_err(|err| err.to_string())
+    state
+        .room_client
+        .request_host_scan()
+        .map_err(|err| err.to_string())
 }
 
 #[tauri::command]
 pub async fn room_broadcast_playback_state(
     state: State<'_, AppState>,
-    playback: RoomPlaybackState,
+    mut playback: RoomPlaybackState,
 ) -> CommandResult<()> {
-    state.room.broadcast_playback(playback).map_err(|err| err.to_string())
+    let stream_path = if let Some(track_id) = playback.track_id {
+        let db = state.db.lock().map_err(|err| err.to_string())?;
+        db.track_path(track_id).map_err(|err| err.to_string())?
+    } else {
+        None
+    };
+    state
+        .room
+        .broadcast_playback(&mut playback, stream_path)
+        .map_err(|err| err.to_string())
 }
 
 #[tauri::command]

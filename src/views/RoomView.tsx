@@ -203,7 +203,7 @@ export function RoomView({ onError }: Props) {
         {clientStatus?.connected && (
           <div className="roomConnectedBanner">
             <strong>Connected as {clientStatus.displayName}</strong>
-            <span>{clientStatus.roomName} at {clientStatus.host}:{clientStatus.port} - matching local tracks for sync</span>
+            <span>{clientStatus.roomName} at {clientStatus.host}:{clientStatus.port} - local match or host stream</span>
           </div>
         )}
         <label className="field"><span>Host</span><input value={joinHost} onChange={(event) => setJoinHost(event.target.value)} /></label>

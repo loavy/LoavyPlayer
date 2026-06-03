@@ -8,6 +8,7 @@ import { ArtistsView } from "./views/ArtistsView";
 import { SettingsView } from "./views/SettingsView";
 import { SongsView } from "./views/SongsView";
 import { RoomView } from "./views/RoomView";
+import { PlaylistsView } from "./views/PlaylistsView";
 import { api } from "./lib/api";
 import { useAudio } from "./lib/useAudio";
 import { displayAlbum, displayArtist, displayTrackTitle } from "./lib/format";
@@ -16,6 +17,7 @@ import type {
   Artist,
   FetcherDescriptor,
   MusicFolder,
+  Playlist,
   RoomPlaybackState,
   ScanProgress,
   ScanSummary,
@@ -24,6 +26,31 @@ import type {
 } from "./types";
 import { audioEngine } from "./lib/audioEngine";
 
+function streamTrackFromPlayback(playback: RoomPlaybackState, streamUrl: string): Track {
+  const title = playback.title || "Host stream";
+  return {
+    id: -Math.abs(playback.trackId || Date.now()),
+    path: streamUrl,
+    fileName: title,
+    fileExt: "stream",
+    fileSize: 0,
+    modifiedAt: playback.hostTimestampMs,
+    title,
+    artist: playback.artist || null,
+    album: playback.album || null,
+    albumArtist: playback.artist || null,
+    genre: null,
+    year: null,
+    trackNumber: null,
+    durationMs: playback.durationMs || null,
+    coverPath: playback.coverPath || null,
+    favorite: false,
+    dateAdded: playback.hostTimestampMs,
+    lastPlayedAt: null,
+    playCount: 0
+  };
+}
+
 function App() {
   const [activeView, setActiveView] = useState<ViewKey>("songs");
   const [collectionFilter, setCollectionFilter] = useState<{ type: "album" | "artist"; value: string } | null>(null);
@@ -31,6 +58,7 @@ function App() {
   const [albums, setAlbums] = useState<Album[]>([]);
   const [artists, setArtists] = useState<Artist[]>([]);
   const [folders, setFolders] = useState<MusicFolder[]>([]);
+  const [playlists, setPlaylists] = useState<Playlist[]>([]);
   const [fetchers, setFetchers] = useState<FetcherDescriptor[]>([]);
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
@@ -42,15 +70,20 @@ function App() {
   const [density, setDensity] = useState(localStorage.getItem("loavy.density") || "comfortable");
   const [cardStyle, setCardStyle] = useState(localStorage.getItem("loavy.cardStyle") || "soft");
   const [playerStyle, setPlayerStyle] = useState(localStorage.getItem("loavy.playerStyle") || "docked");
+  const [fontScale, setFontScale] = useState(localStorage.getItem("loavy.fontScale") || "100");
+  const [showCovers, setShowCovers] = useState(localStorage.getItem("loavy.showCovers") !== "false");
+  const [reduceMotion, setReduceMotion] = useState(localStorage.getItem("loavy.reduceMotion") === "true");
   const [offlineMode, setOfflineMode] = useState(localStorage.getItem("loavy.offlineMode") === "true");
   const [compactSidebar, setCompactSidebar] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const audio = useAudio();
   const audioRef = useRef(audio);
   const searchRequestRef = useRef(0);
-  const roomClientStatusRef = useRef<{ connected: boolean; allowGuestControl: boolean }>({
+  const roomClientStatusRef = useRef<{ connected: boolean; allowGuestControl: boolean; host?: string | null; port?: number | null }>({
     connected: false,
-    allowGuestControl: false
+    allowGuestControl: false,
+    host: null,
+    port: null
   });
   const deferredQuery = useDeferredValue(query);
   audioRef.current = audio;
@@ -64,18 +97,20 @@ function App() {
   }
 
   async function refreshLibrary(search = deferredQuery) {
-    const [nextTracks, nextAlbums, nextArtists, nextFolders, nextFetchers] = await Promise.all([
+    const [nextTracks, nextAlbums, nextArtists, nextFolders, nextFetchers, nextPlaylists] = await Promise.all([
       api.listTracks(search),
       api.listAlbums(),
       api.listArtists(),
       api.listMusicFolders(),
-      api.listFetchers()
+      api.listFetchers(),
+      api.listPlaylists()
     ]);
     setTracks(nextTracks);
     setAlbums(nextAlbums);
     setArtists(nextArtists);
     setFolders(nextFolders);
     setFetchers(nextFetchers);
+    setPlaylists(nextPlaylists);
   }
 
   useEffect(() => {
@@ -83,13 +118,19 @@ function App() {
     document.documentElement.dataset.density = density;
     document.documentElement.dataset.cards = cardStyle;
     document.documentElement.dataset.player = playerStyle;
+    document.documentElement.dataset.covers = showCovers ? "show" : "hide";
+    document.documentElement.dataset.motion = reduceMotion ? "reduced" : "full";
     document.documentElement.style.setProperty("--accent", accent);
+    document.documentElement.style.setProperty("--font-scale", `${Number(fontScale) / 100}`);
     localStorage.setItem("loavy.theme", theme);
     localStorage.setItem("loavy.accent", accent);
     localStorage.setItem("loavy.density", density);
     localStorage.setItem("loavy.cardStyle", cardStyle);
     localStorage.setItem("loavy.playerStyle", playerStyle);
-  }, [theme, accent, density, cardStyle, playerStyle]);
+    localStorage.setItem("loavy.fontScale", fontScale);
+    localStorage.setItem("loavy.showCovers", String(showCovers));
+    localStorage.setItem("loavy.reduceMotion", String(reduceMotion));
+  }, [theme, accent, density, cardStyle, playerStyle, fontScale, showCovers, reduceMotion]);
 
   useEffect(() => {
     setLoading(true);
@@ -105,13 +146,15 @@ function App() {
         const status = await api.getRoomClientStatus();
         roomClientStatusRef.current = {
           connected: status.connected,
-          allowGuestControl: status.allowGuestControl
+          allowGuestControl: status.allowGuestControl,
+          host: status.host,
+          port: status.port
         };
         audioEngine.setLocalControlBlocked(status.connected && !status.allowGuestControl, () => {
           setError("The host does not allow guests to change songs.");
         });
       } catch {
-        roomClientStatusRef.current = { connected: false, allowGuestControl: false };
+        roomClientStatusRef.current = { connected: false, allowGuestControl: false, host: null, port: null };
         audioEngine.setLocalControlBlocked(false);
       }
     }
@@ -146,10 +189,14 @@ function App() {
     async function syncToRoomPlayback(playback: RoomPlaybackState) {
       if (disposed) return;
       try {
-        const track = await api.findRoomPlaybackTrack(playback);
+        let track = await api.findRoomPlaybackTrack(playback);
         if (!track) {
-          setError(`Room sync could not find "${playback.title || "the current track"}" in your local library. Host audio streaming is not implemented yet, so guests need the same local song for now.`);
-          return;
+          const client = roomClientStatusRef.current;
+          if (!playback.streamPath || !client.host || !client.port) {
+            setError(`Room sync could not find "${playback.title || "the current track"}" in your local library, and the host did not provide a stream.`);
+            return;
+          }
+          track = streamTrackFromPlayback(playback, `http://${client.host}:${client.port}${playback.streamPath}`);
         }
         setError(null);
         await audioEngine.syncToRoomPlayback(track, playback);
@@ -177,7 +224,7 @@ function App() {
       listen("room://disconnected", () => {
         if (!disposed) {
           setError("Room connection was lost. Rejoin the room to sync playback again.");
-          roomClientStatusRef.current = { connected: false, allowGuestControl: false };
+          roomClientStatusRef.current = { connected: false, allowGuestControl: false, host: null, port: null };
           audioEngine.setLocalControlBlocked(false);
         }
       })
@@ -290,6 +337,12 @@ function App() {
     await refreshLibrary();
   }
 
+  async function removeFolder(folderId: number) {
+    setError(null);
+    await api.removeMusicFolder(folderId);
+    await refreshLibrary();
+  }
+
   async function scan() {
     setScanning(true);
     setError(null);
@@ -340,6 +393,21 @@ function App() {
     await api.setSetting("playerStyle", nextPlayerStyle);
   }
 
+  async function changeFontScale(nextFontScale: string) {
+    setFontScale(nextFontScale);
+    await api.setSetting("fontScale", nextFontScale);
+  }
+
+  async function changeShowCovers(enabled: boolean) {
+    setShowCovers(enabled);
+    await api.setSetting("showCovers", String(enabled));
+  }
+
+  async function changeReduceMotion(enabled: boolean) {
+    setReduceMotion(enabled);
+    await api.setSetting("reduceMotion", String(enabled));
+  }
+
   async function changeOfflineMode(enabled: boolean) {
     setOfflineMode(enabled);
     localStorage.setItem("loavy.offlineMode", String(enabled));
@@ -350,7 +418,6 @@ function App() {
     songs: "Songs",
     albums: "Albums",
     artists: "Artists",
-    genres: "Genres",
     playlists: "Playlists",
     recent: "Recently Played",
     favorites: "Favorites",
@@ -397,7 +464,11 @@ function App() {
           cardStyle={cardStyle}
           playerStyle={playerStyle}
           offlineMode={offlineMode}
+          fontScale={fontScale}
+          showCovers={showCovers}
+          reduceMotion={reduceMotion}
           onAddFolder={addFolder}
+          onRemoveFolder={removeFolder}
           onScan={scan}
           onCancelScan={cancelScan}
           onThemeChange={changeTheme}
@@ -405,14 +476,34 @@ function App() {
           onDensityChange={changeDensity}
           onCardStyleChange={changeCardStyle}
           onPlayerStyleChange={changePlayerStyle}
+          onFontScaleChange={changeFontScale}
+          onShowCoversChange={changeShowCovers}
+          onReduceMotionChange={changeReduceMotion}
           onOfflineModeChange={changeOfflineMode}
           onApiKeyChange={(provider, key) => void api.setApiKey(provider, key)}
         />
       );
     }
     if (activeView === "room") return <RoomView onError={setError} />;
-    if (["genres", "playlists"].includes(activeView)) {
-      return <section className="emptyState"><h2>{title}</h2><p>This view is reserved in the MVP structure and ready for the next feature pass.</p></section>;
+    if (activeView === "playlists") {
+      return (
+        <PlaylistsView
+          playlists={playlists}
+          tracks={tracks}
+          onCreatePlaylist={async (name) => {
+            await api.createPlaylist(name);
+            setPlaylists(await api.listPlaylists());
+          }}
+          onAddTrack={async (playlistId, trackId) => {
+            await api.addTrackToPlaylist(playlistId, trackId);
+            setPlaylists(await api.listPlaylists());
+          }}
+          onOpenPlaylist={async (playlistId) => {
+            setTracks(await api.listPlaylistTracks(playlistId));
+            setActiveView("songs");
+          }}
+        />
+      );
     }
     return (
       <SongsView
@@ -458,7 +549,7 @@ function App() {
           </div>
           <label className="searchBox">
             <Search size={17} />
-            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search songs, artists, albums, genres" />
+            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search songs, artists, albums" />
           </label>
         </header>
         {error && <pre className="errorBanner">{error}</pre>}

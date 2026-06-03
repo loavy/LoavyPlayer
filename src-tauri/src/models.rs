@@ -67,6 +67,7 @@ pub struct ScanSummary {
 pub struct ScanProgress {
     pub running: bool,
     pub folders_scanned: usize,
+    pub total_files: usize,
     pub files_seen: usize,
     pub tracks_added_or_updated: usize,
     pub tracks_removed: usize,
@@ -162,6 +163,7 @@ pub struct RoomPlaybackState {
     pub artist: Option<String>,
     pub album: Option<String>,
     pub cover_path: Option<String>,
+    pub stream_path: Option<String>,
     pub duration_ms: Option<i64>,
     pub position_ms: i64,
     pub playing: bool,
@@ -186,4 +188,14 @@ pub struct RoomClientStatus {
     pub display_name: Option<String>,
     pub connected_at: Option<i64>,
     pub allow_guest_control: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Playlist {
+    pub id: i64,
+    pub name: String,
+    pub created_at: i64,
+    pub updated_at: i64,
+    pub track_count: i64,
 }

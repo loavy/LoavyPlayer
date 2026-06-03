@@ -3,7 +3,7 @@ use std::path::Path;
 use anyhow::{Context, Result};
 use rusqlite::{params, Connection, OptionalExtension};
 
-use crate::models::{Album, Artist, MusicFolder, RoomPlaybackState, Track};
+use crate::models::{Album, Artist, MusicFolder, Playlist, RoomPlaybackState, Track};
 
 pub struct Database {
     conn: Connection,
@@ -124,7 +124,35 @@ impl Database {
                 last_scanned_at: row.get(4)?,
             })
         })?;
-        rows.collect::<rusqlite::Result<Vec<_>>>().context("list music folders")
+        rows.collect::<rusqlite::Result<Vec<_>>>()
+            .context("list music folders")
+    }
+
+    pub fn remove_music_folder(&self, folder_id: i64) -> Result<()> {
+        let path = self
+            .conn
+            .query_row(
+                "SELECT path FROM music_folders WHERE id = ?1",
+                params![folder_id],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?
+            .context("music folder not found")?;
+        let prefix = if path.ends_with(std::path::MAIN_SEPARATOR) {
+            path.clone()
+        } else {
+            format!("{}{}", path, std::path::MAIN_SEPARATOR)
+        };
+
+        self.conn.execute(
+            "DELETE FROM music_folders WHERE id = ?1",
+            params![folder_id],
+        )?;
+        self.conn.execute(
+            "DELETE FROM tracks WHERE path = ?1 OR path LIKE ?2",
+            params![path, format!("{prefix}%")],
+        )?;
+        Ok(())
     }
 
     pub fn mark_folder_scanned(&self, path: &str, now: i64) -> Result<()> {
@@ -193,6 +221,17 @@ impl Database {
             .context("get track file signature")
     }
 
+    pub fn track_path(&self, track_id: i64) -> Result<Option<String>> {
+        self.conn
+            .query_row(
+                "SELECT path FROM tracks WHERE id = ?1",
+                params![track_id],
+                |row| row.get(0),
+            )
+            .optional()
+            .context("get track path")
+    }
+
     pub fn remove_missing_tracks(&self) -> Result<usize> {
         let mut stmt = self.conn.prepare("SELECT path FROM tracks")?;
         let paths = stmt
@@ -249,10 +288,12 @@ impl Database {
 
         if let Some(like) = like {
             let rows = stmt.query_map(params![like], mapper)?;
-            rows.collect::<rusqlite::Result<Vec<_>>>().context("list tracks")
+            rows.collect::<rusqlite::Result<Vec<_>>>()
+                .context("list tracks")
         } else {
             let rows = stmt.query_map([], mapper)?;
-            rows.collect::<rusqlite::Result<Vec<_>>>().context("list tracks")
+            rows.collect::<rusqlite::Result<Vec<_>>>()
+                .context("list tracks")
         }
     }
 
@@ -264,7 +305,10 @@ impl Database {
         Ok(())
     }
 
-    pub fn find_track_for_room_playback(&self, playback: &RoomPlaybackState) -> Result<Option<Track>> {
+    pub fn find_track_for_room_playback(
+        &self,
+        playback: &RoomPlaybackState,
+    ) -> Result<Option<Track>> {
         let title = playback.title.as_deref().unwrap_or_default();
         let artist = normalize_unknown(playback.artist.as_deref().unwrap_or_default());
         let album = normalize_unknown(playback.album.as_deref().unwrap_or_default());
@@ -283,9 +327,11 @@ impl Database {
         "#;
 
         let mut stmt = self.conn.prepare(sql)?;
-        stmt.query_row(params![title, artist, album, duration], |row| row_to_track(row))
-            .optional()
-            .context("find room playback track")
+        stmt.query_row(params![title, artist, album, duration], |row| {
+            row_to_track(row)
+        })
+        .optional()
+        .context("find room playback track")
     }
 
     pub fn list_albums(&self) -> Result<Vec<Album>> {
@@ -311,7 +357,8 @@ impl Database {
                 track_count: row.get(4)?,
             })
         })?;
-        rows.collect::<rusqlite::Result<Vec<_>>>().context("list albums")
+        rows.collect::<rusqlite::Result<Vec<_>>>()
+            .context("list albums")
     }
 
     pub fn list_artists(&self) -> Result<Vec<Artist>> {
@@ -333,7 +380,8 @@ impl Database {
                 album_count: row.get(2)?,
             })
         })?;
-        rows.collect::<rusqlite::Result<Vec<_>>>().context("list artists")
+        rows.collect::<rusqlite::Result<Vec<_>>>()
+            .context("list artists")
     }
 
     pub fn set_setting(&self, key: &str, value: &str) -> Result<()> {
@@ -346,7 +394,11 @@ impl Database {
 
     pub fn get_setting(&self, key: &str) -> Result<Option<String>> {
         self.conn
-            .query_row("SELECT value FROM settings WHERE key = ?1", params![key], |row| row.get(0))
+            .query_row(
+                "SELECT value FROM settings WHERE key = ?1",
+                params![key],
+                |row| row.get(0),
+            )
             .optional()
             .context("get setting")
     }
@@ -357,6 +409,79 @@ impl Database {
             params![provider, key_value],
         )?;
         Ok(())
+    }
+
+    pub fn list_playlists(&self) -> Result<Vec<Playlist>> {
+        let mut stmt = self.conn.prepare(
+            r#"
+            SELECT p.id, p.name, p.created_at, p.updated_at, COUNT(pt.track_id) AS track_count
+            FROM playlists p
+            LEFT JOIN playlist_tracks pt ON pt.playlist_id = p.id
+            GROUP BY p.id, p.name, p.created_at, p.updated_at
+            ORDER BY p.updated_at DESC, p.name
+            "#,
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(Playlist {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                created_at: row.get(2)?,
+                updated_at: row.get(3)?,
+                track_count: row.get(4)?,
+            })
+        })?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()
+            .context("list playlists")
+    }
+
+    pub fn create_playlist(&self, name: &str, now: i64) -> Result<Playlist> {
+        let trimmed = name.trim();
+        anyhow::ensure!(!trimmed.is_empty(), "Playlist name is required.");
+        self.conn.execute(
+            "INSERT INTO playlists(name, created_at, updated_at) VALUES (?1, ?2, ?2)",
+            params![trimmed, now],
+        )?;
+        let id = self.conn.last_insert_rowid();
+        Ok(Playlist {
+            id,
+            name: trimmed.to_string(),
+            created_at: now,
+            updated_at: now,
+            track_count: 0,
+        })
+    }
+
+    pub fn add_track_to_playlist(&self, playlist_id: i64, track_id: i64) -> Result<()> {
+        let position: i64 = self.conn.query_row(
+            "SELECT COALESCE(MAX(position), -1) + 1 FROM playlist_tracks WHERE playlist_id = ?1",
+            params![playlist_id],
+            |row| row.get(0),
+        )?;
+        let now = chrono::Utc::now().timestamp_millis();
+        self.conn.execute(
+            "INSERT OR IGNORE INTO playlist_tracks(playlist_id, track_id, position) VALUES (?1, ?2, ?3)",
+            params![playlist_id, track_id, position],
+        )?;
+        self.conn.execute(
+            "UPDATE playlists SET updated_at = ?1 WHERE id = ?2",
+            params![now, playlist_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn list_playlist_tracks(&self, playlist_id: i64) -> Result<Vec<Track>> {
+        let mut stmt = self.conn.prepare(
+            r#"
+            SELECT t.*
+            FROM playlist_tracks pt
+            JOIN tracks t ON t.id = pt.track_id
+            WHERE pt.playlist_id = ?1
+            ORDER BY pt.position
+            "#,
+        )?;
+        let rows = stmt.query_map(params![playlist_id], row_to_track)?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()
+            .context("list playlist tracks")
     }
 }
 

@@ -10,6 +10,7 @@ import type {
   RoomJoinResult,
   RoomPlaybackState,
   RoomStatus,
+  Playlist,
   ScanSummary,
   ScanTaskState,
   Track
@@ -18,6 +19,7 @@ import type {
 export const api = {
   selectMusicFolder: () => invoke<MusicFolder | null>("select_music_folder"),
   listMusicFolders: () => invoke<MusicFolder[]>("list_music_folders"),
+  removeMusicFolder: (folderId: number) => invoke<void>("remove_music_folder", { folderId }),
   scanLibrary: () => invoke<ScanSummary>("scan_library"),
   startLibraryScan: () => invoke<void>("start_library_scan"),
   cancelLibraryScan: () => invoke<void>("cancel_library_scan"),
@@ -29,6 +31,12 @@ export const api = {
     invoke<Track | null>("find_room_playback_track", { playback }),
   listAlbums: () => invoke<Album[]>("list_albums"),
   listArtists: () => invoke<Artist[]>("list_artists"),
+  listPlaylists: () => invoke<Playlist[]>("list_playlists"),
+  createPlaylist: (name: string) => invoke<Playlist>("create_playlist", { name }),
+  addTrackToPlaylist: (playlistId: number, trackId: number) =>
+    invoke<void>("add_track_to_playlist", { playlistId, trackId }),
+  listPlaylistTracks: (playlistId: number) =>
+    invoke<Track[]>("list_playlist_tracks", { playlistId }),
   listFetchers: () => invoke<FetcherDescriptor[]>("list_fetchers"),
   setSetting: (key: string, value: string) => invoke<void>("set_setting", { update: { key, value } }),
   getSetting: (key: string) => invoke<string | null>("get_setting", { key }),

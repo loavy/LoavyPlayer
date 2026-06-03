@@ -20,6 +20,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::select_music_folder,
             commands::list_music_folders,
+            commands::remove_music_folder,
             commands::scan_library,
             commands::start_library_scan,
             commands::cancel_library_scan,
@@ -29,6 +30,10 @@ pub fn run() {
             commands::find_room_playback_track,
             commands::list_albums,
             commands::list_artists,
+            commands::list_playlists,
+            commands::create_playlist,
+            commands::add_track_to_playlist,
+            commands::list_playlist_tracks,
             commands::set_setting,
             commands::get_setting,
             commands::set_api_key,

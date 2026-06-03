@@ -8,7 +8,6 @@ import {
   Search,
   Settings,
   Radio,
-  Tags,
   Users,
   type LucideIcon
 } from "lucide-react";
@@ -18,7 +17,6 @@ const items: Array<{ key: ViewKey; label: string; icon: LucideIcon }> = [
   { key: "songs", label: "Songs", icon: Music2 },
   { key: "albums", label: "Albums", icon: Album },
   { key: "artists", label: "Artists", icon: Users },
-  { key: "genres", label: "Genres", icon: Tags },
   { key: "playlists", label: "Playlists", icon: ListMusic },
   { key: "recent", label: "Recently Played", icon: History },
   { key: "favorites", label: "Favorites", icon: Heart },

@@ -38,6 +38,14 @@ pub fn scan_library_with_progress(
     mut on_progress: impl FnMut(ScanProgress),
 ) -> Result<ScanSummary> {
     let folders = db.list_music_folders()?;
+    let enabled_folders = folders
+        .into_iter()
+        .filter(|folder| folder.enabled)
+        .collect::<Vec<_>>();
+    let total_files = enabled_folders
+        .iter()
+        .map(|folder| count_audio_files(Path::new(&folder.path)))
+        .sum::<usize>();
     let mut summary = ScanSummary {
         folders_scanned: 0,
         files_seen: 0,
@@ -46,17 +54,31 @@ pub fn scan_library_with_progress(
         errors: Vec::new(),
     };
 
-    for folder in folders.into_iter().filter(|folder| folder.enabled) {
+    for folder in enabled_folders {
         if cancel.load(Ordering::SeqCst) {
             break;
         }
-        scan_folder(db, app_data_dir, &folder, &mut summary, cancel.clone(), &mut on_progress)?;
+        scan_folder(
+            db,
+            app_data_dir,
+            &folder,
+            total_files,
+            &mut summary,
+            cancel.clone(),
+            &mut on_progress,
+        )?;
     }
 
     if !cancel.load(Ordering::SeqCst) {
         summary.tracks_removed = db.remove_missing_tracks()?;
     }
-    on_progress(progress_from_summary(&summary, None, false, cancel.load(Ordering::SeqCst)));
+    on_progress(progress_from_summary(
+        &summary,
+        total_files,
+        None,
+        false,
+        cancel.load(Ordering::SeqCst),
+    ));
     Ok(summary)
 }
 
@@ -64,20 +86,27 @@ fn scan_folder(
     db: &Database,
     app_data_dir: &Path,
     folder: &MusicFolder,
+    total_files: usize,
     summary: &mut ScanSummary,
     cancel: Arc<AtomicBool>,
     on_progress: &mut impl FnMut(ScanProgress),
 ) -> Result<()> {
     let root = PathBuf::from(&folder.path);
     if !root.exists() {
-        summary.errors.push(format!("Folder does not exist: {}", folder.path));
+        summary
+            .errors
+            .push(format!("Folder does not exist: {}", folder.path));
         return Ok(());
     }
 
     let now = chrono::Utc::now().timestamp_millis();
     summary.folders_scanned += 1;
 
-    for entry in WalkDir::new(&root).follow_links(false).into_iter().filter_map(Result::ok) {
+    for entry in WalkDir::new(&root)
+        .follow_links(false)
+        .into_iter()
+        .filter_map(Result::ok)
+    {
         if cancel.load(Ordering::SeqCst) {
             break;
         }
@@ -114,7 +143,13 @@ fn scan_folder(
             .unwrap_or(false)
         {
             if summary.files_seen % 50 == 0 {
-                on_progress(progress_from_summary(summary, current_path, true, false));
+                on_progress(progress_from_summary(
+                    summary,
+                    total_files,
+                    current_path,
+                    true,
+                    false,
+                ));
             }
             continue;
         }
@@ -127,7 +162,13 @@ fn scan_folder(
             Err(err) => summary.errors.push(format!("{}: {err}", path.display())),
         }
         if summary.files_seen % 10 == 0 {
-            on_progress(progress_from_summary(summary, current_path, true, false));
+            on_progress(progress_from_summary(
+                summary,
+                total_files,
+                current_path,
+                true,
+                false,
+            ));
         }
     }
 
@@ -139,6 +180,7 @@ fn scan_folder(
 
 fn progress_from_summary(
     summary: &ScanSummary,
+    total_files: usize,
     current_path: Option<String>,
     running: bool,
     cancelled: bool,
@@ -146,6 +188,7 @@ fn progress_from_summary(
     ScanProgress {
         running,
         folders_scanned: summary.folders_scanned,
+        total_files,
         files_seen: summary.files_seen,
         tracks_added_or_updated: summary.tracks_added_or_updated,
         tracks_removed: summary.tracks_removed,
@@ -153,6 +196,18 @@ fn progress_from_summary(
         cancelled,
         errors: summary.errors.iter().rev().take(5).cloned().collect(),
     }
+}
+
+fn count_audio_files(root: &Path) -> usize {
+    if !root.exists() {
+        return 0;
+    }
+    WalkDir::new(root)
+        .follow_links(false)
+        .into_iter()
+        .filter_map(Result::ok)
+        .filter(|entry| entry.file_type().is_file() && is_audio_file(entry.path()))
+        .count()
 }
 
 fn is_audio_file(path: &Path) -> bool {
@@ -169,8 +224,16 @@ fn read_track(
     metadata: fs::Metadata,
     modified_at: i64,
 ) -> Result<Track> {
-    let file_name = path.file_name().and_then(|s| s.to_str()).unwrap_or_default().to_string();
-    let file_ext = path.extension().and_then(|s| s.to_str()).unwrap_or_default().to_ascii_lowercase();
+    let file_name = path
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or_default()
+        .to_string();
+    let file_ext = path
+        .extension()
+        .and_then(|s| s.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
 
     let tagged = Probe::open(path)
         .with_context(|| format!("open audio file {}", path.display()))?
@@ -182,7 +245,10 @@ fn read_track(
     let title = tag.and_then(|tag| tag.title().map(|value| value.to_string()));
     let artist = tag.and_then(|tag| tag.artist().map(|value| value.to_string()));
     let album = tag.and_then(|tag| tag.album().map(|value| value.to_string()));
-    let album_artist = tag.and_then(|tag| tag.get_string(&ItemKey::AlbumArtist).map(|value| value.to_string()));
+    let album_artist = tag.and_then(|tag| {
+        tag.get_string(&ItemKey::AlbumArtist)
+            .map(|value| value.to_string())
+    });
     let genre = tag.and_then(|tag| tag.genre().map(|value| value.to_string()));
     let year = tag.and_then(|tag| tag.year()).map(|value| value as i32);
     let track_number = tag.and_then(|tag| tag.track()).map(|value| value as i32);
@@ -211,7 +277,11 @@ fn read_track(
     })
 }
 
-fn extract_cover(path: &Path, app_data_dir: &Path, tag: &lofty::tag::Tag) -> Result<Option<String>> {
+fn extract_cover(
+    path: &Path,
+    app_data_dir: &Path,
+    tag: &lofty::tag::Tag,
+) -> Result<Option<String>> {
     let picture = tag
         .pictures()
         .iter()
@@ -225,7 +295,9 @@ fn extract_cover(path: &Path, app_data_dir: &Path, tag: &lofty::tag::Tag) -> Res
     let mut hasher = Sha1::new();
     hasher.update(path.to_string_lossy().as_bytes());
     hasher.update(picture.data());
-    let digest = BASE64.encode(hasher.finalize()).replace(['/', '+', '='], "");
+    let digest = BASE64
+        .encode(hasher.finalize())
+        .replace(['/', '+', '='], "");
     let ext = picture
         .mime_type()
         .and_then(|mime| mime.as_str().split('/').last())

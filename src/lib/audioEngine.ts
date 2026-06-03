@@ -68,7 +68,7 @@ class AudioEngine {
     this.queue = queue;
     this.index = index;
     this.current = track;
-    this.audio.src = convertFileSrc(track.path);
+    this.audio.src = audioSource(track.path);
     await this.audio.play();
     localStorage.setItem("loavy.lastTrackPath", track.path);
     this.emit();
@@ -83,7 +83,7 @@ class AudioEngine {
       this.queue = [track];
       this.index = 0;
       this.current = track;
-      this.audio.src = convertFileSrc(track.path);
+      this.audio.src = audioSource(track.path);
     }
 
     const driftMs = Math.abs(this.audio.currentTime * 1000 - targetPosition);
@@ -216,3 +216,7 @@ class AudioEngine {
 }
 
 export const audioEngine = new AudioEngine();
+
+function audioSource(path: string) {
+  return /^https?:\/\//i.test(path) ? path : convertFileSrc(path);
+}

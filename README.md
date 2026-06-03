@@ -53,13 +53,13 @@ Tauri will place Windows installers or Linux packages under `src-tauri/target/re
 On Windows, the friendliest file to send testers is the NSIS installer:
 
 ```text
-src-tauri/target/release/bundle/nsis/Loavy Player_2.0.0_x64-setup.exe
+src-tauri/target/release/bundle/nsis/Loavy Player_2.5.1_x64-setup.exe
 ```
 
 The MSI installer is also available for managed installs:
 
 ```text
-src-tauri/target/release/bundle/msi/Loavy Player_2.0.0_x64_en-US.msi
+src-tauri/target/release/bundle/msi/Loavy Player_2.5.1_x64_en-US.msi
 ```
 
 Do not commit these built installers to GitHub unless you intentionally want binary releases in the repository. Prefer attaching them to a GitHub Release.
@@ -125,9 +125,9 @@ Playback sync in the current MVP:
 - The host broadcasts metadata and playback position.
 - The guest app searches its local SQLite library for a matching title/artist/album/duration.
 - If the matching song exists locally, the guest switches to it and gently corrects position drift.
-- If the guest does not have that song locally, the app cannot play it yet. Host audio streaming is planned next.
+- If the guest does not have that song locally, the app falls back to streaming the current song from the host over the room connection.
 - If guest song control is disabled, guest attempts to change songs are blocked locally with an error message.
-- If guest song control is enabled and a guest scans a new folder, the guest asks the host to rescan its own configured folders too. The host cannot read the guest's files; both sides still need matching local tracks until streaming is implemented.
+- If guest song control is enabled and a guest scans a new folder, the guest asks the host to rescan its own configured folders too. The host cannot read the guest's files, but guests can still hear the host's current song through host streaming.
 
 Address choices:
 

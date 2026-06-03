@@ -53,6 +53,7 @@ export type ScanSummary = {
 export type ScanProgress = {
   running: boolean;
   foldersScanned: number;
+  totalFiles: number;
   filesSeen: number;
   tracksAddedOrUpdated: number;
   tracksRemoved: number;
@@ -77,7 +78,6 @@ export type ViewKey =
   | "songs"
   | "albums"
   | "artists"
-  | "genres"
   | "playlists"
   | "recent"
   | "favorites"
@@ -134,10 +134,19 @@ export type RoomPlaybackState = {
   artist?: string | null;
   album?: string | null;
   coverPath?: string | null;
+  streamPath?: string | null;
   durationMs?: number | null;
   positionMs: number;
   playing: boolean;
   hostTimestampMs: number;
+};
+
+export type Playlist = {
+  id: number;
+  name: string;
+  createdAt: number;
+  updatedAt: number;
+  trackCount: number;
 };
 
 export type RoomJoinResult = {
