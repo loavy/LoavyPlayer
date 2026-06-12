@@ -53,13 +53,13 @@ Tauri will place Windows installers or Linux packages under `src-tauri/target/re
 On Windows, the friendliest file to send testers is the NSIS installer:
 
 ```text
-src-tauri/target/release/bundle/nsis/Loavy Player_2.5.1_x64-setup.exe
+src-tauri/target/release/bundle/nsis/Loavy Player_3.0.0_x64-setup.exe
 ```
 
 The MSI installer is also available for managed installs:
 
 ```text
-src-tauri/target/release/bundle/msi/Loavy Player_2.5.1_x64_en-US.msi
+src-tauri/target/release/bundle/msi/Loavy Player_3.0.0_x64_en-US.msi
 ```
 
 Do not commit these built installers to GitHub unless you intentionally want binary releases in the repository. Prefer attaching them to a GitHub Release.

@@ -1,12 +1,15 @@
-import { Heart, Pause, Play, Repeat, Repeat1, Shuffle, SkipBack, SkipForward, Volume2 } from "lucide-react";
+import { Expand, Heart, Pause, Play, Repeat, Repeat1, Shuffle, SkipBack, SkipForward, Volume2 } from "lucide-react";
+import { useState } from "react";
 import { audioEngine } from "../lib/audioEngine";
 import { formatDuration, displayArtist, displayTrackTitle } from "../lib/format";
 import { useAudio } from "../lib/useAudio";
 import { Cover } from "./Cover";
 import { api } from "../lib/api";
+import { NowPlayingView } from "./NowPlayingView";
 
 export function PlayerBar() {
   const audio = useAudio();
+  const [showNowPlaying, setShowNowPlaying] = useState(false);
   const repeatIcon = audio.repeat === "one" ? <Repeat1 size={17} /> : <Repeat size={17} />;
   const favorite = Boolean(audio.current?.favorite);
 
@@ -25,14 +28,16 @@ export function PlayerBar() {
   }
 
   return (
+    <>
     <footer className="playerBar">
-      <div className="nowPlaying">
+      <button className="nowPlaying" onClick={() => setShowNowPlaying(true)} title="Open now playing">
         <Cover path={audio.current?.coverPath} title={audio.current?.album || undefined} size="sm" />
         <div>
           <strong>{audio.current ? displayTrackTitle(audio.current) : "Ready to play"}</strong>
           <span>{audio.current ? displayArtist(audio.current.artist) : "Add music in Settings"}</span>
         </div>
-      </div>
+        <Expand className="openNowPlaying" size={16} />
+      </button>
 
       <div className="transport">
         <div className="transportButtons">
@@ -90,5 +95,7 @@ export function PlayerBar() {
         />
       </div>
     </footer>
+    {showNowPlaying && <NowPlayingView onClose={() => setShowNowPlaying(false)} onToggleFavorite={() => void toggleFavorite()} />}
+    </>
   );
 }

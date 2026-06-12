@@ -1,14 +1,16 @@
 import { memo, useEffect, useMemo, useRef, useState } from "react";
-import { Heart, Play } from "lucide-react";
+import { AudioLines, Heart, Pause, Play } from "lucide-react";
 import { audioEngine } from "../lib/audioEngine";
 import { displayAlbum, displayArtist, displayTrackTitle, formatDuration } from "../lib/format";
 import type { Track } from "../types";
 import { Cover } from "./Cover";
+import { useAudio } from "../lib/useAudio";
 
 const ROW_HEIGHT = 62;
 const OVERSCAN = 8;
 
 export function VirtualSongList({ tracks }: { tracks: Track[] }) {
+  const audio = useAudio();
   const [scrollTop, setScrollTop] = useState(0);
   const [height, setHeight] = useState(520);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
@@ -74,6 +76,8 @@ export function VirtualSongList({ tracks }: { tracks: Track[] }) {
                   index={index}
                   queue={tracks}
                   track={track}
+                  current={audio.current?.id === track.id}
+                  playing={audio.current?.id === track.id && audio.playing}
                 />
               );
             })}
@@ -84,18 +88,27 @@ export function VirtualSongList({ tracks }: { tracks: Track[] }) {
   );
 }
 
-const SongRow = memo(function SongRow({ track, queue, index }: { track: Track; queue: Track[]; index: number }) {
+const SongRow = memo(function SongRow({ track, queue, index, current, playing }: { track: Track; queue: Track[]; index: number; current: boolean; playing: boolean }) {
+  function activate() {
+    if (current) {
+      void audioEngine.toggle();
+    } else {
+      void audioEngine.playTrack(track, queue, index);
+    }
+  }
+
   return (
     <div
-      className="trackRow songsGrid"
+      className={`trackRow songsGrid${current ? " current" : ""}${playing ? " playing" : ""}`}
       style={{ height: ROW_HEIGHT }}
-      onDoubleClick={() => void audioEngine.playTrack(track, queue, index)}
+      onDoubleClick={activate}
       role="button"
+      aria-current={current ? "true" : undefined}
       tabIndex={0}
       onKeyDown={(event) => {
         if (event.key === "Enter" || event.key === " ") {
           event.preventDefault();
-          void audioEngine.playTrack(track, queue, index);
+          activate();
         }
       }}
     >
@@ -104,11 +117,11 @@ const SongRow = memo(function SongRow({ track, queue, index }: { track: Track; q
           className="rowPlay"
           onClick={(event) => {
             event.stopPropagation();
-            void audioEngine.playTrack(track, queue, index);
+            activate();
           }}
-          title="Play"
+          title={playing ? "Pause" : "Play"}
         >
-          <Play size={15} />
+          {playing ? <Pause size={15} /> : current ? <AudioLines size={15} /> : <Play size={15} />}
         </button>
         <Cover path={track.coverPath} title={track.album || undefined} size="sm" />
         <span>

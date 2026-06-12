@@ -17,7 +17,6 @@ import type {
   Artist,
   FetcherDescriptor,
   MusicFolder,
-  Playlist,
   RoomPlaybackState,
   ScanProgress,
   ScanSummary,
@@ -58,7 +57,6 @@ function App() {
   const [albums, setAlbums] = useState<Album[]>([]);
   const [artists, setArtists] = useState<Artist[]>([]);
   const [folders, setFolders] = useState<MusicFolder[]>([]);
-  const [playlists, setPlaylists] = useState<Playlist[]>([]);
   const [fetchers, setFetchers] = useState<FetcherDescriptor[]>([]);
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
@@ -73,6 +71,10 @@ function App() {
   const [fontScale, setFontScale] = useState(localStorage.getItem("loavy.fontScale") || "100");
   const [showCovers, setShowCovers] = useState(localStorage.getItem("loavy.showCovers") !== "false");
   const [reduceMotion, setReduceMotion] = useState(localStorage.getItem("loavy.reduceMotion") === "true");
+  const [cornerStyle, setCornerStyle] = useState(localStorage.getItem("loavy.cornerStyle") || "rounded");
+  const [backgroundStyle, setBackgroundStyle] = useState(localStorage.getItem("loavy.backgroundStyle") || "ambient");
+  const [highContrast, setHighContrast] = useState(localStorage.getItem("loavy.highContrast") === "true");
+  const [showTrackFormat, setShowTrackFormat] = useState(localStorage.getItem("loavy.showTrackFormat") !== "false");
   const [offlineMode, setOfflineMode] = useState(localStorage.getItem("loavy.offlineMode") === "true");
   const [compactSidebar, setCompactSidebar] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -97,20 +99,18 @@ function App() {
   }
 
   async function refreshLibrary(search = deferredQuery) {
-    const [nextTracks, nextAlbums, nextArtists, nextFolders, nextFetchers, nextPlaylists] = await Promise.all([
+    const [nextTracks, nextAlbums, nextArtists, nextFolders, nextFetchers] = await Promise.all([
       api.listTracks(search),
       api.listAlbums(),
       api.listArtists(),
       api.listMusicFolders(),
-      api.listFetchers(),
-      api.listPlaylists()
+      api.listFetchers()
     ]);
     setTracks(nextTracks);
     setAlbums(nextAlbums);
     setArtists(nextArtists);
     setFolders(nextFolders);
     setFetchers(nextFetchers);
-    setPlaylists(nextPlaylists);
   }
 
   useEffect(() => {
@@ -120,6 +120,10 @@ function App() {
     document.documentElement.dataset.player = playerStyle;
     document.documentElement.dataset.covers = showCovers ? "show" : "hide";
     document.documentElement.dataset.motion = reduceMotion ? "reduced" : "full";
+    document.documentElement.dataset.corners = cornerStyle;
+    document.documentElement.dataset.background = backgroundStyle;
+    document.documentElement.dataset.contrast = highContrast ? "high" : "normal";
+    document.documentElement.dataset.trackFormat = showTrackFormat ? "show" : "hide";
     document.documentElement.style.setProperty("--accent", accent);
     document.documentElement.style.setProperty("--font-scale", `${Number(fontScale) / 100}`);
     localStorage.setItem("loavy.theme", theme);
@@ -130,7 +134,11 @@ function App() {
     localStorage.setItem("loavy.fontScale", fontScale);
     localStorage.setItem("loavy.showCovers", String(showCovers));
     localStorage.setItem("loavy.reduceMotion", String(reduceMotion));
-  }, [theme, accent, density, cardStyle, playerStyle, fontScale, showCovers, reduceMotion]);
+    localStorage.setItem("loavy.cornerStyle", cornerStyle);
+    localStorage.setItem("loavy.backgroundStyle", backgroundStyle);
+    localStorage.setItem("loavy.highContrast", String(highContrast));
+    localStorage.setItem("loavy.showTrackFormat", String(showTrackFormat));
+  }, [theme, accent, density, cardStyle, playerStyle, fontScale, showCovers, reduceMotion, cornerStyle, backgroundStyle, highContrast, showTrackFormat]);
 
   useEffect(() => {
     setLoading(true);
@@ -408,6 +416,11 @@ function App() {
     await api.setSetting("reduceMotion", String(enabled));
   }
 
+  async function changeAppearanceSetting(key: string, value: string, apply: (value: string) => void) {
+    apply(value);
+    await api.setSetting(key, value);
+  }
+
   async function changeOfflineMode(enabled: boolean) {
     setOfflineMode(enabled);
     localStorage.setItem("loavy.offlineMode", String(enabled));
@@ -418,7 +431,7 @@ function App() {
     songs: "Songs",
     albums: "Albums",
     artists: "Artists",
-    playlists: "Playlists",
+    playlists: "Folder Playlists",
     recent: "Recently Played",
     favorites: "Favorites",
     search: "Search",
@@ -467,6 +480,10 @@ function App() {
           fontScale={fontScale}
           showCovers={showCovers}
           reduceMotion={reduceMotion}
+          cornerStyle={cornerStyle}
+          backgroundStyle={backgroundStyle}
+          highContrast={highContrast}
+          showTrackFormat={showTrackFormat}
           onAddFolder={addFolder}
           onRemoveFolder={removeFolder}
           onScan={scan}
@@ -479,6 +496,10 @@ function App() {
           onFontScaleChange={changeFontScale}
           onShowCoversChange={changeShowCovers}
           onReduceMotionChange={changeReduceMotion}
+          onCornerStyleChange={(value) => void changeAppearanceSetting("cornerStyle", value, setCornerStyle)}
+          onBackgroundStyleChange={(value) => void changeAppearanceSetting("backgroundStyle", value, setBackgroundStyle)}
+          onHighContrastChange={(enabled) => void changeAppearanceSetting("highContrast", String(enabled), (value) => setHighContrast(value === "true"))}
+          onShowTrackFormatChange={(enabled) => void changeAppearanceSetting("showTrackFormat", String(enabled), (value) => setShowTrackFormat(value === "true"))}
           onOfflineModeChange={changeOfflineMode}
           onApiKeyChange={(provider, key) => void api.setApiKey(provider, key)}
         />
@@ -486,24 +507,7 @@ function App() {
     }
     if (activeView === "room") return <RoomView onError={setError} />;
     if (activeView === "playlists") {
-      return (
-        <PlaylistsView
-          playlists={playlists}
-          tracks={tracks}
-          onCreatePlaylist={async (name) => {
-            await api.createPlaylist(name);
-            setPlaylists(await api.listPlaylists());
-          }}
-          onAddTrack={async (playlistId, trackId) => {
-            await api.addTrackToPlaylist(playlistId, trackId);
-            setPlaylists(await api.listPlaylists());
-          }}
-          onOpenPlaylist={async (playlistId) => {
-            setTracks(await api.listPlaylistTracks(playlistId));
-            setActiveView("songs");
-          }}
-        />
-      );
+      return <PlaylistsView folders={folders} tracks={tracks} />;
     }
     return (
       <SongsView

@@ -16,6 +16,10 @@ type Props = {
   fontScale: string;
   showCovers: boolean;
   reduceMotion: boolean;
+  cornerStyle: string;
+  backgroundStyle: string;
+  highContrast: boolean;
+  showTrackFormat: boolean;
   onAddFolder: () => void;
   onRemoveFolder: (folderId: number) => void;
   onScan: () => void;
@@ -28,6 +32,10 @@ type Props = {
   onFontScaleChange: (fontScale: string) => void;
   onShowCoversChange: (enabled: boolean) => void;
   onReduceMotionChange: (enabled: boolean) => void;
+  onCornerStyleChange: (style: string) => void;
+  onBackgroundStyleChange: (style: string) => void;
+  onHighContrastChange: (enabled: boolean) => void;
+  onShowTrackFormatChange: (enabled: boolean) => void;
   onOfflineModeChange: (enabled: boolean) => void;
   onApiKeyChange: (provider: string, key: string) => void;
 };
@@ -106,6 +114,22 @@ export function SettingsView(props: Props) {
           </select>
         </label>
         <label className="field">
+          <span>Corners</span>
+          <select value={props.cornerStyle} onChange={(event) => props.onCornerStyleChange(event.target.value)}>
+            <option value="rounded">Rounded</option>
+            <option value="soft">Soft</option>
+            <option value="square">Square</option>
+          </select>
+        </label>
+        <label className="field">
+          <span>Background</span>
+          <select value={props.backgroundStyle} onChange={(event) => props.onBackgroundStyleChange(event.target.value)}>
+            <option value="ambient">Ambient glow</option>
+            <option value="subtle">Subtle glow</option>
+            <option value="solid">Solid</option>
+          </select>
+        </label>
+        <label className="field">
           <span>Player</span>
           <select value={props.playerStyle} onChange={(event) => props.onPlayerStyleChange(event.target.value)}>
             <option value="docked">Docked</option>
@@ -120,6 +144,14 @@ export function SettingsView(props: Props) {
         <label className="toggleRow">
           <span>Show covers in lists</span>
           <input type="checkbox" checked={props.showCovers} onChange={(event) => props.onShowCoversChange(event.target.checked)} />
+        </label>
+        <label className="toggleRow">
+          <span>Show file format in lists</span>
+          <input type="checkbox" checked={props.showTrackFormat} onChange={(event) => props.onShowTrackFormatChange(event.target.checked)} />
+        </label>
+        <label className="toggleRow">
+          <span>High contrast surfaces</span>
+          <input type="checkbox" checked={props.highContrast} onChange={(event) => props.onHighContrastChange(event.target.checked)} />
         </label>
         <label className="toggleRow">
           <span>Reduce motion</span>
