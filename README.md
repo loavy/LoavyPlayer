@@ -1,176 +1,192 @@
 # Loavy Player
 
-Loavy Player is a local-first cross-platform desktop music player for Windows and Linux. It is built with Tauri, React, TypeScript, Rust, and SQLite.
+**A beautiful, local-first desktop music player built for your own library.**
 
-## Why Tauri
+Loavy Player organizes and plays music directly from folders on your computer. It combines a polished, customizable interface with fast local scanning, folder-based playlists, immersive playback, and optional self-hosted listening rooms.
 
-Tauri gives Loavy Player a real desktop shell with native installers and a small footprint. Rust handles the work that benefits from native speed and reliability: recursive scanning, metadata extraction, cover caching, SQLite, and metadata fetchers. React keeps the customizable UI modular and fast to iterate.
+[Download the latest release](https://github.com/loavy/LoavyPlayer/releases/latest) | [Report an issue](https://github.com/loavy/LoavyPlayer/issues)
 
-## MVP Features
+## Highlights
 
-- Select local music folders.
-- Recursively scan MP3, FLAC, WAV, OGG, and M4A files.
-- Read title, artist, album, genre, year, track number, duration, and embedded covers.
-- Store the library in a local SQLite database.
-- Songs, albums, artists, search, settings, and reserved future views.
-- Local playback with play, pause, stop, next, previous, seek, volume, shuffle, and repeat.
-- Theme mode and accent color settings.
-- Modular fetcher registry with MusicBrainz and Cover Art Archive providers.
-- Offline mode setting for metadata fetches.
-- Cancellable background scans with progress events.
-- Virtualized song list rendering for large libraries.
-- Self-hosted Room/Jam control server skeleton for LAN/VPN playback state sync.
+- **Local-first library** - your music, metadata, artwork, and settings stay on your computer.
+- **Immersive Now Playing** - large artwork, ambient background colors, complete playback controls, and true fullscreen mode.
+- **Folder playlists** - browse existing music folders like a file manager and play an entire folder without recreating it as a playlist.
+- **Fast library browsing** - explore songs, albums, artists, favorites, recently played tracks, and search results.
+- **Highly customizable** - choose themes, accent colors, density, card style, player style, corners, background effects, font size, contrast, motion, and metadata visibility.
+- **Clear playback state** - the current song is visibly highlighted throughout the library.
+- **Large-library performance** - virtualized song lists, lazy artwork loading, indexed search, and background scanning.
+- **Room mode** - host or join a self-hosted listening room over LAN, VPN, or a forwarded TCP port.
+- **Offline mode** - disable online metadata requests whenever you want.
 
-## Requirements
+## Getting Started
 
-- Node.js 20 or newer.
-- Rust stable.
-- Platform prerequisites for Tauri 2:
-  - Windows: Microsoft C++ Build Tools and WebView2.
-  - Linux: WebKitGTK and common build packages. See the Tauri Linux prerequisites for your distribution.
+### Install on Windows
+
+Download the latest files from [GitHub Releases](https://github.com/loavy/LoavyPlayer/releases/latest):
+
+- `Loavy Player_3.0.0_x64-setup.exe` - recommended installer
+- `Loavy Player_3.0.0_x64_en-US.msi` - MSI package for managed installs
+
+After installing:
+
+1. Open **Settings**.
+2. Select **Add folder** and choose a folder containing music.
+3. Select **Scan** to build your local library.
+4. Open **Songs**, **Albums**, **Artists**, or **Folders** and start listening.
+
+Supported library formats include MP3, FLAC, WAV, OGG, and M4A.
+
+## Folder Playlists
+
+Loavy Player treats your existing folder structure as playlists.
+
+Open **Folders** to browse every configured music directory and its subfolders. Breadcrumb navigation makes it easy to move through your collection, and **Play folder** queues all indexed music inside the selected folder and its descendants.
+
+This works well for collections already organized by mood, artist, album, event, or custom playlist folder.
+
+## Customization
+
+The Appearance section in Settings includes:
+
+- Dark and light modes
+- Custom accent color
+- Compact, comfortable, and spacious layouts
+- Soft, flat, and glass card styles
+- Docked, floating, and compact player bars
+- Rounded, soft, and square corners
+- Ambient, subtle, and solid backgrounds
+- Adjustable font size
+- Optional cover art and file-format labels
+- High-contrast surfaces
+- Reduced motion
+
+Settings are saved locally and applied immediately.
+
+## Library And Metadata
+
+Loavy Player recursively scans selected folders, reads embedded tags and artwork, and stores the resulting library in a local SQLite database.
+
+The scanner reads:
+
+- Title, artist, album, and album artist
+- Genre, year, and track number
+- Duration and file information
+- Embedded cover artwork
+
+Scans run in the background, report progress, and can be cancelled from Settings. The app opens from its existing database and does not rescan your entire library on every launch.
+
+MusicBrainz and Cover Art Archive integrations provide a foundation for optional metadata enrichment. Enable offline mode to prevent online metadata requests.
+
+## Room Mode
+
+Room mode lets a host and guests synchronize playback without relying on a central Loavy Player service.
+
+The host can:
+
+- Create and stop a password-protected room
+- Share a LAN, VPN, or public address
+- See and remove connected guests
+- Allow or block guest playback control
+- Broadcast the current track and playback position
+
+Guests attempt to match the host's current song against their own local library. If no local match exists, Loavy Player can fall back to streaming the current song from the host.
+
+### Connecting
+
+| Situation                                   | Address to use                           |
+| ------------------------------------------- | ---------------------------------------- |
+| Testing on the same computer                | `127.0.0.1`                              |
+| Devices on the same Wi-Fi or LAN            | The LAN/VPN address shown in Room        |
+| Tailscale, ZeroTier, or another mesh VPN    | The host's VPN address                   |
+| Different internet connection without a VPN | Public address after TCP port forwarding |
+
+**Check only** verifies that an address, room name, and password work, then disconnects. **Join room** stays connected until the guest leaves, the host stops the room, or the host removes the guest.
+
+For public connections, forward the selected TCP port to the host computer and allow it through the firewall. A trusted LAN or mesh VPN is recommended. Stop the room when it is no longer needed.
 
 ## Development
+
+### Requirements
+
+- Node.js 20 or newer
+- Rust stable
+- [Tauri 2 platform prerequisites](https://v2.tauri.app/start/prerequisites/)
+
+### Run The Desktop App
 
 ```bash
 npm install
 npm run desktop:dev
 ```
 
-For frontend-only iteration:
+For frontend-only development:
 
 ```bash
 npm run dev
 ```
 
-## Build
+### Verify And Build
 
 ```bash
+npm run build
+cd src-tauri
+cargo check
+cd ..
 npm run desktop:build
 ```
 
-Tauri will place Windows installers or Linux packages under `src-tauri/target/release/bundle`.
-
-On Windows, the friendliest file to send testers is the NSIS installer:
+Desktop bundles are written to:
 
 ```text
-src-tauri/target/release/bundle/nsis/Loavy Player_3.0.0_x64-setup.exe
+src-tauri/target/release/bundle/
 ```
 
-The MSI installer is also available for managed installs:
+Attach generated installers to a GitHub Release instead of committing them to the repository.
 
-```text
-src-tauri/target/release/bundle/msi/Loavy Player_3.0.0_x64_en-US.msi
-```
+## Tech Stack
 
-Do not commit these built installers to GitHub unless you intentionally want binary releases in the repository. Prefer attaching them to a GitHub Release.
+| Layer                   | Technology                 |
+| ----------------------- | -------------------------- |
+| Desktop shell           | Tauri 2                    |
+| Interface               | React 18, TypeScript, Vite |
+| Native backend          | Rust                       |
+| Local database          | SQLite via rusqlite        |
+| Audio metadata          | lofty                      |
+| Icons                   | Lucide React               |
+| Async runtime and rooms | Tokio                      |
 
-## Folder Structure
+## Project Structure
 
 ```text
 src/
-  components/       shared React components
-  lib/              Tauri API client, playback engine, formatting helpers
-  views/            library and settings screens
+  components/       Shared React components and playback UI
+  lib/              Tauri API client, audio engine, and formatting helpers
+  views/            Songs, albums, artists, folders, rooms, and settings
+
 src-tauri/
-  src/audio/        future native playback/media-key backend
   src/db/           SQLite schema and queries
-  src/fetchers/     modular metadata provider system
-  src/library/      scanner, tag reader, cover extraction
-  src/room/         self-hosted Room/Jam protocol and LAN server
+  src/fetchers/     Metadata provider system
+  src/library/      Recursive scanner, tag reader, and cover extraction
+  src/room/         Self-hosted Room protocol and server
   src/commands.rs   Tauri command boundary
 ```
 
-## Fetcher Design
+## Privacy
 
-Each provider implements `MetadataFetcher` in `src-tauri/src/fetchers`. Providers declare capabilities such as album art, lyrics, biographies, genre tags, similar artists, or metadata correction. API-key providers should store user-supplied keys in the local `api_keys` table; private keys are never hardcoded.
+Loavy Player is designed around a local library:
 
-## Responsiveness Model
+- Music files are played directly from your computer.
+- Library metadata and settings are stored locally.
+- Online metadata requests can be disabled with offline mode.
+- Room mode is self-hosted by the user.
 
-- The app opens from the local SQLite database and does not rescan on startup.
-- Folder scans run in a background task and emit `library://scan-progress`, `library://scan-finished`, and `library://scan-error` events.
-- Scans can be cancelled from the Settings screen.
-- The songs view is virtualized so large libraries do not render every row at once.
-- Album art is loaded lazily from the local Tauri asset protocol.
-- Search is debounced in the UI and backed by indexed SQLite columns.
+## Contributing
 
-## Room / Jam Mode
+Contributions, bug reports, and feature ideas are welcome. Before submitting a change:
 
-The Room feature is designed as a self-hosted LAN/VPN system, not a cloud service. The host starts a local TCP control server and guests join with host address, port, room name, and password.
+1. Open an issue or describe the intended change clearly.
+2. Keep changes focused and consistent with the existing architecture.
+3. Run `npm run build` and `cargo check`.
+4. Include screenshots for visible interface changes.
 
-Current MVP implementation:
-
-- Host creates/stops a room from the Room view.
-- Host can choose a port and share LAN/VPN or public join info.
-- Host can see connected users and kick guests.
-- Host has separate switches for guest queue suggestions and guest song control.
-- Room name/password validation.
-- Join probe authenticates against a real local server.
-- Typed line-delimited JSON protocol.
-- Host periodically broadcasts playback state: current song metadata, position, play/pause, timestamp.
-- Guests receive playback state and try to match the same song in their own local library.
-- If guest song control is enabled, guests can request song changes; the host applies the request and broadcasts the new playback state.
-- Protocol includes queue and heartbeat message types so queue sync and reconnect logic can be added without rewriting the transport.
-
-For guests outside your home network, the host must either forward the chosen TCP port to the host PC or use a mesh/VPN tool such as Tailscale, ZeroTier, or Radmin VPN. There is no central relay server in the MVP.
-
-### Room networking guide
-
-The Room system has two separate actions:
-
-- **Check only** connects, validates the room name/password, then disconnects. It proves the address and password work, but the host will not keep seeing that user.
-- **Join room** connects and stays connected until the guest leaves, the host stops the room, or the host kicks the guest. This is the action that makes the guest appear in the host's connected user list.
-
-Playback sync in the current MVP:
-
-- The host broadcasts metadata and playback position.
-- The guest app searches its local SQLite library for a matching title/artist/album/duration.
-- If the matching song exists locally, the guest switches to it and gently corrects position drift.
-- If the guest does not have that song locally, the app falls back to streaming the current song from the host over the room connection.
-- If guest song control is disabled, guest attempts to change songs are blocked locally with an error message.
-- If guest song control is enabled and a guest scans a new folder, the guest asks the host to rescan its own configured folders too. The host cannot read the guest's files, but guests can still hear the host's current song through host streaming.
-
-Address choices:
-
-- **Same PC:** use `127.0.0.1`.
-- **Same Wi-Fi/LAN:** use the `LAN/VPN` address shown in the Room panel.
-- **VPN/mesh network:** use the IP address from Tailscale, ZeroTier, Radmin VPN, or a similar tool.
-- **Different internet without VPN:** use the `Public` address, but only after router port forwarding is configured.
-
-Port forwarding checklist:
-
-1. Start a room and choose a fixed TCP port, such as `39177`.
-2. In your router, forward TCP port `39177` to the host PC's LAN IP.
-3. Allow Loavy Player through Windows Firewall, or allow inbound TCP on that port.
-4. Ask someone outside your home network to join using the public address and the same port.
-5. Do not rely on testing your public IP from inside your own Wi-Fi. Many routers do not support NAT loopback, so that test can fail even when an outside friend can connect.
-
-Security notes:
-
-- Use a room password you do not reuse elsewhere.
-- Do not expose the room publicly unless you trust the people joining.
-- Stop the room when you are done testing.
-- If public hosting is unreliable, prefer Tailscale, ZeroTier, or Radmin VPN because they avoid most router/NAT issues.
-
-Room testing tips:
-
-- Same PC: join with `127.0.0.1` and the room port.
-- Another device on the same Wi-Fi/LAN: join with the LAN/VPN address shown in the Room panel.
-- Friend on a different internet connection: join with the public address after TCP port forwarding is configured on the host router.
-- Many routers do not support NAT loopback, so testing your own public address from the same PC or same Wi-Fi can fail even when outside connections would work.
-- If outside connections time out, check router port forwarding and Windows Firewall.
-
-Next Room step:
-
-- Add a persistent client listener in the UI.
-- Add `/stream/current` or a dedicated TCP audio stream endpoint with range/buffering support.
-- Add gentle drift correction and visible buffering/sync states.
-
-## Next Feature Pass
-
-- Playlist create/edit/delete and M3U import/export.
-- Lyrics view with LRCLIB synced/plain lyric fetches and local editing.
-- Favorites, recently played persistence, and queue editor.
-- Native media keys and optional native audio output device selection.
-- File watcher support for incremental automatic rescans.
-- Room audio streaming endpoint and persistent guest client playback.
-- Last.fm, Deezer, Spotify, Discogs, and optional Genius-safe providers.
+Use [GitHub Issues](https://github.com/loavy/LoavyPlayer/issues) to report bugs or suggest improvements.
