@@ -128,7 +128,7 @@ button, input, select { transition: border-color 120ms ease, background-color 12
 }
 
 .sidebar.compact { width: 74px; }
-.brand { display: flex; align-items: center; gap: 11px; font-weight: 800; margin: 4px 5px 28px; white-space: nowrap; letter-spacing: -0.02em; }
+.brand { display: flex; align-items: center; gap: 11px; font-weight: 800; margin: 4px 5px 28px; white-space: nowrap; letter-spacing: 0; }
 .brandMark, .artistAvatar {
   display: grid;
   place-items: center;
@@ -184,7 +184,7 @@ nav { display: grid; gap: 5px; }
 }
 .titleGroup { display: flex; align-items: center; gap: 14px; min-width: 0; }
 h1, h2, h3, p { margin: 0; }
-h1 { font-size: 27px; line-height: 1.1; font-weight: 800; letter-spacing: -0.04em; }
+h1 { font-size: 27px; line-height: 1.1; font-weight: 800; letter-spacing: 0; }
 .titleGroup p, .muted, .folderRow span, .fetcherRow span, .artistRow p, .mediaCard p, .mediaCard small { color: var(--muted); }
 .topMeta {
   display: flex;
@@ -410,9 +410,296 @@ h1 { font-size: 27px; line-height: 1.1; font-weight: 800; letter-spacing: -0.04e
 .emptyState h2 { color: var(--text); }
 
 .settingsPanel { padding: 18px; display: grid; gap: 15px; align-content: start; }
+.downloaderView {
+  width: min(820px, 100%);
+  height: 100%;
+  margin: 0 auto;
+  overflow: auto;
+  display: grid;
+  align-content: center;
+  gap: 22px;
+  padding: clamp(8px, 2vh, 24px) 0;
+}
+.brandMark { overflow: hidden; background: var(--panel-2); }
+.brandMark img { width: 100%; height: 100%; display: block; object-fit: cover; }
+.downloaderIntro {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 16px;
+}
+.downloaderMark {
+  width: 52px;
+  height: 52px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  color: #06110e;
+  background: var(--accent);
+  box-shadow: 0 12px 30px color-mix(in srgb, var(--accent) 20%, transparent);
+}
+.downloaderIntro > div:last-child { min-width: 0; }
+.downloaderIntro span {
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0;
+}
+.downloaderIntro h2 {
+  margin-top: 5px;
+  font-size: clamp(24px, 4vw, 38px);
+  line-height: 1.12;
+}
+.downloaderIntro p { margin-top: 8px; color: var(--muted); line-height: 1.5; }
+.downloaderStatus {
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 9px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--muted);
+  background: var(--panel);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.downloadSurface {
+  display: grid;
+  gap: 18px;
+  padding: clamp(18px, 3vw, 28px);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: 0 22px 56px var(--shadow);
+}
+.downloadMode {
+  width: fit-content;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(140px, 1fr));
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-2);
+}
+.downloadMode button {
+  min-height: 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 6px;
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+}
+.downloadMode button:hover { color: var(--text); }
+.downloadMode button.active {
+  color: #06110e;
+  background: var(--accent);
+  font-weight: 740;
+  box-shadow: 0 5px 14px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+.downloadField { display: grid; gap: 8px; min-width: 0; }
+.downloadField > span {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+.downloadField input {
+  min-width: 0;
+  width: 100%;
+  min-height: 46px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 13px;
+  color: var(--text);
+  background: var(--panel-2);
+  outline: 0;
+}
+.downloadField input:focus {
+  border-color: color-mix(in srgb, var(--accent) 58%, var(--border));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 13%, transparent);
+}
+.pathPicker { display: grid; grid-template-columns: minmax(0, 1fr) 46px; gap: 8px; }
+.borderedIconButton {
+  width: 46px;
+  height: 46px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-2);
+}
+.downloadProgress {
+  display: grid;
+  gap: 9px;
+  padding: 12px 0;
+}
+.progressTrack {
+  height: 6px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: var(--panel-3);
+}
+.progressTrack span {
+  display: block;
+  height: 100%;
+  min-width: 4px;
+  background: var(--accent);
+  transition: width 140ms ease;
+}
+.progressTrack.indeterminate span {
+  width: 36%;
+  animation: downloadIndeterminate 1.2s ease-in-out infinite;
+}
+.downloadProgressMeta {
+  display: flex;
+  justify-content: space-between;
+  align-items: end;
+  gap: 12px;
+  min-width: 0;
+  font-size: 13px;
+}
+.downloadProgressMeta > div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+.downloadProgressMeta > div > span {
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+.downloadProgressMeta strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.downloadProgressMeta > span { color: var(--muted); flex: 0 0 auto; }
+.downloadNotice {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 13px;
+}
+.downloadNotice > div { min-width: 0; flex: 1; }
+.downloadNotice strong,
+.downloadNotice span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.downloadNotice span { margin-top: 2px; color: var(--muted); }
+.downloadNotice.success { border-color: color-mix(in srgb, var(--accent) 34%, var(--border)); }
+.downloadNotice.success > svg { color: var(--accent); flex: 0 0 auto; }
+.downloadNotice.error {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 34%, var(--border));
+  background: color-mix(in srgb, var(--danger) 8%, var(--panel));
+}
+.downloadResult {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 13px;
+  border: 1px solid color-mix(in srgb, var(--accent) 34%, var(--border));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 7%, var(--panel-2));
+}
+.downloadResultHeader {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-width: 0;
+}
+.downloadResultHeader > svg { color: var(--accent); flex: 0 0 auto; }
+.downloadResultHeader > div { min-width: 0; flex: 1; }
+.downloadResultHeader strong,
+.downloadResultHeader span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.downloadResultHeader span { margin-top: 2px; color: var(--muted); font-size: 12px; }
+.downloadedFiles {
+  display: grid;
+  gap: 5px;
+  padding-top: 9px;
+  border-top: 1px solid var(--border);
+}
+.downloadedFiles span {
+  overflow: hidden;
+  padding-left: 31px;
+  color: var(--muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.downloadActions { display: flex; flex-wrap: wrap; gap: 9px; }
+@keyframes downloadIndeterminate {
+  from { transform: translateX(-110%); }
+  to { transform: translateX(300%); }
+}
+.settingsHero {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 18px 20px;
+  border: 1px solid var(--border);
+  border-radius: var(--surface-radius);
+  background: linear-gradient(140deg, color-mix(in srgb, var(--accent) 12%, var(--panel)), var(--panel));
+  box-shadow: 0 16px 42px var(--shadow);
+}
+.settingsHero .eyebrow {
+  display: inline-flex;
+  margin-bottom: 7px;
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+}
+.settingsHero h2 { font-size: 20px; font-weight: 760; margin-bottom: 6px; }
+.settingsHero p { color: var(--muted); max-width: 720px; }
+.settingsHeroChips { display: flex; flex-wrap: wrap; gap: 8px; }
+.settingsHeroChips .chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--panel) 82%, transparent);
+  color: var(--text);
+  font-size: 13px;
+}
 .settingsPanel header { display: flex; align-items: center; gap: 10px; }
 .settingsPanel header svg { color: var(--accent); }
 .settingsPanel h2 { font-size: 17px; font-weight: 740; }
+.settingsPanelIntro {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.settingsPanelIntro p { color: var(--muted); }
+.settingsMeta { display: flex; flex-wrap: wrap; gap: 6px; }
+.settingsMeta span {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--panel-2) 72%, transparent);
+  color: var(--muted);
+  font-size: 12px;
+}
 .settingsActions, .fetcherRow, .folderRow, .field, .toggleRow {
   display: flex;
   align-items: center;
@@ -420,6 +707,38 @@ h1 { font-size: 27px; line-height: 1.1; font-weight: 800; letter-spacing: -0.04e
   gap: 14px;
 }
 .settingsActions { flex-wrap: wrap; }
+.settingsGroup { display: grid; gap: 10px; }
+.settingsGroupHeader {
+  color: var(--faint);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+}
+.settingsGrid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+.settingsGrid .field { display: grid; gap: 8px; align-items: start; justify-content: stretch; }
+.settingsGrid .field .fieldMeta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+}
+.settingsGrid .field .fieldMeta small { color: var(--muted); }
+.toggleCard {
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 12px;
+  min-height: 54px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel-2);
+}
+.toggleCard span { display: grid; gap: 3px; }
+.toggleCard strong { font-size: 14px; }
+.toggleCard small { color: var(--muted); }
+.toggleCard input { width: 19px; height: 19px; accent-color: var(--accent); flex-shrink: 0; }
 .roomLayout .settingsPanel { min-width: 0; }
 .roomLayout .field {
   display: grid;
@@ -459,7 +778,7 @@ h1 { font-size: 27px; line-height: 1.1; font-weight: 800; letter-spacing: -0.04e
 .folderList, .fetcherList { display: grid; gap: 8px; }
 .folderRow, .fetcherRow {
   background: var(--panel-2);
-  border-radius: 8px;
+  border-radius: 10px;
   padding: 11px 12px;
   min-width: 0;
 }
@@ -480,8 +799,34 @@ h1 { font-size: 27px; line-height: 1.1; font-weight: 800; letter-spacing: -0.04e
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 13%, transparent);
   outline: 0;
 }
-.field input[type="color"] { width: 58px; height: 38px; padding: 4px; }
-.toggleRow input { width: 19px; height: 19px; accent-color: var(--accent); }
+.field input[type="color"] { width: 100%; min-height: 44px; padding: 4px; }
+.fetcherRow { align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.fetcherInfo { display: grid; gap: 4px; min-width: 0; flex: 1; }
+.fetcherHeading { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.providerBadge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+  background: color-mix(in srgb, var(--panel-3) 80%, transparent);
+}
+.providerBadge.needsKey {
+  color: var(--warning);
+  border-color: color-mix(in srgb, var(--warning) 32%, var(--border));
+  background: color-mix(in srgb, var(--warning) 16%, transparent);
+}
+.providerBadge.ready {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 24%, var(--border));
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.downloadMessage { margin-top: 2px; font-size: 13px; }
+.downloadMessage.success { color: var(--accent); }
+.downloadMessage.error { color: var(--danger); }
 .scanSummary { color: var(--accent); }
 .scanProgress { display: grid; gap: 7px; }
 .scanProgress div {
@@ -806,7 +1151,7 @@ input[type="range"] { width: 100%; accent-color: var(--accent); cursor: pointer;
 .playingStatus { display: flex; align-items: center; gap: 9px; color: rgba(255,255,255,.62); font-size: 11px; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; }
 .playingStatus span { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 5px color-mix(in srgb, var(--accent) 18%, transparent); }
 .heroTitleRow { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 24px; }
-.heroTitleRow h2 { overflow: hidden; font-size: clamp(34px, 5vw, 72px); line-height: .98; letter-spacing: -.065em; text-overflow: ellipsis; }
+.heroTitleRow h2 { overflow: hidden; font-size: clamp(34px, 5vw, 72px); line-height: .98; letter-spacing: 0; text-overflow: ellipsis; }
 .heroTitleRow p { margin-top: 13px; color: rgba(255,255,255,.66); font-size: clamp(17px, 2vw, 24px); }
 .heroFavorite { width: 52px; height: 52px; }
 .heroFavorite.active { color: #ff83a7; background: rgba(255,110,155,.13); }
@@ -862,6 +1207,17 @@ input[type="range"] { width: 100%; accent-color: var(--accent); cursor: pointer;
   .topBar { padding: 12px 14px; gap: 12px; }
   h1 { font-size: 22px; }
   .contentArea { padding: 12px; }
+  .downloaderView { align-content: start; padding: 4px 0 16px; }
+  .downloaderIntro { grid-template-columns: 42px minmax(0, 1fr); gap: 12px; }
+  .downloaderMark { width: 42px; height: 42px; }
+  .downloaderStatus { grid-column: 1 / -1; width: fit-content; }
+  .downloadSurface { padding: 16px; }
+  .downloadMode { width: 100%; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .downloadProgressMeta { display: grid; gap: 5px; }
+  .downloadNotice { align-items: flex-start; flex-wrap: wrap; }
+  .downloadNotice .secondaryAction { width: 100%; }
+  .downloadResultHeader { align-items: flex-start; flex-wrap: wrap; }
+  .downloadResultHeader .secondaryAction { width: 100%; }
   .settingsStack { grid-template-columns: 1fr; }
   .settingsStack .settingsPanel:last-child { grid-column: auto; }
   .playlistCreateRow,

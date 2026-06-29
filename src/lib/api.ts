@@ -2,8 +2,11 @@ import { invoke } from "@tauri-apps/api/core";
 import type {
   Album,
   Artist,
+  DownloadResult,
+  DownloaderStatus,
   FetcherDescriptor,
   MusicFolder,
+  MediaDownloadRequest,
   RoomCreateRequest,
   RoomClientStatus,
   RoomJoinRequest,
@@ -38,6 +41,12 @@ export const api = {
   listPlaylistTracks: (playlistId: number) =>
     invoke<Track[]>("list_playlist_tracks", { playlistId }),
   listFetchers: () => invoke<FetcherDescriptor[]>("list_fetchers"),
+  downloadMedia: (request: MediaDownloadRequest) =>
+    invoke<DownloadResult>("download_media", { request }),
+  getDownloaderStatus: () => invoke<DownloaderStatus>("get_downloader_status"),
+  cancelMediaDownload: () => invoke<void>("cancel_media_download"),
+  selectDownloadFolder: () => invoke<string | null>("select_download_folder"),
+  revealDownload: (path: string) => invoke<void>("reveal_download", { path }),
   setSetting: (key: string, value: string) => invoke<void>("set_setting", { update: { key, value } }),
   getSetting: (key: string) => invoke<string | null>("get_setting", { key }),
   setApiKey: (provider: string, keyValue: string) =>

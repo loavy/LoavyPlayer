@@ -9,6 +9,7 @@ import { SettingsView } from "./views/SettingsView";
 import { SongsView } from "./views/SongsView";
 import { RoomView } from "./views/RoomView";
 import { PlaylistsView } from "./views/PlaylistsView";
+import { DownloaderView } from "./views/DownloaderView";
 import { api } from "./lib/api";
 import { useAudio } from "./lib/useAudio";
 import { displayAlbum, displayArtist, displayTrackTitle } from "./lib/format";
@@ -436,6 +437,7 @@ function App() {
     favorites: "Favorites",
     search: "Search",
     room: "Room",
+    downloader: "Downloader",
     settings: "Settings"
   }[activeView];
 
@@ -506,6 +508,17 @@ function App() {
       );
     }
     if (activeView === "room") return <RoomView onError={setError} />;
+    if (activeView === "downloader") {
+      return (
+        <DownloaderView
+          onDownloadMedia={api.downloadMedia}
+          onGetStatus={api.getDownloaderStatus}
+          onCancel={api.cancelMediaDownload}
+          onSelectFolder={api.selectDownloadFolder}
+          onRevealDownload={api.revealDownload}
+        />
+      );
+    }
     if (activeView === "playlists") {
       return <PlaylistsView folders={folders} tracks={tracks} />;
     }

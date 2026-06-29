@@ -1,9 +1,9 @@
 import {
   Album,
+  Download,
   Heart,
   History,
   FolderTree,
-  Mic2,
   Music2,
   Search,
   Settings,
@@ -12,6 +12,7 @@ import {
   type LucideIcon
 } from "lucide-react";
 import type { ViewKey } from "../types";
+import loavyIcon from "../assets/loavy-icon.png";
 
 const items: Array<{ key: ViewKey; label: string; icon: LucideIcon }> = [
   { key: "songs", label: "Songs", icon: Music2 },
@@ -22,6 +23,7 @@ const items: Array<{ key: ViewKey; label: string; icon: LucideIcon }> = [
   { key: "favorites", label: "Favorites", icon: Heart },
   { key: "search", label: "Search", icon: Search },
   { key: "room", label: "Room", icon: Radio },
+  { key: "downloader", label: "Downloader", icon: Download },
   { key: "settings", label: "Settings", icon: Settings }
 ];
 
@@ -35,7 +37,7 @@ export function Sidebar({ active, onSelect, compact }: Props) {
   return (
     <aside className={compact ? "sidebar compact" : "sidebar"}>
       <div className="brand">
-        <div className="brandMark"><Mic2 size={19} /></div>
+        <div className="brandMark"><img src={loavyIcon} alt="" /></div>
         {!compact && <span>Loavy Player</span>}
       </div>
       <nav>

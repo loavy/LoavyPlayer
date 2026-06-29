@@ -1,8 +1,9 @@
 use std::sync::atomic::Ordering;
 
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::{
+    downloader::{self, DownloadResult, DownloaderStatus, MediaDownloadRequest},
     fetchers::{self, FetchContext, FetchRequest},
     library,
     models::{
@@ -224,6 +225,106 @@ pub async fn set_api_key(state: State<'_, AppState>, update: ApiKeyUpdate) -> Co
 #[tauri::command]
 pub async fn list_fetchers() -> CommandResult<Vec<FetcherDescriptor>> {
     Ok(fetchers::descriptors())
+}
+
+#[tauri::command]
+pub async fn download_media(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    request: MediaDownloadRequest,
+) -> CommandResult<DownloadResult> {
+    if !state.try_start_download() {
+        return Err("A download is already running.".to_string());
+    }
+
+    state.download_cancel.store(false, Ordering::SeqCst);
+    let default_destination = app
+        .path()
+        .download_dir()
+        .unwrap_or_else(|_| state.app_data_dir.join("downloads"))
+        .join("Loavy Player");
+    let progress_app = app.clone();
+    let cancel = state.download_cancel.clone();
+
+    let result = downloader::download_media(
+        request,
+        &state.app_data_dir,
+        &default_destination,
+        cancel,
+        move |progress| {
+            let _ = progress_app.emit("download://progress", progress);
+        },
+    )
+    .await;
+
+    state.download_running.store(false, Ordering::SeqCst);
+    state.download_cancel.store(false, Ordering::SeqCst);
+    result.map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+pub async fn get_downloader_status(state: State<'_, AppState>) -> CommandResult<DownloaderStatus> {
+    Ok(downloader::downloader_status(
+        &state.app_data_dir,
+        state.download_running.load(Ordering::SeqCst),
+    )
+    .await)
+}
+
+#[tauri::command]
+pub async fn cancel_media_download(state: State<'_, AppState>) -> CommandResult<()> {
+    state.download_cancel.store(true, Ordering::SeqCst);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn select_download_folder(app: AppHandle) -> CommandResult<Option<String>> {
+    let mut dialog = rfd::AsyncFileDialog::new();
+    if let Ok(download_dir) = app.path().download_dir() {
+        dialog = dialog.set_directory(download_dir);
+    }
+
+    Ok(dialog
+        .pick_folder()
+        .await
+        .map(|folder| folder.path().to_string_lossy().to_string()))
+}
+
+#[tauri::command]
+pub fn reveal_download(path: String) -> CommandResult<()> {
+    let path = std::path::PathBuf::from(path);
+    if !path.exists() {
+        return Err("The download location no longer exists.".to_string());
+    }
+
+    reveal_file(&path).map_err(|err| err.to_string())
+}
+
+#[cfg(target_os = "windows")]
+fn reveal_file(path: &std::path::Path) -> std::io::Result<()> {
+    let mut command = std::process::Command::new("explorer");
+    if path.is_file() {
+        command.arg("/select,");
+    }
+    command.arg(path).spawn()?;
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn reveal_file(path: &std::path::Path) -> std::io::Result<()> {
+    let mut command = std::process::Command::new("open");
+    if path.is_file() {
+        command.arg("-R");
+    }
+    command.arg(path).spawn()?;
+    Ok(())
+}
+
+#[cfg(all(unix, not(target_os = "macos")))]
+fn reveal_file(path: &std::path::Path) -> std::io::Result<()> {
+    let folder = path.parent().unwrap_or(path);
+    std::process::Command::new("xdg-open").arg(folder).spawn()?;
+    Ok(())
 }
 
 #[tauri::command]

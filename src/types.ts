@@ -83,9 +83,42 @@ export type ViewKey =
   | "favorites"
   | "search"
   | "room"
+  | "downloader"
   | "settings";
 
 export type RepeatMode = "off" | "all" | "one";
+
+export type DownloadMode = "single" | "playlist";
+
+export type MediaDownloadRequest = {
+  url: string;
+  destinationDir?: string | null;
+  mode: DownloadMode;
+};
+
+export type DownloadProgress = {
+  phase: "installing" | "starting" | "downloading";
+  percent: number | null;
+  bytesWritten: number;
+  totalBytes: number | null;
+  title: string;
+  itemIndex: number | null;
+  itemCount: number | null;
+};
+
+export type DownloadResult = {
+  url: string;
+  destination: string;
+  files: string[];
+  downloadedCount: number;
+  mode: DownloadMode;
+};
+
+export type DownloaderStatus = {
+  installed: boolean;
+  version: string | null;
+  running: boolean;
+};
 
 export type RoomCreateRequest = {
   name: string;

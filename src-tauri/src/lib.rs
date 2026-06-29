@@ -1,6 +1,7 @@
 mod audio;
 mod commands;
 mod db;
+mod downloader;
 mod fetchers;
 mod library;
 mod models;
@@ -39,6 +40,11 @@ pub fn run() {
             commands::set_api_key,
             commands::list_fetchers,
             commands::fetch_metadata,
+            commands::download_media,
+            commands::get_downloader_status,
+            commands::cancel_media_download,
+            commands::select_download_folder,
+            commands::reveal_download,
             commands::create_room,
             commands::stop_room,
             commands::get_room_status,

@@ -18,6 +18,8 @@ pub struct AppState {
     pub app_data_dir: PathBuf,
     pub scan_running: Arc<AtomicBool>,
     pub scan_cancel: Arc<AtomicBool>,
+    pub download_running: Arc<AtomicBool>,
+    pub download_cancel: Arc<AtomicBool>,
     pub room: RoomManager,
     pub room_client: RoomClientManager,
 }
@@ -37,6 +39,8 @@ impl AppState {
             app_data_dir,
             scan_running: Arc::new(AtomicBool::new(false)),
             scan_cancel: Arc::new(AtomicBool::new(false)),
+            download_running: Arc::new(AtomicBool::new(false)),
+            download_cancel: Arc::new(AtomicBool::new(false)),
             room: RoomManager::new(),
             room_client: RoomClientManager::new(),
         })
@@ -48,4 +52,9 @@ impl AppState {
             .is_ok()
     }
 
+    pub fn try_start_download(&self) -> bool {
+        self.download_running
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .is_ok()
+    }
 }

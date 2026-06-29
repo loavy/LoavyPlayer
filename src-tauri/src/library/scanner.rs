@@ -25,7 +25,9 @@ use crate::{
     models::{MusicFolder, ScanProgress, ScanSummary, Track},
 };
 
-const AUDIO_EXTENSIONS: &[&str] = &["mp3", "flac", "wav", "ogg", "m4a"];
+const AUDIO_EXTENSIONS: &[&str] = &[
+    "mp3", "flac", "wav", "ogg", "oga", "opus", "m4a", "aac",
+];
 
 pub fn scan_library(db: &Database, app_data_dir: &Path) -> Result<ScanSummary> {
     scan_library_with_progress(db, app_data_dir, Arc::new(AtomicBool::new(false)), |_| {})
@@ -309,4 +311,20 @@ fn extract_cover(
     }
 
     Ok(Some(cover_path.to_string_lossy().to_string()))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use super::is_audio_file;
+
+    #[test]
+    fn recognizes_supported_open_audio_extensions() {
+        assert!(is_audio_file(Path::new("track.opus")));
+        assert!(is_audio_file(Path::new("track.oga")));
+        assert!(is_audio_file(Path::new("track.aac")));
+        assert!(is_audio_file(Path::new("TRACK.OPUS")));
+        assert!(!is_audio_file(Path::new("track.webm")));
+    }
 }

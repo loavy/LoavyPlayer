@@ -1,192 +1,168 @@
 # Loavy Player
 
-**A beautiful, local-first desktop music player built for your own library.**
+Loavy Player is a local-first desktop music player for Windows, built with Tauri, Rust, React, and TypeScript. It scans music already on your computer, reads embedded metadata and artwork, and keeps the library in a local SQLite database.
 
-Loavy Player organizes and plays music directly from folders on your computer. It combines a polished, customizable interface with fast local scanning, folder-based playlists, immersive playback, and optional self-hosted listening rooms.
+[Download the latest release](https://github.com/loavy/LoavyPlayer/releases/latest) | [Report a bug](https://github.com/loavy/LoavyPlayer/issues)
 
-[Download the latest release](https://github.com/loavy/LoavyPlayer/releases/latest) | [Report an issue](https://github.com/loavy/LoavyPlayer/issues)
+## What It Does
 
-## Highlights
+- Plays MP3, FLAC, WAV, OGG/OGA, Opus, M4A, and AAC files from local folders.
+- Browses songs, albums, artists, favorites, recent tracks, and folder playlists.
+- Reads embedded tags and cover art without uploading the library.
+- Provides a fullscreen Now Playing view and customizable player layout.
+- Downloads a single song or a complete playlist with yt-dlp.
+- Hosts self-managed listening rooms for LAN, VPN, or port-forwarded connections.
+- Supports dark and light themes, density controls, reduced motion, and high contrast.
 
-- **Local-first library** - your music, metadata, artwork, and settings stay on your computer.
-- **Immersive Now Playing** - large artwork, ambient background colors, complete playback controls, and true fullscreen mode.
-- **Folder playlists** - browse existing music folders like a file manager and play an entire folder without recreating it as a playlist.
-- **Fast library browsing** - explore songs, albums, artists, favorites, recently played tracks, and search results.
-- **Highly customizable** - choose themes, accent colors, density, card style, player style, corners, background effects, font size, contrast, motion, and metadata visibility.
-- **Clear playback state** - the current song is visibly highlighted throughout the library.
-- **Large-library performance** - virtualized song lists, lazy artwork loading, indexed search, and background scanning.
-- **Room mode** - host or join a self-hosted listening room over LAN, VPN, or a forwarded TCP port.
-- **Offline mode** - disable online metadata requests whenever you want.
+## Install On Windows
 
-## Getting Started
+Download the setup file from [GitHub Releases](https://github.com/loavy/LoavyPlayer/releases/latest):
 
-### Install on Windows
+- `Loavy Player_4.1.1_x64-setup.exe`
 
-Download the latest files from [GitHub Releases](https://github.com/loavy/LoavyPlayer/releases/latest):
+During setup, Loavy asks whether to install optional **Tools**. Choosing **Yes** opens the official Microsoft Store listing for Web Media Extensions after Loavy is installed. This adds Windows support for OGG, Opus, and related web media formats. Choosing **No** skips it without affecting the main installation.
 
-- `Loavy Player_3.0.0_x64-setup.exe` - recommended installer
-- `Loavy Player_3.0.0_x64_en-US.msi` - MSI package for managed installs
-
-After installing:
+After installation:
 
 1. Open **Settings**.
-2. Select **Add folder** and choose a folder containing music.
-3. Select **Scan** to build your local library.
-4. Open **Songs**, **Albums**, **Artists**, or **Folders** and start listening.
+2. Select **Add folder** and choose a music folder.
+3. Select **Scan**.
+4. Open **Songs**, **Albums**, **Artists**, or **Folders**.
 
-Supported library formats include MP3, FLAC, WAV, OGG, and M4A.
+The first scan can take a little longer when a folder contains many files or large embedded covers. Later launches use the saved database and do not automatically rebuild the whole library.
+
+## Downloader
+
+Open **Downloader**, select **Single song** or **Playlist**, paste a supported media URL, and start the download. The default destination is:
+
+```text
+Downloads/Loavy Player
+```
+
+Use the folder button beside **Save to** to choose another destination. Loavy asks yt-dlp for the best available audio and prefers M4A, which the player can scan directly. Playlist downloads are placed in a folder named after the playlist and prefixed with track numbers.
+
+Loavy downloads the official Windows `yt-dlp` executable on first use and stores it in the app-data `tools` folder. This one-time setup is approximately 18 MB. See the [yt-dlp supported sites list](https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md) for extractor coverage.
+
+Recent yt-dlp versions recommend a JavaScript runtime for full YouTube support. Loavy automatically uses Node.js when version 22 or newer is installed; many downloads still work without it, but some YouTube formats may be unavailable.
+
+The downloader does not bypass subscriptions, DRM, private access, or regional restrictions. Only download media you own or have permission to save, and follow the source website's terms.
+
+To add a downloaded track to the library, save it inside a configured music folder and run **Scan** from Settings.
 
 ## Folder Playlists
 
-Loavy Player treats your existing folder structure as playlists.
+The **Folders** view uses your existing directory structure as a set of playlists. Breadcrumbs navigate subfolders, and **Play folder** queues indexed tracks from the selected folder and its descendants.
 
-Open **Folders** to browse every configured music directory and its subfolders. Breadcrumb navigation makes it easy to move through your collection, and **Play folder** queues all indexed music inside the selected folder and its descendants.
+## Listening Rooms
 
-This works well for collections already organized by mood, artist, album, event, or custom playlist folder.
+A host can create a password-protected room, share playback state, allow or block guest controls, and remove connected guests. Guests first match the host track against their local library; when no match exists, Loavy can stream the current host file.
 
-## Customization
+| Connection | Host address |
+| --- | --- |
+| Same computer | `127.0.0.1` |
+| Same Wi-Fi or LAN | The host's LAN address |
+| Tailscale, ZeroTier, or another VPN | The host's VPN address |
+| Public internet | Public address with the selected TCP port forwarded |
 
-The Appearance section in Settings includes:
+Use **Check only** to verify the address, room name, and password without staying connected. A trusted LAN or mesh VPN is recommended. Stop the room when it is no longer needed.
 
-- Dark and light modes
-- Custom accent color
-- Compact, comfortable, and spacious layouts
-- Soft, flat, and glass card styles
-- Docked, floating, and compact player bars
-- Rounded, soft, and square corners
-- Ambient, subtle, and solid backgrounds
-- Adjustable font size
-- Optional cover art and file-format labels
-- High-contrast surfaces
-- Reduced motion
+## Privacy
 
-Settings are saved locally and applied immediately.
-
-## Library And Metadata
-
-Loavy Player recursively scans selected folders, reads embedded tags and artwork, and stores the resulting library in a local SQLite database.
-
-The scanner reads:
-
-- Title, artist, album, and album artist
-- Genre, year, and track number
-- Duration and file information
-- Embedded cover artwork
-
-Scans run in the background, report progress, and can be cancelled from Settings. The app opens from its existing database and does not rescan your entire library on every launch.
-
-MusicBrainz and Cover Art Archive integrations provide a foundation for optional metadata enrichment. Enable offline mode to prevent online metadata requests.
-
-## Room Mode
-
-Room mode lets a host and guests synchronize playback without relying on a central Loavy Player service.
-
-The host can:
-
-- Create and stop a password-protected room
-- Share a LAN, VPN, or public address
-- See and remove connected guests
-- Allow or block guest playback control
-- Broadcast the current track and playback position
-
-Guests attempt to match the host's current song against their own local library. If no local match exists, Loavy Player can fall back to streaming the current song from the host.
-
-### Connecting
-
-| Situation                                   | Address to use                           |
-| ------------------------------------------- | ---------------------------------------- |
-| Testing on the same computer                | `127.0.0.1`                              |
-| Devices on the same Wi-Fi or LAN            | The LAN/VPN address shown in Room        |
-| Tailscale, ZeroTier, or another mesh VPN    | The host's VPN address                   |
-| Different internet connection without a VPN | Public address after TCP port forwarding |
-
-**Check only** verifies that an address, room name, and password work, then disconnects. **Join room** stays connected until the guest leaves, the host stops the room, or the host removes the guest.
-
-For public connections, forward the selected TCP port to the host computer and allow it through the firewall. A trusted LAN or mesh VPN is recommended. Stop the room when it is no longer needed.
+- Audio is read directly from local storage.
+- Library data and settings are stored on the device.
+- Offline mode disables optional online metadata requests.
+- Downloader requests are made by yt-dlp to the supplied site and its media hosts; the first run also downloads yt-dlp from GitHub.
+- Rooms are hosted by the user; Loavy does not provide a central room service.
 
 ## Development
 
 ### Requirements
 
-- Node.js 20 or newer
-- Rust stable
-- [Tauri 2 platform prerequisites](https://v2.tauri.app/start/prerequisites/)
+- Node.js 20 or newer.
+- Rust stable with the MSVC toolchain.
+- Microsoft C++ Build Tools and WebView2, as required by [Tauri 2 on Windows](https://v2.tauri.app/start/prerequisites/).
 
-### Run The Desktop App
+Install dependencies and run the desktop app:
 
-```bash
+```powershell
 npm install
 npm run desktop:dev
 ```
 
-For frontend-only development:
+Run only the browser frontend:
 
-```bash
+```powershell
 npm run dev
 ```
 
-### Verify And Build
+The browser-only frontend cannot call native library, room, dialog, or downloader commands. Use `desktop:dev` to test the complete app.
 
-```bash
+### Verify
+
+```powershell
 npm run build
-cd src-tauri
-cargo check
-cd ..
+cargo test --manifest-path src-tauri/Cargo.toml
+```
+
+### Build Installers
+
+```powershell
 npm run desktop:build
 ```
 
-Desktop bundles are written to:
+Generated Windows bundles are written under:
 
 ```text
-src-tauri/target/release/bundle/
+src-tauri/target/release/bundle/nsis/
+src-tauri/target/release/bundle/msi/
 ```
 
-Attach generated installers to a GitHub Release instead of committing them to the repository.
-
-## Tech Stack
-
-| Layer                   | Technology                 |
-| ----------------------- | -------------------------- |
-| Desktop shell           | Tauri 2                    |
-| Interface               | React 18, TypeScript, Vite |
-| Native backend          | Rust                       |
-| Local database          | SQLite via rusqlite        |
-| Audio metadata          | lofty                      |
-| Icons                   | Lucide React               |
-| Async runtime and rooms | Tokio                      |
-
-## Project Structure
+## Project Layout
 
 ```text
 src/
-  components/       Shared React components and playback UI
-  lib/              Tauri API client, audio engine, and formatting helpers
-  views/            Songs, albums, artists, folders, rooms, and settings
+  components/        Shared navigation and playback UI
+  lib/               Tauri API client and audio helpers
+  views/             Library, downloader, room, and settings views
 
-src-tauri/
-  src/db/           SQLite schema and queries
-  src/fetchers/     Metadata provider system
-  src/library/      Recursive scanner, tag reader, and cover extraction
-  src/room/         Self-hosted Room protocol and server
-  src/commands.rs   Tauri command boundary
+src-tauri/src/
+  db/                SQLite schema and queries
+  downloader.rs      Managed yt-dlp process and progress parser
+  library/           Folder scanner, tags, and artwork
+  room/              Host and guest room protocol
+  commands.rs        Tauri command boundary
 ```
 
-## Privacy
+## Troubleshooting
 
-Loavy Player is designed around a local library:
+**The app does not show a new file**
 
-- Music files are played directly from your computer.
-- Library metadata and settings are stored locally.
-- Online metadata requests can be disabled with offline mode.
-- Room mode is self-hosted by the user.
+Make sure the file is inside a configured music folder, uses a supported format, and run **Scan** again.
+
+**A YouTube download reports missing formats**
+
+Install Node.js 22 or newer and restart Loavy. yt-dlp uses it for newer YouTube JavaScript challenges.
+
+**An Opus or OGG track is indexed but does not play**
+
+Install Microsoft's [Web Media Extensions](https://apps.microsoft.com/detail/9n5tdp8vcmhs). The standard setup installer can open this listing through its optional Tools prompt.
+
+**A playlist finishes with fewer songs than expected**
+
+Private, deleted, region-blocked, or otherwise unavailable entries are skipped so the rest of the playlist can finish.
+
+**A website login is required**
+
+Loavy does not import browser cookies or account credentials. Use a public URL that yt-dlp can access without authentication.
+
+**The frontend build reports `crypto.getRandomValues`**
+
+Upgrade to Node.js 20 or newer, reopen the terminal, and run `npm install` again.
+
+**`cargo` is not recognized**
+
+Install Rust with [rustup](https://rustup.rs/), select the stable MSVC toolchain, and reopen the terminal.
 
 ## Contributing
 
-Contributions, bug reports, and feature ideas are welcome. Before submitting a change:
-
-1. Open an issue or describe the intended change clearly.
-2. Keep changes focused and consistent with the existing architecture.
-3. Run `npm run build` and `cargo check`.
-4. Include screenshots for visible interface changes.
-
-Use [GitHub Issues](https://github.com/loavy/LoavyPlayer/issues) to report bugs or suggest improvements.
+Keep changes focused and consistent with the existing architecture. Before opening a pull request, run the frontend build and Rust tests, and include screenshots for visible interface changes.
