@@ -32,6 +32,8 @@ export function NowPlayingView({ onClose, onToggleFavorite }: Props) {
   const favorite = Boolean(audio.current?.favorite);
   const coverUrl = audio.current?.coverPath ? convertFileSrc(audio.current.coverPath) : undefined;
   const repeatIcon = audio.repeat === "one" ? <Repeat1 size={20} /> : <Repeat size={20} />;
+  const trackTitle = audio.current ? displayTrackTitle(audio.current) : "Nothing playing yet";
+  const titleSize = titleSizeClass(trackTitle);
 
   useEffect(() => {
     function onFullscreenChange() {
@@ -91,7 +93,7 @@ export function NowPlayingView({ onClose, onToggleFavorite }: Props) {
           <div className="playingStatus"><span /> {audio.playing ? "Playing now" : "Paused"}</div>
           <div className="heroTitleRow">
             <div>
-              <h2>{audio.current ? displayTrackTitle(audio.current) : "Nothing playing yet"}</h2>
+              <h2 className={titleSize} title={trackTitle}>{trackTitle}</h2>
               <p>{audio.current ? displayArtist(audio.current.artist) : "Choose a song from your library"}</p>
             </div>
             <button
@@ -147,4 +149,12 @@ export function NowPlayingView({ onClose, onToggleFavorite }: Props) {
       </main>
     </div>
   );
+}
+
+function titleSizeClass(title: string) {
+  const length = Array.from(title.trim()).length;
+  if (length > 100) return "titleExtraLong";
+  if (length > 68) return "titleLong";
+  if (length > 38) return "titleMedium";
+  return "titleShort";
 }

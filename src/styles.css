@@ -1147,13 +1147,33 @@ input[type="range"] { width: 100%; accent-color: var(--accent); cursor: pointer;
 }
 .nowPlayingArtwork .cover.placeholder { min-height: 280px; background: rgba(255,255,255,.08); }
 .artworkGlow { position: absolute; inset: 16% 5% -8%; border-radius: 40%; background: var(--accent); filter: blur(70px); opacity: .18; }
-.nowPlayingDetails { min-width: 0; display: grid; gap: clamp(18px, 3vh, 30px); }
+.nowPlayingDetails {
+  min-width: 0;
+  min-height: 0;
+  max-height: 100%;
+  overflow-y: auto;
+  display: grid;
+  gap: clamp(18px, 3vh, 30px);
+  padding: 4px 10px 4px 0;
+  scrollbar-gutter: stable;
+}
 .playingStatus { display: flex; align-items: center; gap: 9px; color: rgba(255,255,255,.62); font-size: 11px; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; }
 .playingStatus span { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 5px color-mix(in srgb, var(--accent) 18%, transparent); }
-.heroTitleRow { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 24px; }
-.heroTitleRow h2 { overflow: hidden; font-size: clamp(34px, 5vw, 72px); line-height: .98; letter-spacing: 0; text-overflow: ellipsis; }
-.heroTitleRow p { margin-top: 13px; color: rgba(255,255,255,.66); font-size: clamp(17px, 2vw, 24px); }
+.heroTitleRow { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 24px; }
+.heroTitleRow h2 {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  text-wrap: balance;
+  line-height: 1.02;
+  letter-spacing: 0;
+}
+.heroTitleRow h2.titleShort { font-size: 64px; }
+.heroTitleRow h2.titleMedium { font-size: 50px; line-height: 1.04; }
+.heroTitleRow h2.titleLong { font-size: 39px; line-height: 1.06; }
+.heroTitleRow h2.titleExtraLong { font-size: 31px; line-height: 1.08; }
+.heroTitleRow p { margin-top: 13px; color: rgba(255,255,255,.66); font-size: 22px; }
 .heroFavorite { width: 52px; height: 52px; }
+.heroTitleRow .heroFavorite { margin-top: 5px; }
 .heroFavorite.active { color: #ff83a7; background: rgba(255,110,155,.13); }
 .heroAlbum { display: flex; align-items: center; gap: 9px; color: rgba(255,255,255,.52); font-size: 13px; }
 .heroAlbum span + span { border-left: 1px solid rgba(255,255,255,.2); padding-left: 9px; }
@@ -1242,9 +1262,12 @@ input[type="range"] { width: 100%; accent-color: var(--accent); cursor: pointer;
   .volume input { max-width: 180px; }
   .nowPlayingStage { overflow: auto; grid-template-columns: 1fr; align-content: start; gap: 28px; padding: 8px 24px 34px; }
   .nowPlayingArtwork { width: min(68vw, 360px); justify-self: center; }
-  .nowPlayingDetails { width: 100%; gap: 18px; }
-  .heroTitleRow h2 { font-size: clamp(30px, 10vw, 46px); }
-  .heroTitleRow p { margin-top: 8px; }
+  .nowPlayingDetails { width: 100%; max-height: none; overflow: visible; gap: 18px; padding-right: 0; }
+  .heroTitleRow h2.titleShort { font-size: 42px; }
+  .heroTitleRow h2.titleMedium { font-size: 35px; }
+  .heroTitleRow h2.titleLong { font-size: 29px; }
+  .heroTitleRow h2.titleExtraLong { font-size: 24px; }
+  .heroTitleRow p { margin-top: 8px; font-size: 18px; }
   .playingStatus, .heroAlbum { justify-content: center; }
 }
 
@@ -1261,4 +1284,12 @@ input[type="range"] { width: 100%; accent-color: var(--accent); cursor: pointer;
   .nowPlayingDetails { gap: 13px; }
   .heroPlayButton { width: 64px; height: 64px; }
   .heroControls { grid-template-columns: 46px 54px 64px 54px 46px; }
+}
+
+@media (min-width: 761px) and (max-height: 720px) {
+  .heroTitleRow h2.titleShort { font-size: 54px; }
+  .heroTitleRow h2.titleMedium { font-size: 44px; }
+  .heroTitleRow h2.titleLong { font-size: 35px; }
+  .heroTitleRow h2.titleExtraLong { font-size: 28px; }
+  .heroTitleRow p { font-size: 20px; }
 }
