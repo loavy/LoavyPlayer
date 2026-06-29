@@ -1,4 +1,10 @@
-# Loavy Player
+<div align="center">
+
+  <img width="300" alt="icon-master" src="https://github.com/user-attachments/assets/c7a983d3-9a3d-4fee-b52b-44439e065b30" />
+  
+  # Loavy Player
+
+</div>
 
 Loavy Player is a local-first desktop music player for Windows, built with Tauri, Rust, React, and TypeScript. It scans music already on your computer, reads embedded metadata and artwork, and keeps the library in a local SQLite database.
 
