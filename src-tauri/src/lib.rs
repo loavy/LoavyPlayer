@@ -8,17 +8,37 @@ mod models;
 mod room;
 mod state;
 
+use std::sync::atomic::Ordering;
+
 use state::AppState;
-use tauri::Manager;
+use tauri::{Manager, WindowEvent};
 
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let state = AppState::initialize(&app.handle())?;
+            let background_mode = state.background_mode.load(Ordering::SeqCst);
             app.manage(state);
+            commands::sync_background_tray(&app.handle(), background_mode)?;
             Ok(())
         })
+        .on_window_event(|window, event| {
+            if window.label() == "main"
+                && matches!(event, WindowEvent::CloseRequested { .. })
+                && window
+                    .state::<AppState>()
+                    .background_mode
+                    .load(Ordering::SeqCst)
+            {
+                if let WindowEvent::CloseRequested { api, .. } = event {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+            }
+        })
         .invoke_handler(tauri::generate_handler![
+            commands::set_background_mode,
             commands::select_music_folder,
             commands::list_music_folders,
             commands::remove_music_folder,

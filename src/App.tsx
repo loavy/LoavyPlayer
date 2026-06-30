@@ -97,6 +97,7 @@ function App() {
   const [highContrast, setHighContrast] = useState(localStorage.getItem("loavy.highContrast") === "true");
   const [showTrackFormat, setShowTrackFormat] = useState(localStorage.getItem("loavy.showTrackFormat") !== "false");
   const [offlineMode, setOfflineMode] = useState(localStorage.getItem("loavy.offlineMode") === "true");
+  const [backgroundMode, setBackgroundMode] = useState(false);
   const [compactSidebar, setCompactSidebar] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const audio = useAudio();
@@ -163,8 +164,11 @@ function App() {
 
   useEffect(() => {
     setLoading(true);
-    Promise.all([refreshLibrary(""), api.getScanState()])
-      .then(([, scanState]) => setScanning(scanState.running))
+    Promise.all([refreshLibrary(""), api.getScanState(), api.getSetting("backgroundMode")])
+      .then(([, scanState, savedBackgroundMode]) => {
+        setScanning(scanState.running);
+        setBackgroundMode(savedBackgroundMode === "true");
+      })
       .catch((err) => setError(String(err)))
       .finally(() => setLoading(false));
   }, []);
@@ -461,6 +465,15 @@ function App() {
     await api.setSetting("offlineMode", String(enabled));
   }
 
+  async function changeBackgroundMode(enabled: boolean) {
+    try {
+      await api.setBackgroundMode(enabled);
+      setBackgroundMode(enabled);
+    } catch (err) {
+      setError(String(err));
+    }
+  }
+
   const title = {
     songs: "Songs",
     albums: "Albums",
@@ -512,6 +525,7 @@ function App() {
           cardStyle={cardStyle}
           playerStyle={playerStyle}
           offlineMode={offlineMode}
+          backgroundMode={backgroundMode}
           fontScale={fontScale}
           showCovers={showCovers}
           reduceMotion={reduceMotion}
@@ -536,6 +550,7 @@ function App() {
           onHighContrastChange={(enabled) => void changeAppearanceSetting("highContrast", String(enabled), (value) => setHighContrast(value === "true"))}
           onShowTrackFormatChange={(enabled) => void changeAppearanceSetting("showTrackFormat", String(enabled), (value) => setShowTrackFormat(value === "true"))}
           onOfflineModeChange={changeOfflineMode}
+          onBackgroundModeChange={changeBackgroundMode}
           onApiKeyChange={(provider, key) => void api.setApiKey(provider, key)}
         />
       );

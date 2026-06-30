@@ -13,6 +13,7 @@ type Props = {
   cardStyle: string;
   playerStyle: string;
   offlineMode: boolean;
+  backgroundMode: boolean;
   fontScale: string;
   showCovers: boolean;
   reduceMotion: boolean;
@@ -37,6 +38,7 @@ type Props = {
   onHighContrastChange: (enabled: boolean) => void;
   onShowTrackFormatChange: (enabled: boolean) => void;
   onOfflineModeChange: (enabled: boolean) => void;
+  onBackgroundModeChange: (enabled: boolean) => void;
   onApiKeyChange: (provider: string, key: string) => void;
 };
 
@@ -236,6 +238,13 @@ export function SettingsView(props: Props) {
                 <small>Prefer local data and skip remote lookups</small>
               </span>
               <input type="checkbox" checked={props.offlineMode} onChange={(event) => props.onOfflineModeChange(event.target.checked)} />
+            </label>
+            <label className="toggleRow toggleCard">
+              <span>
+                <strong>Keep running in background</strong>
+                <small>Close to the system tray instead of quitting</small>
+              </span>
+              <input type="checkbox" checked={props.backgroundMode} onChange={(event) => props.onBackgroundModeChange(event.target.checked)} />
             </label>
           </div>
         </div>

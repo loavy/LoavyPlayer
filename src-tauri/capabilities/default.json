@@ -4,6 +4,14 @@
   "description": "Default permissions for Loavy Player",
   "windows": ["main"],
   "permissions": [
-    "core:default"
+    "core:default",
+    {
+      "identifier": "opener:allow-open-url",
+      "allow": [
+        {
+          "url": "https://github.com/loavy/LoavyPlayer#room--jam-mode"
+        }
+      ]
+    }
   ]
 }

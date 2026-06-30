@@ -1,6 +1,10 @@
 use std::sync::atomic::Ordering;
 
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::{
+    menu::{Menu, MenuItem},
+    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
+    AppHandle, Emitter, Manager, State,
+};
 
 use crate::{
     downloader::{self, DownloadResult, DownloaderStatus, MediaDownloadRequest},
@@ -15,6 +19,81 @@ use crate::{
 };
 
 type CommandResult<T> = Result<T, String>;
+
+const BACKGROUND_TRAY_ID: &str = "loavy-background";
+const TRAY_OPEN_ID: &str = "tray-open";
+const TRAY_QUIT_ID: &str = "tray-quit";
+
+fn show_main_window(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.unminimize();
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+}
+
+pub(crate) fn sync_background_tray(app: &AppHandle, enabled: bool) -> tauri::Result<()> {
+    if let Some(tray) = app.tray_by_id(BACKGROUND_TRAY_ID) {
+        return tray.set_visible(enabled);
+    }
+
+    if !enabled {
+        return Ok(());
+    }
+
+    let open = MenuItem::with_id(app, TRAY_OPEN_ID, "Open Loavy Player", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, TRAY_QUIT_ID, "Quit Loavy Player", true, None::<&str>)?;
+    let menu = Menu::with_items(app, &[&open, &quit])?;
+    let mut builder = TrayIconBuilder::with_id(BACKGROUND_TRAY_ID)
+        .tooltip("Loavy Player")
+        .menu(&menu)
+        .show_menu_on_left_click(false)
+        .on_menu_event(|app, event| match event.id.as_ref() {
+            TRAY_OPEN_ID => show_main_window(app),
+            TRAY_QUIT_ID => app.exit(0),
+            _ => {}
+        })
+        .on_tray_icon_event(|tray, event| {
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                ..
+            } = event
+            {
+                show_main_window(tray.app_handle());
+            }
+        });
+
+    if let Some(icon) = app.default_window_icon() {
+        builder = builder.icon(icon.clone());
+    }
+
+    builder.build(app)?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn set_background_mode(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    enabled: bool,
+) -> CommandResult<()> {
+    let previous = state.background_mode.load(Ordering::SeqCst);
+    sync_background_tray(&app, enabled).map_err(|err| err.to_string())?;
+
+    if let Err(error) = state
+        .db
+        .lock()
+        .map_err(|err| err.to_string())?
+        .set_setting("backgroundMode", if enabled { "true" } else { "false" })
+    {
+        let _ = sync_background_tray(&app, previous);
+        return Err(error.to_string());
+    }
+
+    state.background_mode.store(enabled, Ordering::SeqCst);
+    Ok(())
+}
 
 #[tauri::command]
 pub async fn select_music_folder(state: State<'_, AppState>) -> CommandResult<Option<MusicFolder>> {

@@ -16,6 +16,7 @@ Loavy Player is a local-first desktop music player for Windows, built with Tauri
 - Browses songs, albums, artists, favorites, recent tracks, and folder playlists.
 - Reads embedded tags and cover art without uploading the library.
 - Provides a fullscreen Now Playing view and customizable player layout.
+- Can keep playback running in the Windows system tray after the main window is closed.
 - Downloads a single song or a complete playlist with yt-dlp.
 - Hosts self-managed listening rooms for LAN, VPN, or port-forwarded connections.
 - Supports dark and light themes, density controls, reduced motion, and high contrast.
@@ -24,7 +25,7 @@ Loavy Player is a local-first desktop music player for Windows, built with Tauri
 
 Download the setup file from [GitHub Releases](https://github.com/loavy/LoavyPlayer/releases/latest):
 
-- `Loavy Player_4.1.3_x64-setup.exe`
+- `Loavy Player_4.1.5_x64-setup.exe`
 
 During setup, Loavy asks whether to install optional **Tools**. Choosing **Yes** opens the official Microsoft Store listing for Web Media Extensions after Loavy is installed. This adds Windows support for OGG, Opus, and related web media formats. Choosing **No** skips it without affecting the main installation.
 
@@ -106,6 +107,8 @@ Guests first try to match host playback against their local libraries. If no loc
 - Downloader requests are made by yt-dlp to the supplied site and its media hosts; the first run also downloads yt-dlp from GitHub.
 - Rooms are hosted by the user; Loavy does not provide a central room service.
 
+See the full [LoavyPlayer privacy policy](PRIVACY.md).
+
 ## Development
 
 ### Requirements
@@ -148,6 +151,14 @@ Generated Windows bundles are written under:
 src-tauri/target/release/bundle/nsis/
 src-tauri/target/release/bundle/msi/
 ```
+
+For a Microsoft Store-compatible NSIS build with the offline WebView2 installer:
+
+```powershell
+npm run desktop:store
+```
+
+See the [Microsoft Store publishing checklist](docs/MICROSOFT_STORE.md) before submitting the installer.
 
 ## Project Layout
 

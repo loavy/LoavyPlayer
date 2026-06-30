@@ -169,6 +169,7 @@ nav { display: grid; gap: 5px; }
   border-radius: 999px;
   background: var(--accent);
 }
+.sidebar.compact .navItem { justify-content: center; }
 
 .mainPane { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 .topBar {
@@ -733,6 +734,7 @@ h1 { font-size: 27px; line-height: 1.1; font-weight: 800; letter-spacing: 0; }
   color: var(--text);
 }
 .settingsGrid .field .fieldMeta small { color: var(--muted); }
+.settingsGrid .field input[type="range"] { padding-inline: 0; }
 .toggleCard {
   justify-content: space-between;
   align-items: center;
@@ -1149,7 +1151,7 @@ h1 { font-size: 27px; line-height: 1.1; font-weight: 800; letter-spacing: 0; }
 }
 .folderBreadcrumbs button:hover { color: var(--text); background: var(--panel-2); }
 .folderBrowserContent { min-height: 0; overflow: auto; display: grid; grid-template-rows: auto minmax(0, 1fr); align-content: start; gap: 14px; }
-.folderGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; }
+.folderGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; padding-top: 2px; }
 .folderCard {
   min-width: 0;
   display: grid;
@@ -1313,7 +1315,7 @@ input[type="range"] { width: 100%; accent-color: var(--accent); cursor: pointer;
   scrollbar-gutter: stable;
 }
 .playingStatus { display: flex; align-items: center; gap: 9px; color: rgba(255,255,255,.62); font-size: 11px; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; }
-.playingStatus span { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 5px color-mix(in srgb, var(--accent) 18%, transparent); }
+.playingStatus span { width: 7px; height: 7px; margin-left: 5px; flex: 0 0 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 5px color-mix(in srgb, var(--accent) 18%, transparent); }
 .heroTitleRow { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 24px; }
 .heroTitleRow h2 {
   max-width: 100%;
@@ -1364,6 +1366,7 @@ input[type="range"] { width: 100%; accent-color: var(--accent); cursor: pointer;
   .sidebar { width: 74px; }
   .sidebar span:not(.brand span) { display: none; }
   .brand span { display: none; }
+  .navItem { justify-content: center; }
   .topBar { align-items: stretch; flex-direction: column; }
   .searchBox { width: 100%; }
   .songsGrid { grid-template-columns: minmax(220px, 1fr) 86px; }

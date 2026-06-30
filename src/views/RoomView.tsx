@@ -1,5 +1,6 @@
 import { Copy, ExternalLink, FolderOpen, LogOut, Radio, Radar, RefreshCw, ShieldCheck, Square, UserX, UsersRound, Wifi } from "lucide-react";
 import { useEffect, useState } from "react";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { api } from "../lib/api";
 import type { DiscoveredRoom, RoomClientStatus, RoomJoinResult, RoomStatus } from "../types";
 
@@ -29,6 +30,14 @@ export function RoomView({ onError }: Props) {
   const [joinResult, setJoinResult] = useState<RoomJoinResult | null>(null);
   const [clientStatus, setClientStatus] = useState<RoomClientStatus | null>(null);
   const [busy, setBusy] = useState(false);
+
+  async function openRoomGuide() {
+    try {
+      await openUrl(ROOM_GUIDE_URL);
+    } catch (error) {
+      onError(`Could not open the Room networking guide: ${String(error)}`);
+    }
+  }
 
   async function refresh() {
     const [nextStatus, nextClientStatus] = await Promise.all([
@@ -245,7 +254,10 @@ export function RoomView({ onError }: Props) {
               <ShieldCheck size={17} />
               <p>For a friend outside your home network, both computers should join the same VPN. Send them the address belonging to that VPN adapter—not your public internet IP.</p>
             </div>
-            <a className="guideLink" href={ROOM_GUIDE_URL} target="_blank" rel="noreferrer">
+            <a className="guideLink" href={ROOM_GUIDE_URL} onClick={(event) => {
+              event.preventDefault();
+              void openRoomGuide();
+            }}>
               <ExternalLink size={16} /> Open the full Room networking guide
             </a>
             <p className="muted">When guest control is on, a guest's selected file is saved on this computer before the host streams it to the room.</p>

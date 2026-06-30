@@ -21,6 +21,7 @@ import type {
 } from "../types";
 
 export const api = {
+  setBackgroundMode: (enabled: boolean) => invoke<void>("set_background_mode", { enabled }),
   selectMusicFolder: () => invoke<MusicFolder | null>("select_music_folder"),
   listMusicFolders: () => invoke<MusicFolder[]>("list_music_folders"),
   removeMusicFolder: (folderId: number) => invoke<void>("remove_music_folder", { folderId }),

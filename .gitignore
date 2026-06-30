@@ -27,6 +27,7 @@ pnpm-debug.log*
 .idea/
 .DS_Store
 Thumbs.db
+PRIVACY.md
 
 # Local app/runtime data
 *.sqlite

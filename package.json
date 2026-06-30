@@ -1,6 +1,6 @@
 {
   "name": "loavy-player",
-  "version": "4.1.3",
+  "version": "4.1.5",
   "private": true,
   "type": "module",
   "scripts": {
@@ -9,10 +9,12 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "desktop:dev": "tauri dev",
-    "desktop:build": "tauri build"
+    "desktop:build": "tauri build",
+    "desktop:store": "tauri build --config src-tauri/tauri.microsoftstore.conf.json --bundles nsis"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.9.0",
+    "@tauri-apps/plugin-opener": "^2.5.4",
     "lucide-react": "^0.468.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"

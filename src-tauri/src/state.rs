@@ -20,6 +20,7 @@ pub struct AppState {
     pub scan_cancel: Arc<AtomicBool>,
     pub download_running: Arc<AtomicBool>,
     pub download_cancel: Arc<AtomicBool>,
+    pub background_mode: Arc<AtomicBool>,
     pub room: RoomManager,
     pub room_client: RoomClientManager,
 }
@@ -33,6 +34,7 @@ impl AppState {
 
         let db_path = app_data_dir.join("loavy-player.sqlite3");
         let database = Database::open(&db_path)?;
+        let background_mode = database.get_setting("backgroundMode")?.as_deref() == Some("true");
         Ok(Self {
             db: Arc::new(Mutex::new(database)),
             db_path,
@@ -41,6 +43,7 @@ impl AppState {
             scan_cancel: Arc::new(AtomicBool::new(false)),
             download_running: Arc::new(AtomicBool::new(false)),
             download_cancel: Arc::new(AtomicBool::new(false)),
+            background_mode: Arc::new(AtomicBool::new(background_mode)),
             room: RoomManager::new(),
             room_client: RoomClientManager::new(),
         })
