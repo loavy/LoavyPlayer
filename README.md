@@ -24,8 +24,6 @@ Loavy Player is a local-first desktop music player for Windows, built with Tauri
 
 Download the setup file from [GitHub Releases](https://github.com/loavy/LoavyPlayer/releases/latest):
 
-- `Loavy Player_4.1.3_x64-setup.exe`
-
 During setup, Loavy asks whether to install optional **Tools**. Choosing **Yes** opens the official Microsoft Store listing for Web Media Extensions after Loavy is installed. This adds Windows support for OGG, Opus, and related web media formats. Choosing **No** skips it without affecting the main installation.
 
 After installation:
