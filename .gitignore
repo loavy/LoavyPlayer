@@ -6,6 +6,7 @@ dist/
 
 # Rust/Tauri build output
 src-tauri/target/
+src-tauri/target/**
 
 # Tauri generated schemas; recreated by the CLI
 src-tauri/gen/
@@ -27,7 +28,19 @@ pnpm-debug.log*
 .idea/
 .DS_Store
 Thumbs.db
-PRIVACY.md
+
+# Windows installer outputs
+*.msi
+*.exe
+*.msix
+*.appx
+
+# Signing certificates and private keys
+*.pfx
+*.p12
+*.cer
+*.key
+*.pem
 
 # Local app/runtime data
 *.sqlite

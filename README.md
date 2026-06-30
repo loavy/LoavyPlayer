@@ -105,7 +105,7 @@ Guests first try to match host playback against their local libraries. If no loc
 - Downloader requests are made by yt-dlp to the supplied site and its media hosts; the first run also downloads yt-dlp from GitHub.
 - Rooms are hosted by the user; Loavy does not provide a central room service.
 
-See the full [LoavyPlayer privacy policy](PRIVACY.md).
+See the full [Loavy Player privacy policy](PRIVACY.md).
 
 ## Development
 
@@ -207,3 +207,9 @@ Install Rust with [rustup](https://rustup.rs/), select the stable MSVC toolchain
 ## Contributing
 
 Keep changes focused and consistent with the existing architecture. Before opening a pull request, run the frontend build and Rust tests, and include screenshots for visible interface changes.
+
+## License / Usage
+
+This repository does not currently include an explicit open-source license. No license is currently granted unless stated otherwise.
+
+© 2026 Loavy. All rights reserved.

@@ -24,7 +24,7 @@ const BACKGROUND_TRAY_ID: &str = "loavy-background";
 const TRAY_OPEN_ID: &str = "tray-open";
 const TRAY_QUIT_ID: &str = "tray-quit";
 
-fn show_main_window(app: &AppHandle) {
+pub(crate) fn show_main_window(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.unminimize();
         let _ = window.show();

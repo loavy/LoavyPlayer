@@ -15,6 +15,9 @@ use tauri::{Manager, WindowEvent};
 
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            commands::show_main_window(app);
+        }))
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let state = AppState::initialize(&app.handle())?;
