@@ -374,6 +374,7 @@ h1 { font-size: 27px; line-height: 1.1; font-weight: 800; letter-spacing: 0; }
 .artistList, .settingsStack, .roomLayout, .playlistLayout { display: grid; gap: 14px; overflow: auto; height: 100%; align-content: start; }
 .roomLayout {
   grid-template-columns: minmax(310px, .92fr) minmax(340px, 1.08fr);
+  grid-auto-rows: max-content;
   grid-template-areas:
     "intro intro"
     "create join"
@@ -752,14 +753,22 @@ h1 { font-size: 27px; line-height: 1.1; font-weight: 800; letter-spacing: 0; }
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 16px;
+  min-height: 118px;
+  height: max-content;
   padding: clamp(17px, 2.2vw, 24px);
-  overflow: hidden;
+  overflow: visible;
   border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--border));
   border-radius: var(--surface-radius);
   background:
     radial-gradient(circle at 88% 12%, color-mix(in srgb, var(--accent) 18%, transparent), transparent 34%),
     linear-gradient(135deg, color-mix(in srgb, var(--accent) 10%, var(--panel)), var(--panel));
   box-shadow: 0 18px 46px var(--shadow);
+}
+.roomIntroCopy {
+  display: grid;
+  align-content: center;
+  gap: 5px;
+  min-width: 0;
 }
 .roomIntroIcon {
   display: grid;
@@ -773,7 +782,6 @@ h1 { font-size: 27px; line-height: 1.1; font-weight: 800; letter-spacing: 0; }
 }
 .roomEyebrow {
   display: block;
-  margin-bottom: 5px;
   color: var(--accent);
   font-size: 10px;
   font-weight: 850;
@@ -781,7 +789,7 @@ h1 { font-size: 27px; line-height: 1.1; font-weight: 800; letter-spacing: 0; }
   text-transform: uppercase;
 }
 .roomIntro h2 { font-size: clamp(18px, 2vw, 24px); line-height: 1.15; }
-.roomIntro p { max-width: 720px; margin-top: 7px; color: var(--muted); line-height: 1.45; }
+.roomIntro p { max-width: 720px; color: var(--muted); line-height: 1.45; }
 .roomFeaturePills { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 7px; max-width: 270px; }
 .roomFeaturePills span {
   display: inline-flex;
@@ -1406,7 +1414,7 @@ input[type="range"] { width: 100%; accent-color: var(--accent); cursor: pointer;
   .roomLayout .field,
   .roomLayout .settingsActions { grid-template-columns: 1fr; }
   .roomPathPicker { grid-template-columns: minmax(0, 1fr) auto; }
-  .roomIntro { grid-template-columns: 1fr; }
+  .roomIntro { grid-template-columns: 1fr; min-height: 0; }
   .roomIntroIcon { width: 44px; height: 44px; }
   .roomFeaturePills { grid-column: 1; }
   .songsGrid { grid-template-columns: minmax(0, 1fr) 64px; }

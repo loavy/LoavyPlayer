@@ -34,8 +34,9 @@ const DISCOVERY_PORT: u16 = 39176;
 const DISCOVERY_GROUP: Ipv4Addr = Ipv4Addr::new(239, 255, 39, 176);
 const DISCOVERY_QUERY: &[u8] = b"LOAVY_ROOM_DISCOVER_V1";
 const MAX_GUEST_TRACK_BYTES: u64 = 2 * 1024 * 1024 * 1024;
-const GUEST_TRACK_CHUNK_BYTES: usize = 256 * 1024;
-const GUEST_PLAYBACK_START_BYTES: u64 = 256 * 1024;
+const GUEST_TRACK_CHUNK_BYTES: usize = 512 * 1024;
+const GUEST_INITIAL_CHUNK_BYTES: usize = 16 * 1024;
+const GUEST_FAST_START_WINDOW_BYTES: u64 = 256 * 1024;
 const STREAM_WRITE_CHUNK_BYTES: usize = 64 * 1024;
 static NEXT_UPLOAD_ID: AtomicU64 = AtomicU64::new(1);
 
@@ -851,7 +852,16 @@ async fn handle_client(
                                     abandon_guest_track(previous).await;
                                 }
                                 match begin_guest_track(&config, upload_id, &file_name, file_size, playback).await {
-                                    Ok(track) => incoming_track = Some(track),
+                                    Ok(mut track) => {
+                                        start_guest_track(
+                                            app.clone(),
+                                            &state,
+                                            client_id,
+                                            config.port,
+                                            &mut track,
+                                        );
+                                        incoming_track = Some(track);
+                                    }
                                     Err(error) => {
                                         let _ = write_message(&mut writer, &RoomWireMessage::RoomError {
                                             message: format!("Guest song was rejected: {error}"),
@@ -867,10 +877,7 @@ async fn handle_client(
                                 ).await;
                                 if result.is_ok() {
                                     if let Some(track) = incoming_track.as_mut() {
-                                        let start_at = track
-                                            .expected_size
-                                            .min(GUEST_PLAYBACK_START_BYTES);
-                                        if !track.started && track.written >= start_at {
+                                        if !track.started {
                                             start_guest_track(
                                                 app.clone(),
                                                 &state,
@@ -965,8 +972,14 @@ async fn send_guest_track_upload(
     .await?;
 
     let mut buffer = vec![0_u8; GUEST_TRACK_CHUNK_BYTES];
+    let mut sent = 0_u64;
     loop {
-        let read = file.read(&mut buffer).await?;
+        let chunk_size = if sent < GUEST_FAST_START_WINDOW_BYTES {
+            GUEST_INITIAL_CHUNK_BYTES
+        } else {
+            GUEST_TRACK_CHUNK_BYTES
+        };
+        let read = file.read(&mut buffer[..chunk_size]).await?;
         if read == 0 {
             break;
         }
@@ -978,6 +991,7 @@ async fn send_guest_track_upload(
             },
         )
         .await?;
+        sent = sent.saturating_add(read as u64);
     }
     write_message(writer, &RoomWireMessage::GuestTrackComplete { upload_id }).await
 }

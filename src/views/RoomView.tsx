@@ -41,6 +41,11 @@ export function RoomView({ onError }: Props) {
 
   useEffect(() => {
     refresh().catch((err) => onError(String(err)));
+    api.getDefaultGuestSongFolder()
+      .then((folder) => {
+        if (folder) setGuestSongDir((current) => current || folder);
+      })
+      .catch(() => undefined);
     const timer = window.setInterval(() => refresh().catch(() => undefined), 2500);
     return () => window.clearInterval(timer);
   }, []);
@@ -60,7 +65,7 @@ export function RoomView({ onError }: Props) {
   }
 
   async function chooseGuestSongFolder() {
-    const folder = await api.selectDownloadFolder();
+    const folder = await api.selectGuestSongFolder();
     if (folder) setGuestSongDir(folder);
   }
 
@@ -168,7 +173,7 @@ export function RoomView({ onError }: Props) {
     <section className="roomLayout">
       <div className="roomIntro">
         <div className="roomIntroIcon"><Radio size={24} /></div>
-        <div>
+        <div className="roomIntroCopy">
           <span className="roomEyebrow">Room & Jam Mode</span>
           <h2>Listen together, from your own libraries.</h2>
           <p>Start a private room over LAN or VPN. Loavy keeps playback synchronized and can securely copy guest-selected songs to the host.</p>
@@ -193,7 +198,7 @@ export function RoomView({ onError }: Props) {
             <label className="field">
               <span>Save guest songs</span>
               <div className="roomPathPicker">
-                <input value={guestSongDir} onChange={(event) => setGuestSongDir(event.target.value)} placeholder="Choose a folder" />
+                <input value={guestSongDir} onChange={(event) => setGuestSongDir(event.target.value)} placeholder="Music" />
                 <button className="secondaryAction" onClick={() => void chooseGuestSongFolder()} type="button" title="Choose folder">
                   <FolderOpen size={17} /> Browse
                 </button>

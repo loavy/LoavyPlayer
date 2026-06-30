@@ -44,6 +44,8 @@ pub fn run() {
             commands::get_downloader_status,
             commands::cancel_media_download,
             commands::select_download_folder,
+            commands::get_default_guest_song_folder,
+            commands::select_guest_song_folder,
             commands::reveal_download,
             commands::create_room,
             commands::stop_room,

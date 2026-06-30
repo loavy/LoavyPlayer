@@ -68,7 +68,7 @@ Room & Jam Mode creates a private, host-managed listening session. Loavy synchro
 1. Connect everyone to the same Wi-Fi/LAN or the same VPN.
 2. Open **Room**, choose a room name and a password of at least four characters.
 3. Enable **Guests can change songs** if guests should be allowed to control playback.
-4. When guest control is enabled, choose the folder where received songs should be saved.
+4. When guest control is enabled, received songs default to the host's **Music** folder; choose another folder if preferred.
 5. Select **Start room** and allow Loavy through Windows Firewall on private networks.
 
 The status panel lists every usable network adapter. Friends on the same Wi-Fi should use the Wi-Fi/LAN address. Friends connecting remotely through Tailscale, ZeroTier, Radmin VPN, Hamachi, WireGuard, or a similar service must use the address belonging to that VPN adapter. A public internet IP is not the VPN address and will not normally work.

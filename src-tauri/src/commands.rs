@@ -291,6 +291,28 @@ pub async fn select_download_folder(app: AppHandle) -> CommandResult<Option<Stri
 }
 
 #[tauri::command]
+pub fn get_default_guest_song_folder(app: AppHandle) -> CommandResult<Option<String>> {
+    Ok(app
+        .path()
+        .audio_dir()
+        .ok()
+        .map(|path| path.to_string_lossy().to_string()))
+}
+
+#[tauri::command]
+pub async fn select_guest_song_folder(app: AppHandle) -> CommandResult<Option<String>> {
+    let mut dialog = rfd::AsyncFileDialog::new();
+    if let Ok(music_dir) = app.path().audio_dir() {
+        dialog = dialog.set_directory(music_dir);
+    }
+
+    Ok(dialog
+        .pick_folder()
+        .await
+        .map(|folder| folder.path().to_string_lossy().to_string()))
+}
+
+#[tauri::command]
 pub fn reveal_download(path: String) -> CommandResult<()> {
     let path = std::path::PathBuf::from(path);
     if !path.exists() {
