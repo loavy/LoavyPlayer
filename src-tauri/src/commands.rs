@@ -7,9 +7,9 @@ use crate::{
     fetchers::{self, FetchContext, FetchRequest},
     library,
     models::{
-        Album, ApiKeyUpdate, Artist, FetcherDescriptor, MusicFolder, Playlist, RoomClientStatus,
-        RoomCreateRequest, RoomJoinRequest, RoomJoinResult, RoomPlaybackState, RoomStatus,
-        ScanProgress, ScanSummary, ScanTaskState, SettingUpdate, Track,
+        Album, ApiKeyUpdate, Artist, DiscoveredRoom, FetcherDescriptor, MusicFolder, Playlist,
+        RoomClientStatus, RoomCreateRequest, RoomJoinRequest, RoomJoinResult, RoomPlaybackState,
+        RoomStatus, ScanProgress, ScanSummary, ScanTaskState, SettingUpdate, Track,
     },
     state::AppState,
 };
@@ -377,6 +377,13 @@ pub async fn get_room_status(state: State<'_, AppState>) -> CommandResult<RoomSt
 }
 
 #[tauri::command]
+pub async fn discover_rooms() -> CommandResult<Vec<DiscoveredRoom>> {
+    crate::room::discover_rooms()
+        .await
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
 pub async fn room_join_probe(request: RoomJoinRequest) -> CommandResult<RoomJoinResult> {
     crate::room::join_probe(request)
         .await
@@ -414,6 +421,18 @@ pub async fn room_send_guest_playback_state(
     state
         .room_client
         .send_guest_playback(playback)
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+pub async fn room_send_guest_track(
+    state: State<'_, AppState>,
+    playback: RoomPlaybackState,
+    path: String,
+) -> CommandResult<()> {
+    state
+        .room_client
+        .send_guest_track(playback, path)
         .map_err(|err| err.to_string())
 }
 

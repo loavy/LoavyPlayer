@@ -126,6 +126,7 @@ export type RoomCreateRequest = {
   maxUsers?: number | null;
   allowGuestQueue: boolean;
   allowGuestControl: boolean;
+  guestSongDir?: string | null;
   bindAddr?: string | null;
   port?: number | null;
 };
@@ -152,6 +153,14 @@ export type RoomStatus = {
   maxUsers?: number | null;
   allowGuestQueue: boolean;
   allowGuestControl: boolean;
+  guestSongDir?: string | null;
+  networkAddresses: RoomNetworkAddress[];
+};
+
+export type RoomNetworkAddress = {
+  interfaceName: string;
+  address: string;
+  joinAddress: string;
 };
 
 export type RoomUser = {
@@ -196,4 +205,20 @@ export type RoomClientStatus = {
   displayName?: string | null;
   connectedAt?: number | null;
   allowGuestControl: boolean;
+};
+
+export type DiscoveredRoom = {
+  name: string;
+  host: string;
+  port: number;
+  passwordRequired: boolean;
+  connectedUsers: number;
+  maxUsers?: number | null;
+  allowGuestControl: boolean;
+  lastSeenAt: number;
+};
+
+export type RoomGuestTrack = {
+  playback: RoomPlaybackState;
+  path: string;
 };

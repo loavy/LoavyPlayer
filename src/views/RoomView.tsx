@@ -1,13 +1,13 @@
-import { Copy, ExternalLink, LogOut, Radio, ShieldAlert, Square, UserX, UsersRound, Wifi } from "lucide-react";
+import { Copy, ExternalLink, FolderOpen, LogOut, Radio, Radar, RefreshCw, ShieldCheck, Square, UserX, UsersRound, Wifi } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
-import type { RoomClientStatus, RoomJoinResult, RoomStatus } from "../types";
+import type { DiscoveredRoom, RoomClientStatus, RoomJoinResult, RoomStatus } from "../types";
 
 type Props = {
   onError: (message: string | null) => void;
 };
 
-const ROOM_GUIDE_URL = "https://github.com/malop/LoavyPlayer#room--jam-mode";
+const ROOM_GUIDE_URL = "https://github.com/loavy/LoavyPlayer#room--jam-mode";
 
 export function RoomView({ onError }: Props) {
   const [status, setStatus] = useState<RoomStatus | null>(null);
@@ -17,6 +17,10 @@ export function RoomView({ onError }: Props) {
   const [hostPort, setHostPort] = useState(39177);
   const [allowGuestQueue, setAllowGuestQueue] = useState(true);
   const [allowGuestControl, setAllowGuestControl] = useState(false);
+  const [guestSongDir, setGuestSongDir] = useState("");
+  const [discoveredRooms, setDiscoveredRooms] = useState<DiscoveredRoom[]>([]);
+  const [discovering, setDiscovering] = useState(false);
+  const [hasSearched, setHasSearched] = useState(false);
   const [joinHost, setJoinHost] = useState("127.0.0.1");
   const [joinPort, setJoinPort] = useState(0);
   const [joinName, setJoinName] = useState("Loavy Room");
@@ -41,7 +45,30 @@ export function RoomView({ onError }: Props) {
     return () => window.clearInterval(timer);
   }, []);
 
+  async function scanNearby() {
+    setDiscovering(true);
+    setHasSearched(true);
+    onError(null);
+    try {
+      setDiscoveredRooms(await api.discoverRooms());
+    } catch (err) {
+      setDiscoveredRooms([]);
+      onError(String(err));
+    } finally {
+      setDiscovering(false);
+    }
+  }
+
+  async function chooseGuestSongFolder() {
+    const folder = await api.selectDownloadFolder();
+    if (folder) setGuestSongDir(folder);
+  }
+
   async function createRoom() {
+    if (allowGuestControl && !guestSongDir.trim()) {
+      onError("Choose where songs sent by guests should be saved.");
+      return;
+    }
     setBusy(true);
     onError(null);
     try {
@@ -51,6 +78,7 @@ export function RoomView({ onError }: Props) {
         maxUsers,
         allowGuestQueue,
         allowGuestControl,
+        guestSongDir: allowGuestControl ? guestSongDir.trim() : null,
         bindAddr: "0.0.0.0",
         port: hostPort
       });
@@ -129,55 +157,100 @@ export function RoomView({ onError }: Props) {
     }
   }
 
-  const localJoinInfo = status?.running ? `${status.localJoin || `${status.shareAddr}:${status.port}`} / ${status.name}` : "";
-  const publicJoinInfo = status?.running && status.publicJoin ? `${status.publicJoin} / ${status.name}` : "";
+  function useDiscoveredRoom(room: DiscoveredRoom) {
+    setJoinHost(room.host);
+    setJoinPort(room.port);
+    setJoinName(room.name);
+    setJoinResult(null);
+  }
 
   return (
     <section className="roomLayout">
-      <div className="settingsPanel">
+      <div className="roomIntro">
+        <div className="roomIntroIcon"><Radio size={24} /></div>
+        <div>
+          <span className="roomEyebrow">Room & Jam Mode</span>
+          <h2>Listen together, from your own libraries.</h2>
+          <p>Start a private room over LAN or VPN. Loavy keeps playback synchronized and can securely copy guest-selected songs to the host.</p>
+        </div>
+        <div className="roomFeaturePills">
+          <span><Radar size={14} /> Nearby discovery</span>
+          <span><ShieldCheck size={14} /> Password protected</span>
+        </div>
+      </div>
+
+      <div className="settingsPanel roomCreatePanel">
         <header><Radio size={19} /><h2>Create room</h2></header>
+        <p className="roomPanelIntro">Host a session from this computer and choose what guests are allowed to control.</p>
         <label className="field"><span>Room name</span><input value={name} onChange={(event) => setName(event.target.value)} /></label>
         <label className="field"><span>Password</span><input type="password" value={password} onChange={(event) => setPassword(event.target.value)} /></label>
         <label className="field"><span>Max users</span><input type="number" min={1} max={32} value={maxUsers} onChange={(event) => setMaxUsers(Number(event.target.value))} /></label>
         <label className="field"><span>Port</span><input type="number" min={1024} max={65535} value={hostPort} onChange={(event) => setHostPort(Number(event.target.value))} /></label>
         <label className="toggleRow"><span>Guests can suggest queue</span><input type="checkbox" checked={allowGuestQueue} onChange={(event) => setAllowGuestQueue(event.target.checked)} /></label>
         <label className="toggleRow"><span>Guests can change songs</span><input type="checkbox" checked={allowGuestControl} onChange={(event) => setAllowGuestControl(event.target.checked)} /></label>
+        {allowGuestControl && (
+          <>
+            <label className="field">
+              <span>Save guest songs</span>
+              <div className="roomPathPicker">
+                <input value={guestSongDir} onChange={(event) => setGuestSongDir(event.target.value)} placeholder="Choose a folder" />
+                <button className="secondaryAction" onClick={() => void chooseGuestSongFolder()} type="button" title="Choose folder">
+                  <FolderOpen size={17} /> Browse
+                </button>
+              </div>
+            </label>
+            <p className="muted roomFieldHint">A guest's selected audio file is copied here, then played by the host and streamed to everyone.</p>
+          </>
+        )}
         <div className="settingsActions">
-          <button className="primaryAction" onClick={createRoom} disabled={busy}><Wifi size={17} /> Start room</button>
+          <button className="primaryAction" onClick={createRoom} disabled={busy || (allowGuestControl && !guestSongDir.trim())}><Wifi size={17} /> Start room</button>
           <button className="secondaryAction" onClick={stopRoom} disabled={!status?.running}><Square size={15} /> Stop room</button>
         </div>
       </div>
 
-      <div className="settingsPanel">
+      <div className="settingsPanel roomStatusPanel">
         <header><UsersRound size={19} /><h2>Room status</h2></header>
         {status?.running ? (
           <>
             <div className="roomStatusGrid">
               <span>Name</span><strong>{status.name}</strong>
-              <span>LAN/VPN</span><strong>{localJoinInfo}</strong>
-              <span>Public</span><strong>{publicJoinInfo || "Unavailable"}</strong>
               <span>Users</span><strong>{status.connectedUsers}{status.maxUsers ? ` / ${status.maxUsers}` : ""}</strong>
               <span>Guest control</span><strong>{status.allowGuestControl ? "Allowed" : "Host only"}</strong>
+              {status.guestSongDir && <><span>Guest songs</span><strong>{status.guestSongDir}</strong></>}
             </div>
-            <div className="settingsActions">
-              <button className="secondaryAction" onClick={() => void navigator.clipboard.writeText(localJoinInfo)}><Copy size={17} /> Copy LAN/VPN</button>
-              <button className="secondaryAction" onClick={() => void navigator.clipboard.writeText(publicJoinInfo || localJoinInfo)}><Copy size={17} /> Copy public</button>
+            <div className="roomAddressHeading">Addresses your friends can use</div>
+            <div className="roomAddressList">
+              {(status.networkAddresses.length ? status.networkAddresses : [{
+                interfaceName: "LAN/VPN",
+                address: status.shareAddr || "127.0.0.1",
+                joinAddress: status.localJoin || `${status.shareAddr}:${status.port}`
+              }]).map((entry) => (
+                <div className="roomAddressRow" key={`${entry.interfaceName}-${entry.joinAddress}`}>
+                  <span>
+                    <strong>{entry.interfaceName}</strong>
+                    <small>{entry.joinAddress}</small>
+                  </span>
+                  <button className="secondaryAction" onClick={() => void navigator.clipboard.writeText(entry.joinAddress)} title={`Copy ${entry.interfaceName} address`}>
+                    <Copy size={16} /> Copy
+                  </button>
+                </div>
+              ))}
             </div>
             <div className="roomWarning">
-              <ShieldAlert size={17} />
-              <p>Testing on this same PC: use 127.0.0.1. Testing on your Wi-Fi: use the LAN/VPN address. Testing from another internet connection: forward TCP port {status.port} on your router to this PC, or use Tailscale, ZeroTier, Radmin VPN, or similar. Many routers cannot connect back to their own public IP from inside the same network.</p>
+              <ShieldCheck size={17} />
+              <p>For a friend outside your home network, both computers should join the same VPN. Send them the address belonging to that VPN adapter—not your public internet IP.</p>
             </div>
             <a className="guideLink" href={ROOM_GUIDE_URL} target="_blank" rel="noreferrer">
               <ExternalLink size={16} /> Open the full Room networking guide
             </a>
-            <p className="muted">When guest control is off, guests cannot change songs. When it is on, guest song changes are sent to the host and synced to the room.</p>
+            <p className="muted">When guest control is on, a guest's selected file is saved on this computer before the host streams it to the room.</p>
           </>
         ) : (
           <p className="muted">No room is running.</p>
         )}
       </div>
 
-      <div className="settingsPanel">
+      <div className="settingsPanel roomUsersPanel">
         <header><UsersRound size={19} /><h2>Connected users</h2></header>
         {status?.running && status.users.length ? (
           <div className="roomUserList">
@@ -198,14 +271,49 @@ export function RoomView({ onError }: Props) {
         )}
       </div>
 
-      <div className="settingsPanel">
+      <div className="settingsPanel roomJoinPanel">
         <header><Wifi size={19} /><h2>Join room</h2></header>
+        <p className="roomPanelIntro">Search once for rooms visible on this LAN/VPN, or enter the host's VPN address manually.</p>
         {clientStatus?.connected && (
           <div className="roomConnectedBanner">
             <strong>Connected as {clientStatus.displayName}</strong>
             <span>{clientStatus.roomName} at {clientStatus.host}:{clientStatus.port} - local match or host stream</span>
           </div>
         )}
+        <div className="nearbyRoomsHeader">
+          <span><Radar size={16} /> Rooms nearby</span>
+          <button className="secondaryAction roomSearchButton" onClick={() => void scanNearby()} disabled={discovering}>
+            <RefreshCw className={discovering ? "spin" : ""} size={15} />
+            {discovering ? "Searching..." : hasSearched ? "Search again" : "Search"}
+          </button>
+        </div>
+        {discoveredRooms.length ? (
+          <div className="nearbyRoomList">
+            {discoveredRooms.map((room) => (
+              <button
+                className="nearbyRoom"
+                key={`${room.host}:${room.port}`}
+                onClick={() => useDiscoveredRoom(room)}
+                type="button"
+              >
+                <span>
+                  <strong>{room.name}</strong>
+                  <small>{room.host}:{room.port} · {room.connectedUsers}{room.maxUsers ? ` / ${room.maxUsers}` : ""} guests</small>
+                </span>
+                <span className="roomDiscoveryBadge">{room.allowGuestControl ? "Guest songs on" : "Host controls"}</span>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <p className="muted nearbyEmpty">
+            {discovering
+              ? "Looking on your LAN/VPN..."
+              : hasSearched
+                ? "No rooms found. You can still connect manually below."
+                : "Search when your friend has started their room."}
+          </p>
+        )}
+        <div className="roomManualDivider"><span>Manual connection</span></div>
         <label className="field"><span>Host</span><input value={joinHost} onChange={(event) => setJoinHost(event.target.value)} /></label>
         <label className="field"><span>Port</span><input type="number" value={joinPort} onChange={(event) => setJoinPort(Number(event.target.value))} /></label>
         <label className="field"><span>Room</span><input value={joinName} onChange={(event) => setJoinName(event.target.value)} /></label>

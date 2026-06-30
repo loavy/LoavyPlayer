@@ -18,6 +18,7 @@ import type {
   Artist,
   FetcherDescriptor,
   MusicFolder,
+  RoomGuestTrack,
   RoomPlaybackState,
   ScanProgress,
   ScanSummary,
@@ -49,6 +50,25 @@ function streamTrackFromPlayback(playback: RoomPlaybackState, streamUrl: string)
     lastPlayedAt: null,
     playCount: 0
   };
+}
+
+function receivedGuestTrack(playback: RoomPlaybackState, path: string): Track {
+  const title = playback.title || path.split(/[\\/]/).pop()?.replace(/\.[^.]+$/, "") || "Guest song";
+  return {
+    ...streamTrackFromPlayback(playback, path),
+    id: playback.trackId || -Date.now(),
+    fileName: path.split(/[\\/]/).pop() || title,
+    fileExt: path.split(".").pop()?.toLowerCase() || "",
+    path
+  };
+}
+
+function trackMatchesPlayback(track: Track, playback: RoomPlaybackState) {
+  return track.id === playback.trackId || (
+    displayTrackTitle(track) === playback.title &&
+    displayArtist(track.artist) === playback.artist &&
+    displayAlbum(track.album) === playback.album
+  );
 }
 
 function App() {
@@ -185,7 +205,11 @@ function App() {
         setError("The host does not allow guests to change songs.");
         return;
       }
-      api.sendGuestPlaybackState(detail).catch((err) => setError(String(err)));
+      const current = audioRef.current.current;
+      const send = current && !/^https?:\/\//i.test(current.path)
+        ? api.sendGuestTrack(detail, current.path)
+        : api.sendGuestPlaybackState(detail);
+      send.catch((err) => setError(String(err)));
     }
 
     window.addEventListener("loavy:local-playback-changed", handleLocalPlaybackChanged);
@@ -195,10 +219,13 @@ function App() {
   useEffect(() => {
     let disposed = false;
 
-    async function syncToRoomPlayback(playback: RoomPlaybackState) {
+    async function syncToRoomPlayback(playback: RoomPlaybackState, receivedTrack?: Track) {
       if (disposed) return;
       try {
-        let track = await api.findRoomPlaybackTrack(playback);
+        const current = audioRef.current.current;
+        let track = receivedTrack
+          || (current && trackMatchesPlayback(current, playback) ? current : null)
+          || await api.findRoomPlaybackTrack(playback);
         if (!track) {
           const client = roomClientStatusRef.current;
           if (!playback.streamPath || !client.host || !client.port) {
@@ -217,6 +244,12 @@ function App() {
     const unsubs = Promise.all([
       listen<RoomPlaybackState>("room://playback-state", (event) => void syncToRoomPlayback(event.payload)),
       listen<RoomPlaybackState>("room://guest-playback-state", (event) => void syncToRoomPlayback(event.payload)),
+      listen<RoomGuestTrack>("room://guest-track-received", (event) => {
+        void syncToRoomPlayback(
+          event.payload.playback,
+          receivedGuestTrack(event.payload.playback, event.payload.path)
+        );
+      }),
       listen("room://guest-scan-request", () => {
         api.startLibraryScan().catch((err) => setError(String(err)));
       }),

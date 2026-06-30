@@ -114,6 +114,7 @@ pub struct RoomCreateRequest {
     pub max_users: Option<usize>,
     pub allow_guest_queue: bool,
     pub allow_guest_control: bool,
+    pub guest_song_dir: Option<String>,
     pub bind_addr: Option<String>,
     pub port: Option<u16>,
 }
@@ -144,6 +145,16 @@ pub struct RoomStatus {
     pub max_users: Option<usize>,
     pub allow_guest_queue: bool,
     pub allow_guest_control: bool,
+    pub guest_song_dir: Option<String>,
+    pub network_addresses: Vec<RoomNetworkAddress>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RoomNetworkAddress {
+    pub interface_name: String,
+    pub address: String,
+    pub join_address: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -188,6 +199,26 @@ pub struct RoomClientStatus {
     pub display_name: Option<String>,
     pub connected_at: Option<i64>,
     pub allow_guest_control: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiscoveredRoom {
+    pub name: String,
+    pub host: String,
+    pub port: u16,
+    pub password_required: bool,
+    pub connected_users: usize,
+    pub max_users: Option<usize>,
+    pub allow_guest_control: bool,
+    pub last_seen_at: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RoomGuestTrack {
+    pub playback: RoomPlaybackState,
+    pub path: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

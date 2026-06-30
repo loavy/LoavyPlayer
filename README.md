@@ -24,7 +24,7 @@ Loavy Player is a local-first desktop music player for Windows, built with Tauri
 
 Download the setup file from [GitHub Releases](https://github.com/loavy/LoavyPlayer/releases/latest):
 
-- `Loavy Player_4.1.2_x64-setup.exe`
+- `Loavy Player_4.1.3_x64-setup.exe`
 
 During setup, Loavy asks whether to install optional **Tools**. Choosing **Yes** opens the official Microsoft Store listing for Web Media Extensions after Loavy is installed. This adds Windows support for OGG, Opus, and related web media formats. Choosing **No** skips it without affecting the main installation.
 
@@ -59,18 +59,44 @@ To add a downloaded track to the library, save it inside a configured music fold
 
 The **Folders** view uses your existing directory structure as a set of playlists. Breadcrumbs navigate subfolders, and **Play folder** queues indexed tracks from the selected folder and its descendants.
 
-## Listening Rooms
+## Room & Jam Mode
 
-A host can create a password-protected room, share playback state, allow or block guest controls, and remove connected guests. Guests first match the host track against their local library; when no match exists, Loavy can stream the current host file.
+Room & Jam Mode creates a private, host-managed listening session. Loavy synchronizes play, pause, seeking, and song changes without a central Loavy server.
 
-| Connection | Host address |
-| --- | --- |
-| Same computer | `127.0.0.1` |
-| Same Wi-Fi or LAN | The host's LAN address |
-| Tailscale, ZeroTier, or another VPN | The host's VPN address |
-| Public internet | Public address with the selected TCP port forwarded |
+### Start a room
 
-Use **Check only** to verify the address, room name, and password without staying connected. A trusted LAN or mesh VPN is recommended. Stop the room when it is no longer needed.
+1. Connect everyone to the same Wi-Fi/LAN or the same VPN.
+2. Open **Room**, choose a room name and a password of at least four characters.
+3. Enable **Guests can change songs** if guests should be allowed to control playback.
+4. When guest control is enabled, choose the folder where received songs should be saved.
+5. Select **Start room** and allow Loavy through Windows Firewall on private networks.
+
+The status panel lists every usable network adapter. Friends on the same Wi-Fi should use the Wi-Fi/LAN address. Friends connecting remotely through Tailscale, ZeroTier, Radmin VPN, Hamachi, WireGuard, or a similar service must use the address belonging to that VPN adapter. A public internet IP is not the VPN address and will not normally work.
+
+### Join a room
+
+1. Wait until the host has started the room.
+2. Select **Search** under **Rooms nearby**.
+3. Select the discovered room, enter its password and your display name, then choose **Join room**.
+4. If discovery is unavailable, enter the host's VPN address and room port manually. Use **Check only** to test the details first.
+
+Nearby discovery uses UDP broadcast/multicast. Some routed mesh VPNs block that traffic even though direct connections work, so manual entry remains available.
+
+### Guest-selected songs
+
+When guest control is enabled, a guest can select a song from their own Loavy library. Playback begins after a small initial buffer while the rest of the file continues transferring. The completed file remains in the folder chosen by the host; duplicate filenames receive a numbered suffix instead of replacing an existing file.
+
+Guests first try to match host playback against their local libraries. If no local match exists, they stream the host's copy.
+
+### Connection checklist
+
+- Same computer: use `127.0.0.1`.
+- Same Wi-Fi/LAN: use the host's Wi-Fi or Ethernet adapter address.
+- Different physical networks: join the same VPN and use the host's VPN adapter address.
+- Default room port: TCP `39177`.
+- Nearby discovery: UDP `39176`.
+- If the room is not discovered, use manual connection before changing firewall settings.
+- Stop the room when the session is finished.
 
 ## Privacy
 

@@ -48,11 +48,13 @@ pub fn run() {
             commands::create_room,
             commands::stop_room,
             commands::get_room_status,
+            commands::discover_rooms,
             commands::room_join_probe,
             commands::room_join,
             commands::room_leave,
             commands::get_room_client_status,
             commands::room_send_guest_playback_state,
+            commands::room_send_guest_track,
             commands::room_request_host_scan,
             commands::room_broadcast_playback_state,
             commands::room_kick_user

@@ -268,7 +268,7 @@ where
     let partial = executable.with_extension("exe.download");
     let _ = tokio::fs::remove_file(&partial).await;
     let client = reqwest::Client::builder()
-        .user_agent("Loavy-Player/4.1.2")
+        .user_agent("Loavy-Player/4.1.3")
         .build()
         .context("Could not prepare the yt-dlp installer.")?;
     let mut response = client

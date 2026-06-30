@@ -4,6 +4,7 @@ import type {
   Artist,
   DownloadResult,
   DownloaderStatus,
+  DiscoveredRoom,
   FetcherDescriptor,
   MusicFolder,
   MediaDownloadRequest,
@@ -54,12 +55,15 @@ export const api = {
   createRoom: (request: RoomCreateRequest) => invoke<RoomStatus>("create_room", { request }),
   stopRoom: () => invoke<void>("stop_room"),
   getRoomStatus: () => invoke<RoomStatus>("get_room_status"),
+  discoverRooms: () => invoke<DiscoveredRoom[]>("discover_rooms"),
   joinRoomProbe: (request: RoomJoinRequest) => invoke<RoomJoinResult>("room_join_probe", { request }),
   joinRoom: (request: RoomJoinRequest) => invoke<RoomJoinResult>("room_join", { request }),
   leaveRoom: () => invoke<void>("room_leave"),
   getRoomClientStatus: () => invoke<RoomClientStatus>("get_room_client_status"),
   sendGuestPlaybackState: (playback: RoomPlaybackState) =>
     invoke<void>("room_send_guest_playback_state", { playback: sanitizeRoomPlayback(playback) }),
+  sendGuestTrack: (playback: RoomPlaybackState, path: string) =>
+    invoke<void>("room_send_guest_track", { playback: sanitizeRoomPlayback(playback), path }),
   requestHostScan: () => invoke<void>("room_request_host_scan"),
   broadcastRoomPlaybackState: (playback: RoomPlaybackState) =>
     invoke<void>("room_broadcast_playback_state", { playback: sanitizeRoomPlayback(playback) }),
