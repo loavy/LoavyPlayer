@@ -40,6 +40,4 @@ This policy may be updated when Loavy Player's features or data practices change
 
 ## Contact
 
-Privacy questions: **[CONTACT EMAIL TO BE ADDED]**
-
 Project repository: <https://github.com/loavy/LoavyPlayer>
