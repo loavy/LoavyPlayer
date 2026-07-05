@@ -9,12 +9,21 @@ import { useAudio } from "../lib/useAudio";
 const ROW_HEIGHT = 62;
 const OVERSCAN = 8;
 
-export function VirtualSongList({ tracks }: { tracks: Track[] }) {
+type Props = {
+  tracks: Track[];
+  playbackQueue?: Track[];
+};
+
+export function VirtualSongList({ tracks, playbackQueue = tracks }: Props) {
   const audio = useAudio();
   const [scrollTop, setScrollTop] = useState(0);
   const [height, setHeight] = useState(520);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const frameRef = useRef<number | null>(null);
+  const queueIndexById = useMemo(
+    () => new Map(playbackQueue.map((track, index) => [track.id, index])),
+    [playbackQueue]
+  );
 
   useEffect(() => {
     const node = scrollerRef.current;
@@ -73,8 +82,8 @@ export function VirtualSongList({ tracks }: { tracks: Track[] }) {
               return (
                 <SongRow
                   key={track.id}
-                  index={index}
-                  queue={tracks}
+                  index={queueIndexById.get(track.id) ?? index}
+                  queue={playbackQueue}
                   track={track}
                   current={audio.current?.id === track.id}
                   playing={audio.current?.id === track.id && audio.playing}

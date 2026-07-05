@@ -1,4 +1,5 @@
 import { FolderPlus, KeyRound, Paintbrush, RefreshCw, ShieldCheck, Sparkles, Trash2 } from "lucide-react";
+import { Switch } from "../components/Switch";
 import type { FetcherDescriptor, MusicFolder, ScanProgress, ScanSummary } from "../types";
 
 type Props = {
@@ -209,42 +210,42 @@ export function SettingsView(props: Props) {
                 <strong>Show covers</strong>
                 <small>Use artwork in list views</small>
               </span>
-              <input type="checkbox" checked={props.showCovers} onChange={(event) => props.onShowCoversChange(event.target.checked)} />
+              <Switch checked={props.showCovers} onChange={props.onShowCoversChange} label="Show covers" />
             </label>
             <label className="toggleRow toggleCard">
               <span>
                 <strong>Show file format</strong>
                 <small>Display extensions alongside titles</small>
               </span>
-              <input type="checkbox" checked={props.showTrackFormat} onChange={(event) => props.onShowTrackFormatChange(event.target.checked)} />
+              <Switch checked={props.showTrackFormat} onChange={props.onShowTrackFormatChange} label="Show file format" />
             </label>
             <label className="toggleRow toggleCard">
               <span>
                 <strong>High contrast</strong>
                 <small>Improve readability on busy surfaces</small>
               </span>
-              <input type="checkbox" checked={props.highContrast} onChange={(event) => props.onHighContrastChange(event.target.checked)} />
+              <Switch checked={props.highContrast} onChange={props.onHighContrastChange} label="High contrast" />
             </label>
             <label className="toggleRow toggleCard">
               <span>
                 <strong>Reduce motion</strong>
                 <small>Keep animations calmer and lighter</small>
               </span>
-              <input type="checkbox" checked={props.reduceMotion} onChange={(event) => props.onReduceMotionChange(event.target.checked)} />
+              <Switch checked={props.reduceMotion} onChange={props.onReduceMotionChange} label="Reduce motion" />
             </label>
             <label className="toggleRow toggleCard">
               <span>
                 <strong>Offline mode</strong>
                 <small>Prefer local data and skip remote lookups</small>
               </span>
-              <input type="checkbox" checked={props.offlineMode} onChange={(event) => props.onOfflineModeChange(event.target.checked)} />
+              <Switch checked={props.offlineMode} onChange={props.onOfflineModeChange} label="Offline mode" />
             </label>
             <label className="toggleRow toggleCard">
               <span>
                 <strong>Keep running in background</strong>
                 <small>Close to the system tray instead of quitting</small>
               </span>
-              <input type="checkbox" checked={props.backgroundMode} onChange={(event) => props.onBackgroundModeChange(event.target.checked)} />
+              <Switch checked={props.backgroundMode} onChange={props.onBackgroundModeChange} label="Keep running in background" />
             </label>
           </div>
         </div>

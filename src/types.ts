@@ -81,7 +81,6 @@ export type ViewKey =
   | "playlists"
   | "recent"
   | "favorites"
-  | "search"
   | "room"
   | "downloader"
   | "settings";

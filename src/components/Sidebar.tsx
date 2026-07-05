@@ -5,7 +5,6 @@ import {
   History,
   FolderTree,
   Music2,
-  Search,
   Settings,
   Radio,
   Users,
@@ -21,7 +20,6 @@ const items: Array<{ key: ViewKey; label: string; icon: LucideIcon }> = [
   { key: "playlists", label: "Folders", icon: FolderTree },
   { key: "recent", label: "Recently Played", icon: History },
   { key: "favorites", label: "Favorites", icon: Heart },
-  { key: "search", label: "Search", icon: Search },
   { key: "room", label: "Room", icon: Radio },
   { key: "downloader", label: "Downloader", icon: Download },
   { key: "settings", label: "Settings", icon: Settings }

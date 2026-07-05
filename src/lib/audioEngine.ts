@@ -175,6 +175,15 @@ class AudioEngine {
     this.emit();
   }
 
+  replaceQueue(queue: Track[]) {
+    if (!this.current) return;
+    const nextIndex = queue.findIndex((track) => track.id === this.current?.id);
+    if (nextIndex < 0) return;
+    this.queue = queue;
+    this.index = nextIndex;
+    this.emit();
+  }
+
   setLocalControlBlocked(blocked: boolean, onBlocked?: () => void) {
     this.localControlBlocked = blocked;
     this.onBlockedLocalControl = onBlocked || null;

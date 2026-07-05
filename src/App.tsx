@@ -481,7 +481,6 @@ function App() {
     playlists: "Folder Playlists",
     recent: "Recently Played",
     favorites: "Favorites",
-    search: "Search",
     room: "Room",
     downloader: "Downloader",
     settings: "Settings"
@@ -556,17 +555,6 @@ function App() {
       );
     }
     if (activeView === "room") return <RoomView onError={setError} />;
-    if (activeView === "downloader") {
-      return (
-        <DownloaderView
-          onDownloadMedia={api.downloadMedia}
-          onGetStatus={api.getDownloaderStatus}
-          onCancel={api.cancelMediaDownload}
-          onSelectFolder={api.selectDownloadFolder}
-          onRevealDownload={api.revealDownload}
-        />
-      );
-    }
     if (activeView === "playlists") {
       return <PlaylistsView folders={folders} tracks={tracks} />;
     }
@@ -618,7 +606,18 @@ function App() {
           </label>
         </header>
         {error && <pre className="errorBanner">{error}</pre>}
-        <div className="contentArea">{renderView()}</div>
+        <div className="contentArea">
+          <div className="persistentViewHost" hidden={activeView !== "downloader"}>
+            <DownloaderView
+              onDownloadMedia={api.downloadMedia}
+              onGetStatus={api.getDownloaderStatus}
+              onCancel={api.cancelMediaDownload}
+              onSelectFolder={api.selectDownloadFolder}
+              onRevealDownload={api.revealDownload}
+            />
+          </div>
+          {activeView !== "downloader" && renderView()}
+        </div>
       </main>
       <PlayerBar />
     </div>

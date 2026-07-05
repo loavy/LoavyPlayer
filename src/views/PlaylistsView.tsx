@@ -1,6 +1,7 @@
 import { ChevronRight, Folder, FolderOpen, Home, Play, Rows3 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { VirtualSongList } from "../components/VirtualSongList";
+import { Switch } from "../components/Switch";
 import { audioEngine } from "../lib/audioEngine";
 import type { MusicFolder, Track } from "../types";
 
@@ -31,6 +32,9 @@ function isInside(path: string, folder: string) {
 
 export function PlaylistsView({ folders, tracks }: Props) {
   const [currentFolder, setCurrentFolder] = useState<string | null>(null);
+  const [continueAcrossFolders, setContinueAcrossFolders] = useState(
+    () => localStorage.getItem("loavy.continueAcrossFolders") === "true"
+  );
   const roots = useMemo(() => folders.map((folder) => normalize(folder.path)), [folders]);
 
   const folderTracks = useMemo(
@@ -42,6 +46,12 @@ export function PlaylistsView({ folders, tracks }: Props) {
     () => currentFolder ? folderTracks.filter((track) => normalize(parentPath(track.path)).toLocaleLowerCase() === normalize(currentFolder).toLocaleLowerCase()) : [],
     [currentFolder, folderTracks]
   );
+
+  const continuationQueue = useMemo(() => {
+    if (!currentFolder) return tracks;
+    const tracksOutsideFolder = tracks.filter((track) => !isInside(parentPath(track.path), currentFolder));
+    return [...folderTracks, ...tracksOutsideFolder];
+  }, [currentFolder, folderTracks, tracks]);
 
   const childFolders = useMemo(() => {
     if (!currentFolder) return roots;
@@ -77,7 +87,14 @@ export function PlaylistsView({ folders, tracks }: Props) {
 
   function playFolder() {
     if (!folderTracks.length) return;
-    void audioEngine.playTrack(folderTracks[0], folderTracks, 0);
+    const queue = continueAcrossFolders ? continuationQueue : folderTracks;
+    void audioEngine.playTrack(folderTracks[0], queue, 0);
+  }
+
+  function changeFolderContinuation(enabled: boolean) {
+    setContinueAcrossFolders(enabled);
+    localStorage.setItem("loavy.continueAcrossFolders", String(enabled));
+    audioEngine.replaceQueue(enabled ? continuationQueue : folderTracks);
   }
 
   if (!folders.length) {
@@ -102,11 +119,24 @@ export function PlaylistsView({ folders, tracks }: Props) {
             </span>
           ))}
         </div>
-        {currentFolder && (
-          <button className="primaryAction" onClick={playFolder} disabled={!folderTracks.length}>
-            <Play size={16} fill="currentColor" /> Play folder
-          </button>
-        )}
+        <div className="folderToolbarActions">
+          <label className="folderContinueToggle">
+            <span>
+              <strong>Folder flow</strong>
+              <small>Continue into another folder</small>
+            </span>
+            <Switch
+              checked={continueAcrossFolders}
+              onChange={changeFolderContinuation}
+              label="Continue playing into another folder"
+            />
+          </label>
+          {currentFolder && (
+            <button className="primaryAction" onClick={playFolder} disabled={!folderTracks.length}>
+              <Play size={16} fill="currentColor" /> Play folder
+            </button>
+          )}
+        </div>
       </header>
 
       <div className="folderBrowserContent">
@@ -126,7 +156,10 @@ export function PlaylistsView({ folders, tracks }: Props) {
         {currentFolder && directTracks.length > 0 && (
           <div className="folderSongs">
             <div className="folderSectionTitle"><Rows3 size={16} /><span>Songs in this folder</span><strong>{directTracks.length}</strong></div>
-            <VirtualSongList tracks={directTracks} />
+            <VirtualSongList
+              tracks={directTracks}
+              playbackQueue={continueAcrossFolders ? continuationQueue : directTracks}
+            />
           </div>
         )}
 

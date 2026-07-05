@@ -167,7 +167,6 @@ export function DownloaderView({
             onChange={(event) => setUrl(event.target.value)}
             placeholder={mode === "playlist" ? "https://www.youtube.com/playlist?list=..." : "https://www.youtube.com/watch?v=..."}
             disabled={downloading}
-            autoFocus
           />
         </label>
 

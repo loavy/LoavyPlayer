@@ -1,5 +1,5 @@
 import { Expand, Heart, Pause, Play, Repeat, Repeat1, Shuffle, SkipBack, SkipForward, Volume2 } from "lucide-react";
-import { useState } from "react";
+import { useState, type CSSProperties } from "react";
 import { audioEngine } from "../lib/audioEngine";
 import { formatDuration, displayArtist, displayTrackTitle } from "../lib/format";
 import { useAudio } from "../lib/useAudio";
@@ -12,6 +12,9 @@ export function PlayerBar() {
   const [showNowPlaying, setShowNowPlaying] = useState(false);
   const repeatIcon = audio.repeat === "one" ? <Repeat1 size={17} /> : <Repeat size={17} />;
   const favorite = Boolean(audio.current?.favorite);
+  const seekProgress = audio.duration ? Math.min(100, (audio.position / audio.duration) * 100) : 0;
+  const seekStyle = { "--range-progress": `${seekProgress}%` } as CSSProperties;
+  const volumeStyle = { "--range-progress": `${audio.volume * 100}%` } as CSSProperties;
 
   async function toggleFavorite() {
     if (!audio.current) return;
@@ -29,9 +32,12 @@ export function PlayerBar() {
 
   return (
     <>
-    <footer className="playerBar">
+    <footer className={audio.playing ? "playerBar isPlaying" : "playerBar"}>
       <button className="nowPlaying" onClick={() => setShowNowPlaying(true)} title="Open now playing">
-        <Cover path={audio.current?.coverPath} title={audio.current?.album || undefined} size="sm" />
+        <span className="playerCover">
+          <Cover path={audio.current?.coverPath} title={audio.current?.album || undefined} size="sm" />
+          {audio.playing && <span className="playingPulse" aria-hidden="true"><i /><i /><i /></span>}
+        </span>
         <div>
           <strong>{audio.current ? displayTrackTitle(audio.current) : "Ready to play"}</strong>
           <span>{audio.current ? displayArtist(audio.current.artist) : "Add music in Settings"}</span>
@@ -77,6 +83,7 @@ export function PlayerBar() {
             max={Math.max(audio.duration, 1)}
             value={Math.min(audio.position, Math.max(audio.duration, 1))}
             onChange={(event) => audioEngine.seek(Number(event.target.value))}
+            style={seekStyle}
           />
           <span>{formatDuration(audio.duration)}</span>
         </div>
@@ -92,6 +99,7 @@ export function PlayerBar() {
           value={audio.volume}
           onChange={(event) => audioEngine.setVolume(Number(event.target.value))}
           title="Volume"
+          style={volumeStyle}
         />
       </div>
     </footer>
