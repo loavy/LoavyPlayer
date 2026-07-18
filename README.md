@@ -17,7 +17,8 @@ Loavy Player is a local-first desktop music player for Windows, built with Tauri
 - Reads embedded tags and cover art without uploading the library.
 - Provides a fullscreen Now Playing view and customizable player layout.
 - Can keep playback running in the Windows system tray after the main window is closed.
-- Downloads a single song or a complete playlist with yt-dlp.
+- Accepts Spotify track, album, and playlist links through a metadata-matching download flow.
+- Downloads supported direct media links with yt-dlp.
 - Hosts self-managed listening rooms for LAN, VPN, or port-forwarded connections.
 - Supports dark and light themes, density controls, reduced motion, and high contrast.
 
@@ -38,17 +39,29 @@ The first scan can take a little longer when a folder contains many files or lar
 
 ## Downloader
 
-Open **Downloader**, select **Single song** or **Playlist**, paste a supported media URL, and start the download. The default destination is:
+Open **Downloader** and choose a source. The default destination is:
 
 ```text
 Downloads/Loavy Player
 ```
 
-Use the folder button beside **Save to** to choose another destination. Loavy asks yt-dlp for the best available audio and prefers M4A, which the player can scan directly. Playlist downloads are placed in a folder named after the playlist and prefixed with track numbers.
+Use the folder button beside **Save to** to choose another destination. M4A, MP3, Opus, and FLAC output are available; M4A is the recommended default for good quality without unnecessary transcoding.
 
-Loavy downloads the official Windows `yt-dlp` executable on first use and stores it in the app-data `tools` folder. This one-time setup is approximately 18 MB. See the [yt-dlp supported sites list](https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md) for extractor coverage.
+Use the **Naming** tab to choose how downloaded files and collection folders are organized. The default filename is `{artist} - {title}` (the audio extension is added automatically), and the default collection folder is `{album_artist}/{album}`. Metadata token buttons can insert track, disc, date, ISRC, playlist, and position fields; these choices are saved on this device. Folder structure applies to albums and playlists by default and can optionally be enabled for single tracks.
 
-Recent yt-dlp versions recommend a JavaScript runtime for full YouTube support. Loavy automatically uses Node.js when version 22 or newer is installed; many downloads still work without it, but some YouTube formats may be unavailable.
+### Spotify links
+
+Paste a public `open.spotify.com` track, album, or playlist URL in the **Spotify** tab. Loavy uses spotDL to read the catalog metadata, find a matching public audio upload (normally through YouTube/YouTube Music), download it, and embed the title, artist, album, and artwork. The **Naming** settings control the resulting filenames and folders.
+
+Spotify supplies identity and metadata only: Loavy does **not** download Spotify's audio stream. The quality is limited by the matched source. Selecting FLAC converts that source into a FLAC file; it cannot recreate lossless detail that was not present in the source.
+
+The first Spotify download installs pinned Windows releases of spotDL and FFmpeg in Loavy's app-data `tools` folder. Their combined download is approximately 121 MB. Both files are checksum-verified before use.
+
+### Direct links
+
+Paste a supported public media URL in the **Direct link** tab and choose whether it is a single item or playlist. Loavy uses yt-dlp for extraction and FFmpeg for the selected output format. The first direct download installs those managed tools in the app-data `tools` folder. See the [yt-dlp supported sites list](https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md) for extractor coverage.
+
+Current yt-dlp releases recommend a JavaScript runtime for complete YouTube support. Loavy uses Node.js when it is available on `PATH`; many downloads work without it, but some formats may be unavailable.
 
 The downloader does not bypass subscriptions, DRM, private access, or regional restrictions. Only download media you own or have permission to save, and follow the source website's terms.
 
@@ -102,7 +115,7 @@ Guests first try to match host playback against their local libraries. If no loc
 - Audio is read directly from local storage.
 - Library data and settings are stored on the device.
 - Offline mode disables optional online metadata requests.
-- Downloader requests are made by yt-dlp to the supplied site and its media hosts; the first run also downloads yt-dlp from GitHub.
+- Downloader requests go to the pasted site or, for Spotify links, to Spotify metadata services and matched YouTube/YouTube Music media. Managed tools come from pinned, checksum-verified GitHub releases.
 - Rooms are hosted by the user; Loavy does not provide a central room service.
 
 See the full [Loavy Player privacy policy](PRIVACY.md).
@@ -168,7 +181,8 @@ src/
 
 src-tauri/src/
   db/                SQLite schema and queries
-  downloader.rs      Managed yt-dlp process and progress parser
+  downloader.rs      Downloader request routing and shared models
+  downloader/        Managed yt-dlp and Spotify-link download engines
   library/           Folder scanner, tags, and artwork
   room/              Host and guest room protocol
   commands.rs        Tauri command boundary
@@ -182,7 +196,15 @@ Make sure the file is inside a configured music folder, uses a supported format,
 
 **A YouTube download reports missing formats**
 
-Install Node.js 22 or newer and restart Loavy. yt-dlp uses it for newer YouTube JavaScript challenges.
+Install a current Node.js release, make sure `node` is on `PATH`, and restart Loavy. yt-dlp uses it for newer YouTube JavaScript challenges.
+
+**A Spotify link has no matching audio**
+
+Spotify mode relies on a separate public audio match. A private, region-blocked, newly released, or unusually named track may have no suitable match even though it is playable in Spotify.
+
+**Is Spotify FLAC output lossless?**
+
+No. Spotify mode does not obtain Spotify or subscription-service audio. FLAC is offered as an output container, but conversion cannot improve the matched source quality.
 
 **An Opus or OGG track is indexed but does not play**
 
@@ -211,5 +233,7 @@ Keep changes focused and consistent with the existing architecture. Before openi
 ## License / Usage
 
 This repository does not currently include an explicit open-source license. No license is currently granted unless stated otherwise.
+
+Separately licensed downloader tools and upstream design notices are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 © 2026 Loavy. All rights reserved.
