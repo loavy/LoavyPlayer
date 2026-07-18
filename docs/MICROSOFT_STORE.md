@@ -40,7 +40,7 @@ Use the following exact silent argument for the NSIS setup:
 Example:
 
 ```powershell
-& ".\Loavy Player_4.1.5_x64-setup.exe" /S
+& ".\Loavy Player_5.8.1_x64-setup.exe" /S
 ```
 
 The existing NSIS hook detects silent mode and skips its optional Web Media Extensions prompt, so a Store-driven installation remains unattended.
@@ -58,7 +58,7 @@ Upload the signed, versioned NSIS EXE to the project's public Cloudflare R2 host
 | Field | Current value | Release action |
 | --- | --- | --- |
 | Product and window name | `Loavy Player` | Keep aligned with the reserved Store product name. |
-| Version | `4.1.5` | Keep `package.json`, `src-tauri/Cargo.toml`, and `src-tauri/tauri.conf.json` synchronized for each release. |
+| Version | `5.8.1` | Keep `package.json`, `src-tauri/Cargo.toml`, and `src-tauri/tauri.conf.json` synchronized for each release. |
 | Application identifier | `com.loavy.player` | Keep stable so upgrades and local app data continue to use the same identity. |
 | Publisher / Manufacturer | `loavy` | Keep stable for upgrade compatibility. Tauri uses this value in the Windows registry to locate existing installations. |
 | Application and installer icon | `src-tauri/icons/icon.ico` | Already configured for the app and NSIS installer and contains standard 16–256 px sizes. |

@@ -25,9 +25,7 @@ use crate::{
     models::{MusicFolder, ScanProgress, ScanSummary, Track},
 };
 
-const AUDIO_EXTENSIONS: &[&str] = &[
-    "mp3", "flac", "wav", "ogg", "oga", "opus", "m4a", "aac",
-];
+const AUDIO_EXTENSIONS: &[&str] = &["mp3", "flac", "wav", "ogg", "oga", "opus", "m4a", "aac"];
 
 pub fn scan_library(db: &Database, app_data_dir: &Path) -> Result<ScanSummary> {
     scan_library_with_progress(db, app_data_dir, Arc::new(AtomicBool::new(false)), |_| {})
@@ -144,7 +142,7 @@ fn scan_folder(
             })
             .unwrap_or(false)
         {
-            if summary.files_seen % 50 == 0 {
+            if summary.files_seen.is_multiple_of(50) {
                 on_progress(progress_from_summary(
                     summary,
                     total_files,
@@ -163,7 +161,7 @@ fn scan_folder(
             }
             Err(err) => summary.errors.push(format!("{}: {err}", path.display())),
         }
-        if summary.files_seen % 10 == 0 {
+        if summary.files_seen.is_multiple_of(10) {
             on_progress(progress_from_summary(
                 summary,
                 total_files,
@@ -302,7 +300,7 @@ fn extract_cover(
         .replace(['/', '+', '='], "");
     let ext = picture
         .mime_type()
-        .and_then(|mime| mime.as_str().split('/').last())
+        .and_then(|mime| mime.as_str().split('/').next_back())
         .unwrap_or("jpg");
     let cover_path = app_data_dir.join("covers").join(format!("{digest}.{ext}"));
 

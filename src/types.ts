@@ -79,6 +79,7 @@ export type ViewKey =
   | "albums"
   | "artists"
   | "playlists"
+  | "folderQueue"
   | "recent"
   | "favorites"
   | "room"
@@ -87,16 +88,26 @@ export type ViewKey =
 
 export type RepeatMode = "off" | "all" | "one";
 
-export type DownloadMode = "single" | "playlist";
+export type DownloadSource = "spotify" | "web";
+
+export type DownloadMode = "single" | "album" | "playlist";
+
+export type DownloadFormat = "m4a" | "mp3" | "opus" | "flac";
 
 export type MediaDownloadRequest = {
+  source: DownloadSource;
   url: string;
-  destinationDir?: string | null;
+  destinationDir: string | null;
   mode: DownloadMode;
+  format: DownloadFormat;
+  filenameTemplate: string;
+  folderTemplate: string;
+  applyFolderToSingle: boolean;
 };
 
 export type DownloadProgress = {
-  phase: "installing" | "starting" | "downloading";
+  source: DownloadSource;
+  phase: "installing" | "resolving" | "starting" | "downloading" | "converting" | "tagging";
   percent: number | null;
   bytesWritten: number;
   totalBytes: number | null;
@@ -110,13 +121,19 @@ export type DownloadResult = {
   destination: string;
   files: string[];
   downloadedCount: number;
+  failedCount: number;
+  warnings: string[];
+  source: DownloadSource;
   mode: DownloadMode;
+  format: DownloadFormat;
 };
 
 export type DownloaderStatus = {
   installed: boolean;
   version: string | null;
   running: boolean;
+  spotdlInstalled: boolean;
+  spotdlVersion: string | null;
 };
 
 export type RoomCreateRequest = {

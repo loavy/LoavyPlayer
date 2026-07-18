@@ -1,6 +1,6 @@
 # Loavy Player Privacy Policy
 
-Effective date: June 30, 2026
+Effective date: July 11, 2026
 
 Loavy Player is primarily a local music player. This policy explains what information the application processes when you use its local library, optional online metadata, downloader, and Room/Jam features.
 
@@ -18,7 +18,13 @@ You can prevent these metadata requests by enabling Offline mode.
 
 ## Optional downloader
 
-The Downloader runs only when you provide a media URL and start a download. Loavy Player uses yt-dlp to contact the website represented by that URL and any media hosts needed for the requested download. On first use, Loavy Player downloads the yt-dlp executable from its official GitHub release. Those third parties process requests under their own privacy policies and terms.
+The Downloader runs only when you provide a media URL and start a download.
+
+For a direct link, Loavy Player uses yt-dlp to contact the website represented by the URL and any media hosts needed for that download. For a Spotify link, Loavy Player uses spotDL to request public Spotify catalog metadata and artwork, search for a matching recording through YouTube or YouTube Music, and request the selected media from the matching host. Spotify links are normalized before processing so their sharing/tracking query string is not retained in subprocess logs or caches.
+
+On first use, Loavy Player downloads yt-dlp, spotDL, and FFmpeg from pinned GitHub release URLs. Every managed executable is checksum-verified before use. Tool configuration and caches are kept under Loavy Player's local app-data `tools` folder. Loavy Player does not import Spotify, browser, or media-site account credentials or cookies.
+
+Spotify, Google/YouTube, GitHub, the website supplied for a direct download, and any media hosts involved receive the relevant network requests and may process information such as your IP address, requested URL or catalog identifier, and standard connection metadata under their own privacy policies and terms. Loavy Player does not proxy these requests through a Loavy-operated server.
 
 ## Optional Room/Jam networking
 

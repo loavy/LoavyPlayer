@@ -338,16 +338,25 @@ pub async fn download_media(
 
     state.download_running.store(false, Ordering::SeqCst);
     state.download_cancel.store(false, Ordering::SeqCst);
+    match &result {
+        Ok(download) => {
+            let _ = app.emit("download://completed", download);
+        }
+        Err(error) => {
+            let _ = app.emit("download://failed", error.to_string());
+        }
+    }
     result.map_err(|err| err.to_string())
 }
 
 #[tauri::command]
 pub async fn get_downloader_status(state: State<'_, AppState>) -> CommandResult<DownloaderStatus> {
-    Ok(downloader::downloader_status(
-        &state.app_data_dir,
-        state.download_running.load(Ordering::SeqCst),
-    )
-    .await)
+    let mut status = downloader::downloader_status(&state.app_data_dir).await;
+    // Tool health checks launch subprocesses and can take a few seconds. Read the
+    // volatile job flag afterward so a just-finished download is never reported
+    // as still running.
+    status.running = state.download_running.load(Ordering::SeqCst);
+    Ok(status)
 }
 
 #[tauri::command]

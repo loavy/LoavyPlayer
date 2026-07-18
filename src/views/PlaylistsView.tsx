@@ -1,8 +1,9 @@
 import { ChevronRight, Folder, FolderOpen, Home, Play, Rows3 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { VirtualSongList } from "../components/VirtualSongList";
 import { Switch } from "../components/Switch";
 import { audioEngine } from "../lib/audioEngine";
+import { useAudio } from "../lib/useAudio";
 import type { MusicFolder, Track } from "../types";
 
 type Props = {
@@ -31,11 +32,25 @@ function isInside(path: string, folder: string) {
 }
 
 export function PlaylistsView({ folders, tracks }: Props) {
+  const audio = useAudio();
   const [currentFolder, setCurrentFolder] = useState<string | null>(null);
   const [continueAcrossFolders, setContinueAcrossFolders] = useState(
     () => localStorage.getItem("loavy.continueAcrossFolders") === "true"
   );
   const roots = useMemo(() => folders.map((folder) => normalize(folder.path)), [folders]);
+
+  useEffect(() => {
+    if (!continueAcrossFolders || !audio.current?.path) return;
+
+    const playingFolder = parentPath(audio.current.path);
+    if (!roots.some((root) => isInside(playingFolder, root))) return;
+
+    setCurrentFolder((folder) =>
+      folder && normalize(folder).toLocaleLowerCase() === normalize(playingFolder).toLocaleLowerCase()
+        ? folder
+        : playingFolder
+    );
+  }, [audio.current?.path, continueAcrossFolders, roots]);
 
   const folderTracks = useMemo(
     () => currentFolder ? tracks.filter((track) => isInside(parentPath(track.path), currentFolder)) : [],
@@ -132,8 +147,14 @@ export function PlaylistsView({ folders, tracks }: Props) {
             />
           </label>
           {currentFolder && (
-            <button className="primaryAction" onClick={playFolder} disabled={!folderTracks.length}>
-              <Play size={16} fill="currentColor" /> Play folder
+            <button
+              className="primaryAction"
+              onClick={playFolder}
+              disabled={!folderTracks.length}
+              aria-label="Play folder"
+              title="Play folder"
+            >
+              <Play size={16} fill="currentColor" />
             </button>
           )}
         </div>

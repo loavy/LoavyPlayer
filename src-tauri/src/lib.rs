@@ -20,10 +20,10 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
-            let state = AppState::initialize(&app.handle())?;
+            let state = AppState::initialize(app.handle())?;
             let background_mode = state.background_mode.load(Ordering::SeqCst);
             app.manage(state);
-            commands::sync_background_tray(&app.handle(), background_mode)?;
+            commands::sync_background_tray(app.handle(), background_mode)?;
             Ok(())
         })
         .on_window_event(|window, event| {

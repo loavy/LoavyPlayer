@@ -250,6 +250,14 @@ h1 { font-size: 28px; line-height: 1.1; font-weight: 820; letter-spacing: -.035e
 }
 .searchBox input { width: 100%; border: 0; outline: 0; color: var(--text); background: transparent; }
 .searchBox input::placeholder { color: var(--faint); }
+.topBarSearch { display: flex; align-items: center; justify-content: flex-end; gap: 9px; min-width: 0; }
+.quickScanButton {
+  width: 42px; height: 42px; flex: 0 0 42px; display: grid; place-items: center;
+  border: 1px solid var(--border); border-radius: 999px; color: var(--muted);
+  background: color-mix(in srgb, var(--panel) 80%, transparent); cursor: pointer;
+}
+.quickScanButton:hover:not(:disabled) { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
+.quickScanButton:disabled { cursor: progress; opacity: .65; }
 
 .contentArea {
   overflow: hidden;
@@ -444,13 +452,18 @@ h1 { font-size: 28px; line-height: 1.1; font-weight: 820; letter-spacing: -.035e
 .downloaderView {
   width: min(820px, 100%);
   height: 100%;
+  min-height: 0;
   margin: 0 auto;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
   display: grid;
-  align-content: center;
+  align-content: start;
   gap: 22px;
-  padding: clamp(8px, 2vh, 24px) 0;
+  padding: clamp(8px, 2vh, 24px) 0 max(28px, env(safe-area-inset-bottom));
 }
+.downloaderView > * { min-width: 0; }
 .brandMark { overflow: hidden; background: var(--panel-2); }
 .brandMark img { width: 100%; height: 100%; display: block; object-fit: cover; }
 .downloaderIntro {
@@ -484,6 +497,11 @@ h1 { font-size: 28px; line-height: 1.1; font-weight: 820; letter-spacing: -.035e
   letter-spacing: -.035em;
 }
 .downloaderIntro p { margin-top: 8px; color: var(--muted); line-height: 1.5; }
+.downloaderStatuses {
+  display: grid;
+  justify-items: end;
+  gap: 7px;
+}
 .downloaderStatus {
   min-height: 32px;
   display: inline-flex;
@@ -497,6 +515,12 @@ h1 { font-size: 28px; line-height: 1.1; font-weight: 820; letter-spacing: -.035e
   font-size: 12px;
   white-space: nowrap;
 }
+.downloaderStatus.ready {
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--accent) 30%, var(--border));
+  background: color-mix(in srgb, var(--accent) 7%, var(--panel));
+}
+.downloaderStatus.ready svg { color: var(--accent); }
 .downloadSurface {
   display: grid;
   gap: 18px;
@@ -508,6 +532,281 @@ h1 { font-size: 28px; line-height: 1.1; font-weight: 820; letter-spacing: -.035e
     linear-gradient(145deg, color-mix(in srgb, var(--panel) 95%, white 1%), var(--panel));
   box-shadow: 0 28px 70px var(--shadow), inset 0 1px 0 rgba(255, 255, 255, .03);
 }
+.downloadSectionTabs {
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--panel-2) 82%, transparent);
+}
+.downloadSectionTabs button {
+  min-width: 0;
+  min-height: 42px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 9px 14px;
+  border: 0;
+  border-radius: 10px;
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+}
+.downloadSectionTabs button:hover { color: var(--text); background: color-mix(in srgb, var(--panel-3) 58%, transparent); }
+.downloadSectionTabs button.active {
+  color: #06110e;
+  background: var(--accent);
+  font-weight: 760;
+  box-shadow: 0 7px 18px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+.downloadSectionTabs button svg { flex: 0 0 auto; }
+.downloadSectionPanel {
+  min-width: 0;
+  display: grid;
+  gap: 16px;
+}
+.downloadSectionPanel[hidden] { display: none; }
+.downloadNamingPanel { gap: 18px; }
+.namingPanelHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  min-width: 0;
+}
+.namingPanelHeader > div { min-width: 0; }
+.namingPanelHeader h3 { font-size: 18px; line-height: 1.25; }
+.namingPanelHeader p {
+  max-width: 560px;
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+.namingLockedNotice {
+  flex: 0 1 auto;
+  padding: 5px 8px;
+  border: 1px solid color-mix(in srgb, var(--warning) 27%, var(--border));
+  border-radius: 999px;
+  color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 6%, var(--panel-2));
+  font-size: 11px;
+  line-height: 1.3;
+  text-align: center;
+}
+.namingTemplateGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: stretch;
+  gap: 14px;
+  min-width: 0;
+}
+.namingTemplateCard {
+  min-width: 0;
+  display: grid;
+  grid-template-rows: auto auto minmax(58px, auto) auto;
+  align-content: start;
+  gap: 10px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--panel-2) 72%, transparent);
+}
+.namingFieldHeader {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.namingFieldHeader label { min-width: 0; font-size: 13px; font-weight: 760; }
+.namingResetButton {
+  min-height: 30px;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 5px 7px;
+  border: 0;
+  border-radius: 8px;
+  color: var(--muted);
+  background: transparent;
+  font-size: 11px;
+  cursor: pointer;
+}
+.namingResetButton:hover { color: var(--text); background: var(--panel-3); }
+.namingTemplateControl { min-width: 0; }
+.namingTemplateControl input {
+  width: 100%;
+  min-width: 0;
+  min-height: 46px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--control-radius);
+  outline: 0;
+  color: var(--text);
+  background: var(--panel);
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 13px;
+}
+.namingTemplateControl input:focus {
+  border-color: color-mix(in srgb, var(--accent) 58%, var(--border));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 13%, transparent);
+}
+.namingFieldHelp {
+  display: flex;
+  align-items: center;
+  min-height: 58px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.namingFolderToggle {
+  min-width: 0;
+  min-height: 58px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--panel) 70%, transparent);
+  cursor: pointer;
+}
+.namingFolderToggle:hover { border-color: color-mix(in srgb, var(--accent) 25%, var(--border)); }
+.namingFolderToggle > span { min-width: 0; display: grid; gap: 2px; }
+.namingFolderToggle strong { font-size: 12px; line-height: 1.3; }
+.namingFolderToggle small { color: var(--muted); font-size: 10px; line-height: 1.35; }
+.namingFolderToggle input {
+  width: 44px;
+  height: 24px;
+  flex: 0 0 44px;
+  margin: 0;
+  appearance: none;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background:
+    radial-gradient(circle at 11px 50%, #d8e1e6 0 7px, transparent 7.5px),
+    color-mix(in srgb, var(--panel-3) 86%, black);
+  box-shadow: inset 0 2px 5px rgba(0, 0, 0, .22);
+  cursor: pointer;
+  transition: background 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+}
+.namingFolderToggle input:checked {
+  border-color: color-mix(in srgb, var(--accent) 70%, transparent);
+  background:
+    radial-gradient(circle at calc(100% - 11px) 50%, white 0 7px, transparent 7.5px),
+    color-mix(in srgb, var(--accent) 78%, #07110f);
+  box-shadow: 0 0 16px color-mix(in srgb, var(--accent) 18%, transparent), inset 0 1px 2px rgba(0, 0, 0, .18);
+}
+.namingFolderToggle input:disabled { cursor: not-allowed; }
+.namingPreview {
+  min-width: 0;
+  min-height: 68px;
+  display: grid;
+  align-content: center;
+  gap: 5px;
+  padding: 10px 11px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--panel) 86%, transparent);
+}
+.namingPreview span {
+  color: var(--faint);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+}
+.namingPreview output {
+  min-width: 0;
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.namingTokenSection {
+  min-width: 0;
+  display: grid;
+  gap: 10px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+.namingTokenHeader {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px 14px;
+  flex-wrap: wrap;
+}
+.namingTokenHeader strong { font-size: 13px; }
+.namingTokenHeader span { color: var(--muted); font-size: 11px; }
+.namingTokenList {
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+.namingTokenChip {
+  min-width: 0;
+  min-height: 32px;
+  padding: 6px 9px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  color: var(--muted);
+  background: var(--panel-2);
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 11px;
+  cursor: pointer;
+}
+.namingTokenChip:hover {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 38%, var(--border));
+  background: color-mix(in srgb, var(--accent) 7%, var(--panel-2));
+}
+.downloadSourceTabs {
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--panel-2);
+}
+.downloadSourceTabs button {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 9px 14px;
+  border: 0;
+  border-radius: 10px;
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+}
+.downloadSourceTabs button:hover { color: var(--text); }
+.downloadSourceTabs button.active {
+  color: var(--text);
+  background: var(--panel-3);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 27%, var(--border)), 0 7px 18px var(--shadow);
+}
+.downloadSourceTabs button.active svg { color: var(--accent); }
+.downloadSourcePanel {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
 .downloadMode {
   width: fit-content;
   display: grid;
@@ -518,6 +817,7 @@ h1 { font-size: 28px; line-height: 1.1; font-weight: 820; letter-spacing: -.035e
   border-radius: 12px;
   background: var(--panel-2);
 }
+.downloadMode.threeOptions { grid-template-columns: repeat(3, minmax(108px, 1fr)); }
 .downloadMode button {
   min-height: 38px;
   display: inline-flex;
@@ -532,6 +832,7 @@ h1 { font-size: 28px; line-height: 1.1; font-weight: 820; letter-spacing: -.035e
   cursor: pointer;
 }
 .downloadMode button:hover { color: var(--text); }
+.downloadMode button:disabled:not(.active) { opacity: .32; }
 .downloadMode button.active {
   color: #06110e;
   background: var(--accent);
@@ -547,7 +848,16 @@ h1 { font-size: 28px; line-height: 1.1; font-weight: 820; letter-spacing: -.035e
   font-size: 13px;
   font-weight: 700;
 }
-.downloadField input {
+.downloadDetected {
+  margin-left: auto;
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+}
+.downloadField input,
+.downloadField select {
   min-width: 0;
   width: 100%;
   min-height: 46px;
@@ -558,9 +868,28 @@ h1 { font-size: 28px; line-height: 1.1; font-weight: 820; letter-spacing: -.035e
   background: var(--panel-2);
   outline: 0;
 }
-.downloadField input:focus {
+.downloadField select {
+  appearance: none;
+  padding-right: 34px;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--muted) 50%),
+    linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+  background-position:
+    calc(100% - 17px) calc(50% - 2px),
+    calc(100% - 12px) calc(50% - 2px);
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+}
+.downloadField input:focus,
+.downloadField select:focus {
   border-color: color-mix(in srgb, var(--accent) 58%, var(--border));
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 13%, transparent);
+}
+.downloadOptionGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(170px, .38fr);
+  align-items: start;
+  gap: 14px;
 }
 .pathPicker { display: grid; grid-template-columns: minmax(0, 1fr) 46px; gap: 8px; }
 .borderedIconButton {
@@ -570,6 +899,23 @@ h1 { font-size: 28px; line-height: 1.1; font-weight: 820; letter-spacing: -.035e
   border-radius: var(--control-radius);
   background: var(--panel-2);
 }
+.downloadSourceNote {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  padding: 13px 14px;
+  border: 1px solid color-mix(in srgb, var(--accent) 24%, var(--border));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--accent) 6%, var(--panel-2));
+  font-size: 12px;
+  line-height: 1.45;
+}
+.downloadSourceNote > svg { flex: 0 0 auto; margin-top: 1px; color: var(--accent); }
+.downloadSourceNote > div { min-width: 0; }
+.downloadSourceNote strong { color: var(--text); }
+.downloadSourceNote p { margin-top: 3px; color: var(--muted); }
+.downloadSourceNote .downloadSetupNote { margin-top: 7px; color: var(--text); }
+.downloadFieldHint { margin-top: -9px; color: var(--muted); font-size: 12px; line-height: 1.4; }
 .downloadProgress {
   display: grid;
   gap: 9px;
@@ -659,6 +1005,34 @@ h1 { font-size: 28px; line-height: 1.1; font-weight: 820; letter-spacing: -.035e
 .downloadResultHeader strong,
 .downloadResultHeader span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .downloadResultHeader span { margin-top: 2px; color: var(--muted); font-size: 12px; }
+.downloadResultHeader .downloadResultMeta {
+  display: inline-block;
+  margin-top: 6px;
+  padding: 3px 7px;
+  border-radius: 999px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+.downloadPartialNotice {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 9px 10px;
+  border: 1px solid color-mix(in srgb, #f6b94c 35%, var(--border));
+  border-radius: 8px;
+  background: color-mix(in srgb, #f6b94c 7%, var(--panel-2));
+  font-size: 12px;
+  line-height: 1.4;
+}
+.downloadPartialNotice > svg { flex: 0 0 auto; margin-top: 1px; color: #f6b94c; }
+.downloadPartialNotice > div { min-width: 0; }
+.downloadPartialNotice strong,
+.downloadPartialNotice span { display: block; }
+.downloadPartialNotice span { margin-top: 2px; color: var(--muted); overflow-wrap: anywhere; }
 .downloadedFiles {
   display: grid;
   gap: 5px;
@@ -1283,6 +1657,31 @@ h1 { font-size: 28px; line-height: 1.1; font-weight: 820; letter-spacing: -.035e
 .folderSongs { min-height: 360px; display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 8px; }
 .folderSectionTitle { display: flex; align-items: center; gap: 8px; padding: 2px 4px; color: var(--muted); font-size: 13px; font-weight: 700; }
 .folderSectionTitle strong { margin-left: auto; color: var(--accent); }
+.folderQueueView { height: 100%; min-height: 0; display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 14px; }
+.folderQueueIntro { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.folderQueueIntro h2 { font-size: 20px; }
+.folderQueueIntro p { margin-top: 4px; color: var(--muted); font-size: 13px; }
+.folderQueueColumns { min-height: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.folderQueuePanel { min-height: 0; display: grid; grid-template-rows: auto minmax(0, 1fr); overflow: hidden; border: 1px solid var(--border); border-radius: var(--panel-radius); background: var(--panel); }
+.folderQueuePanel > header { min-height: 60px; display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--border); }
+.folderQueuePanel > header > svg { color: var(--accent); }
+.folderQueuePanel > header div { min-width: 0; display: grid; gap: 2px; }
+.folderQueuePanel > header small { color: var(--muted); font-size: 11px; }
+.folderQueueList { min-height: 0; overflow: auto; padding: 8px; }
+.folderQueueGroup + .folderQueueGroup { border-top: 1px solid color-mix(in srgb, var(--border) 65%, transparent); }
+.folderQueueRow { min-height: 54px; display: flex; align-items: center; gap: 9px; padding: 7px 8px; border-radius: 9px; }
+.folderQueueRow:hover { background: var(--panel-2); }
+.folderQueueRow > svg { flex: 0 0 auto; color: var(--accent); }
+.folderQueueRow > span { min-width: 0; flex: 1; display: grid; gap: 2px; }
+.folderQueueRow strong, .folderQueueRow small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.folderQueueRow strong { font-size: 13px; }
+.folderQueueRow small { color: var(--muted); font-size: 10px; }
+.folderQueueExpand, .folderQueueAdd, .folderQueueClear { width: 30px; height: 30px; flex: 0 0 30px; display: grid; place-items: center; border: 0; border-radius: 8px; color: var(--muted); background: transparent; cursor: pointer; }
+.folderQueueExpand:hover, .folderQueueAdd:hover, .folderQueueClear:hover { color: var(--accent); background: var(--panel-3); }
+.folderQueueSong { min-height: 46px; padding-left: 47px; }
+.folderQueueClear { margin-left: auto; }
+.folderQueueEmpty { height: 100%; min-height: 180px; display: grid; place-content: center; justify-items: center; gap: 6px; color: var(--muted); text-align: center; }
+.folderQueueEmpty span { font-size: 12px; }
 :root[data-covers="hide"] .cover {
   display: none;
 }
@@ -1547,7 +1946,9 @@ input[type="range"] { width: 100%; accent-color: var(--accent); cursor: pointer;
   .brand span { display: none; }
   .navItem { justify-content: center; }
   .topBar { align-items: stretch; flex-direction: column; }
-  .searchBox { width: 100%; }
+  .topBarSearch, .searchBox { width: 100%; }
+  .folderQueueColumns { grid-template-columns: 1fr; overflow: auto; }
+  .folderQueuePanel { min-height: 360px; }
   .folderToolbar { align-items: stretch; flex-direction: column; }
   .folderToolbarActions { justify-content: flex-start; flex-wrap: wrap; }
   .songsGrid { grid-template-columns: minmax(220px, 1fr) 86px; }
@@ -1580,12 +1981,18 @@ input[type="range"] { width: 100%; accent-color: var(--accent); cursor: pointer;
   .topBar { padding: 12px 14px; gap: 12px; }
   h1 { font-size: 22px; }
   .contentArea { padding: 12px; }
-  .downloaderView { align-content: start; padding: 4px 0 16px; }
+  .downloaderView { padding: 4px 0 max(28px, env(safe-area-inset-bottom)); }
   .downloaderIntro { grid-template-columns: 42px minmax(0, 1fr); gap: 12px; }
   .downloaderMark { width: 42px; height: 42px; }
-  .downloaderStatus { grid-column: 1 / -1; width: fit-content; }
+  .downloaderStatuses { grid-column: 1 / -1; justify-items: start; }
+  .downloaderStatus { width: fit-content; }
   .downloadSurface { padding: 16px; }
+  .namingPanelHeader { flex-direction: column; }
+  .namingLockedNotice { text-align: left; }
+  .namingTemplateGrid { grid-template-columns: minmax(0, 1fr); }
   .downloadMode { width: 100%; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .downloadMode.threeOptions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .downloadOptionGrid { grid-template-columns: 1fr; }
   .downloadProgressMeta { display: grid; gap: 5px; }
   .downloadNotice { align-items: flex-start; flex-wrap: wrap; }
   .downloadNotice .secondaryAction { width: 100%; }
@@ -1629,6 +2036,16 @@ input[type="range"] { width: 100%; accent-color: var(--accent); cursor: pointer;
 }
 
 @media (max-width: 480px) {
+  .downloadSectionTabs button { padding-inline: 8px; }
+  .downloadSourceTabs button { padding-inline: 8px; }
+  .namingTemplateCard { padding: 13px; }
+  .namingFolderToggle { align-items: flex-start; }
+  .namingFolderToggle input { margin-top: 2px; }
+  .namingTokenList { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .namingTokenChip { width: 100%; overflow-wrap: anywhere; }
+  .downloadMode,
+  .downloadMode.threeOptions { grid-template-columns: 1fr; }
+  .downloadDetected { display: none; }
   .roomPathPicker { grid-template-columns: 1fr; }
   .nearbyRoom { align-items: flex-start; flex-direction: column; }
   .nearbyRoomsHeader { align-items: stretch; flex-direction: column; }
@@ -1642,6 +2059,8 @@ input[type="range"] { width: 100%; accent-color: var(--accent); cursor: pointer;
   h1 { font-size: 23px; }
   .titleGroup p { font-size: 13px; }
   .contentArea { padding-top: 12px; padding-bottom: 12px; }
+  .downloaderView { gap: 16px; padding-top: 0; }
+  .downloadSurface { gap: 15px; }
   .playerBar { min-height: 70px; padding-top: 8px; padding-bottom: 8px; }
   .playButton { width: 40px; height: 40px; }
   .transportButtons { gap: 4px; }

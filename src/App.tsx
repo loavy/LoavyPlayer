@@ -1,6 +1,6 @@
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { Search, SidebarIcon, X } from "lucide-react";
+import { RefreshCw, Search, SidebarIcon, X } from "lucide-react";
 import { Sidebar } from "./components/Sidebar";
 import { PlayerBar } from "./components/PlayerBar";
 import { AlbumsView } from "./views/AlbumsView";
@@ -9,6 +9,7 @@ import { SettingsView } from "./views/SettingsView";
 import { SongsView } from "./views/SongsView";
 import { RoomView } from "./views/RoomView";
 import { PlaylistsView } from "./views/PlaylistsView";
+import { FolderQueueView } from "./views/FolderQueueView";
 import { DownloaderView } from "./views/DownloaderView";
 import { api } from "./lib/api";
 import { useAudio } from "./lib/useAudio";
@@ -479,6 +480,7 @@ function App() {
     albums: "Albums",
     artists: "Artists",
     playlists: "Folder Playlists",
+    folderQueue: "Folder Queue",
     recent: "Recently Played",
     favorites: "Favorites",
     room: "Room",
@@ -558,6 +560,7 @@ function App() {
     if (activeView === "playlists") {
       return <PlaylistsView folders={folders} tracks={tracks} />;
     }
+    if (activeView === "folderQueue") return <FolderQueueView tracks={tracks} />;
     return (
       <SongsView
         tracks={filteredTracks}
@@ -600,10 +603,15 @@ function App() {
               </div>
             </div>
           </div>
-          <label className="searchBox">
-            <Search size={17} />
-            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search songs, artists, albums" />
-          </label>
+          <div className="topBarSearch">
+            <button className="quickScanButton" onClick={() => void scan()} disabled={scanning} title={scanning ? "Scanning library" : "Quick scan library"} aria-label={scanning ? "Scanning library" : "Quick scan library"}>
+              <RefreshCw size={17} className={scanning ? "spin" : ""} />
+            </button>
+            <label className="searchBox">
+              <Search size={17} />
+              <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search songs, artists, albums" />
+            </label>
+          </div>
         </header>
         {error && <pre className="errorBanner">{error}</pre>}
         <div className="contentArea">
