@@ -1,5 +1,5 @@
 import { ChevronDown, ChevronRight, Folder, ListMusic, Music2, Play, Plus, Trash2, X } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { audioEngine } from "../lib/audioEngine";
 import { displayArtist, displayTrackTitle } from "../lib/format";
 import type { Track } from "../types";
@@ -7,6 +7,21 @@ import type { Track } from "../types";
 type Selection =
   | { kind: "folder"; path: string }
   | { kind: "track"; id: number };
+
+const STORAGE_KEY = "loavy.folderQueueSelection";
+
+function loadSelection(): Selection[] {
+  try {
+    const value: unknown = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
+    if (!Array.isArray(value)) return [];
+    return value.filter((item): item is Selection => Boolean(item) && typeof item === "object" && (
+      ((item as Selection).kind === "folder" && typeof (item as { path?: unknown }).path === "string") ||
+      ((item as Selection).kind === "track" && Number.isInteger((item as { id?: unknown }).id))
+    ));
+  } catch {
+    return [];
+  }
+}
 
 function normalize(path: string) {
   return path.replace(/[\\/]+$/, "").replace(/\//g, "\\");
@@ -30,7 +45,10 @@ function isInside(path: string, folder: string) {
 
 export function FolderQueueView({ tracks }: { tracks: Track[] }) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const [selection, setSelection] = useState<Selection[]>([]);
+  const [selection, setSelection] = useState<Selection[]>(loadSelection);
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(selection));
+  }, [selection]);
   const folders = useMemo(() => {
     const counts = new Map<string, number>();
     for (const track of tracks) {

@@ -2055,10 +2055,16 @@ input[type="range"] { width: 100%; accent-color: var(--accent); cursor: pointer;
 }
 
 @media (max-height: 720px) {
-  .topBar { min-height: 64px; padding-top: 10px; padding-bottom: 10px; }
+  .topBar { min-height: 58px; padding-top: 8px; padding-bottom: 8px; }
   h1 { font-size: 23px; }
   .titleGroup p { font-size: 13px; }
-  .contentArea { padding-top: 12px; padding-bottom: 12px; }
+  .contentArea { padding-top: 8px; padding-bottom: 8px; }
+  .folderQueueView { gap: 8px; }
+  .folderQueueIntro h2 { font-size: 17px; }
+  .folderQueueIntro p { margin-top: 2px; font-size: 11px; }
+  .folderQueuePanel > header { min-height: 48px; padding-block: 8px; }
+  .folderQueueRow { min-height: 46px; padding-block: 4px; }
+  .folderQueueSong { min-height: 40px; }
   .downloaderView { gap: 16px; padding-top: 0; }
   .downloadSurface { gap: 15px; }
   .playerBar { min-height: 70px; padding-top: 8px; padding-bottom: 8px; }
@@ -2069,6 +2075,32 @@ input[type="range"] { width: 100%; accent-color: var(--accent); cursor: pointer;
   .nowPlayingDetails { gap: 13px; }
   .heroPlayButton { width: 64px; height: 64px; }
   .heroControls { grid-template-columns: 46px 54px 64px 54px 46px; }
+}
+
+@media (max-width: 900px) and (max-height: 720px) {
+  .topBar { flex-direction: row; align-items: center; }
+  .titleGroup { flex: 0 1 auto; }
+  .topMeta { display: none; }
+  .topBarSearch { flex: 1 1 260px; width: auto; }
+  .searchBox { width: 100%; min-width: 0; }
+  .folderQueueIntro { align-items: flex-start; }
+  .folderQueueIntro .primaryAction { flex: 0 0 auto; }
+  .folderQueueColumns { grid-template-columns: repeat(2, minmax(0, 1fr)); overflow: hidden; gap: 8px; }
+  .folderQueuePanel { min-height: 0; }
+  .playerBar { grid-template-columns: minmax(0, 1fr) minmax(210px, 1fr) auto; min-height: 66px; padding: 7px 12px; }
+  .nowPlaying { grid-column: 1; }
+  .transport { grid-column: 2; }
+  .volume { grid-column: 3; align-self: auto; min-width: 100px; }
+}
+
+@media (max-width: 600px) and (max-height: 720px) {
+  .topBar { align-items: stretch; flex-direction: column; }
+  .folderQueueColumns { grid-template-columns: 1fr; overflow: auto; }
+  .folderQueuePanel { min-height: 260px; }
+  .playerBar { grid-template-columns: minmax(0, 1fr) auto; }
+  .nowPlaying { grid-column: 1 / -1; }
+  .transport { grid-column: 1; }
+  .volume { grid-column: 2; }
 }
 
 @media (min-width: 761px) and (max-height: 720px) {

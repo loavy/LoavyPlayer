@@ -2113,7 +2113,7 @@ checksum = "92daf443525c4cce67b150400bc2316076100ce0b3686209eb8cf3c31612e6f0"
 
 [[package]]
 name = "loavy-player"
-version = "5.8.8"
+version = "5.9.9"
 dependencies = [
  "anyhow",
  "async-trait",

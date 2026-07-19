@@ -1,5 +1,5 @@
 import { ChevronRight, Folder, FolderOpen, Home, Play, Rows3 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { type MouseEvent, useEffect, useMemo, useRef, useState } from "react";
 import { VirtualSongList } from "../components/VirtualSongList";
 import { Switch } from "../components/Switch";
 import { audioEngine } from "../lib/audioEngine";
@@ -34,6 +34,8 @@ function isInside(path: string, folder: string) {
 export function PlaylistsView({ folders, tracks }: Props) {
   const audio = useAudio();
   const [currentFolder, setCurrentFolder] = useState<string | null>(null);
+  const historyRef = useRef<Array<string | null>>([null]);
+  const historyIndexRef = useRef(0);
   const [continueAcrossFolders, setContinueAcrossFolders] = useState(
     () => localStorage.getItem("loavy.continueAcrossFolders") === "true"
   );
@@ -106,6 +108,24 @@ export function PlaylistsView({ folders, tracks }: Props) {
     void audioEngine.playTrack(folderTracks[0], queue, 0);
   }
 
+  function navigateTo(folder: string | null) {
+    const history = historyRef.current.slice(0, historyIndexRef.current + 1);
+    if (history[history.length - 1] === folder) return;
+    history.push(folder);
+    historyRef.current = history;
+    historyIndexRef.current = history.length - 1;
+    setCurrentFolder(folder);
+  }
+
+  function handleMouseNavigation(event: MouseEvent<HTMLElement>) {
+    if (event.button !== 3 && event.button !== 4) return;
+    event.preventDefault();
+    const nextIndex = historyIndexRef.current + (event.button === 3 ? -1 : 1);
+    if (nextIndex < 0 || nextIndex >= historyRef.current.length) return;
+    historyIndexRef.current = nextIndex;
+    setCurrentFolder(historyRef.current[nextIndex]);
+  }
+
   function changeFolderContinuation(enabled: boolean) {
     setContinueAcrossFolders(enabled);
     localStorage.setItem("loavy.continueAcrossFolders", String(enabled));
@@ -123,14 +143,14 @@ export function PlaylistsView({ folders, tracks }: Props) {
   }
 
   return (
-    <section className="folderBrowser">
+    <section className="folderBrowser" onAuxClick={handleMouseNavigation}>
       <header className="folderToolbar">
         <div className="folderBreadcrumbs">
-          <button onClick={() => setCurrentFolder(null)} title="Music folders"><Home size={16} /></button>
+          <button onClick={() => navigateTo(null)} title="Music folders"><Home size={16} /></button>
           {breadcrumbs.map((crumb) => (
             <span key={crumb.path}>
               <ChevronRight size={14} />
-              <button onClick={() => setCurrentFolder(crumb.path)}>{crumb.label}</button>
+              <button onClick={() => navigateTo(crumb.path)}>{crumb.label}</button>
             </span>
           ))}
         </div>
@@ -163,7 +183,7 @@ export function PlaylistsView({ folders, tracks }: Props) {
       <div className="folderBrowserContent">
         <div className="folderGrid">
           {childFolders.map((folder) => (
-            <button className="folderCard" key={folder} onClick={() => setCurrentFolder(folder)}>
+            <button className="folderCard" key={folder} onClick={() => navigateTo(folder)}>
               <span className="folderIcon"><Folder size={24} fill="currentColor" /></span>
               <span>
                 <strong>{baseName(folder)}</strong>

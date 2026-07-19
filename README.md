@@ -8,8 +8,6 @@
 
 Loavy Player is a local-first desktop music player for Windows, built with Tauri, Rust, React, and TypeScript. It scans music already on your computer, reads embedded metadata and artwork, and keeps the library in a local SQLite database.
 
-[Download the latest release](https://github.com/loavy/LoavyPlayer/releases/latest) | [Report a bug](https://github.com/loavy/LoavyPlayer/issues)
-
 ## What It Does
 
 - Plays MP3, FLAC, WAV, OGG/OGA, Opus, M4A, and AAC files from local folders.
@@ -23,8 +21,6 @@ Loavy Player is a local-first desktop music player for Windows, built with Tauri
 - Supports dark and light themes, density controls, reduced motion, and high contrast.
 
 ## Install On Windows
-
-Download the setup file from [GitHub Releases](https://github.com/loavy/LoavyPlayer/releases/latest):
 
 During setup, Loavy asks whether to install optional **Tools**. Choosing **Yes** opens the official Microsoft Store listing for Web Media Extensions after Loavy is installed. This adds Windows support for OGG, Opus, and related web media formats. Choosing **No** skips it without affecting the main installation.
 
