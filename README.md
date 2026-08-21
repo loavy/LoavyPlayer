@@ -156,7 +156,6 @@ Generated Windows bundles are written under:
 
 ```text
 src-tauri/target/release/bundle/nsis/
-src-tauri/target/release/bundle/msi/
 ```
 
 For a Microsoft Store-compatible NSIS build with the offline WebView2 installer:
@@ -164,8 +163,6 @@ For a Microsoft Store-compatible NSIS build with the offline WebView2 installer:
 ```powershell
 npm run desktop:store
 ```
-
-See the [Microsoft Store publishing checklist](docs/MICROSOFT_STORE.md) before submitting the installer.
 
 ## Project Layout
 

@@ -79,6 +79,7 @@ export type ViewKey =
   | "albums"
   | "artists"
   | "playlists"
+  | "folders"
   | "folderQueue"
   | "recent"
   | "favorites"
@@ -205,6 +206,80 @@ export type Playlist = {
   createdAt: number;
   updatedAt: number;
   trackCount: number;
+};
+
+export type TrackLyrics = {
+  trackId: number;
+  plainText?: string | null;
+  syncedText?: string | null;
+  source?: string | null;
+  updatedAt: number;
+};
+
+export type TrackLyricsUpdate = {
+  trackId: number;
+  plainText?: string | null;
+  syncedText?: string | null;
+  source?: string | null;
+};
+
+export type TrackPlaybackStats = {
+  trackId: number;
+  lastPlayedAt: number;
+  playCount: number;
+};
+
+export type LibraryFolderEntry = {
+  rootId: number;
+  relativePath: string;
+  name: string;
+  path: string;
+  directTrackCount: number;
+  indexedTrackCount: number;
+};
+
+export type LibraryFolderListing = {
+  rootId: number;
+  relativePath: string;
+  path: string;
+  folders: LibraryFolderEntry[];
+};
+
+export type FolderRenameResult = {
+  rootId: number;
+  oldRelativePath: string;
+  newRelativePath: string;
+  path: string;
+  affectedTrackIds: number[];
+};
+
+export type FolderInspection = {
+  rootId: number;
+  relativePath: string;
+  path: string;
+  indexedTrackCount: number;
+  descendantFolderCount: number;
+};
+
+export type FolderDeleteResult = {
+  rootId: number;
+  relativePath: string;
+  path: string;
+  removedTrackIds: number[];
+  alreadyMissing: boolean;
+};
+
+export type TrackDeleteResult = {
+  trackId: number;
+  path: string;
+  alreadyMissing: boolean;
+  coverRemoved: boolean;
+};
+
+export type LibraryChange = {
+  kind: string;
+  trackIds: number[];
+  rootId: number | null;
 };
 
 export type RoomJoinResult = {

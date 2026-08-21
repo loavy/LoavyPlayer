@@ -6,6 +6,11 @@ import type {
   DownloaderStatus,
   DiscoveredRoom,
   FetcherDescriptor,
+  FolderDeleteResult,
+  FolderInspection,
+  FolderRenameResult,
+  LibraryFolderEntry,
+  LibraryFolderListing,
   MusicFolder,
   MediaDownloadRequest,
   RoomCreateRequest,
@@ -17,7 +22,11 @@ import type {
   Playlist,
   ScanSummary,
   ScanTaskState,
-  Track
+  Track,
+  TrackDeleteResult,
+  TrackLyrics,
+  TrackLyricsUpdate,
+  TrackPlaybackStats
 } from "../types";
 
 export const api = {
@@ -32,16 +41,49 @@ export const api = {
   listTracks: (query?: string) => invoke<Track[]>("list_tracks", { query: query || null }),
   setTrackFavorite: (trackId: number, favorite: boolean) =>
     invoke<void>("set_track_favorite", { trackId, favorite }),
+  markTrackPlayed: (trackId: number) =>
+    invoke<TrackPlaybackStats>("mark_track_played", { trackId }),
+  revealTrack: (trackId: number) => invoke<void>("reveal_track", { trackId }),
+  deleteTrackToTrash: (trackId: number) =>
+    invoke<TrackDeleteResult>("delete_track_to_trash", { trackId }),
+  getTrackLyrics: (trackId: number) =>
+    invoke<TrackLyrics | null>("get_track_lyrics", { trackId }),
+  saveTrackLyrics: (request: TrackLyricsUpdate) =>
+    invoke<TrackLyrics>("save_track_lyrics", { request }),
+  deleteTrackLyrics: (trackId: number) =>
+    invoke<void>("delete_track_lyrics", { trackId }),
+  importTrackLyrics: (trackId: number) =>
+    invoke<TrackLyrics | null>("import_track_lyrics", { trackId }),
   findRoomPlaybackTrack: (playback: RoomPlaybackState) =>
     invoke<Track | null>("find_room_playback_track", { playback }),
   listAlbums: () => invoke<Album[]>("list_albums"),
   listArtists: () => invoke<Artist[]>("list_artists"),
   listPlaylists: () => invoke<Playlist[]>("list_playlists"),
   createPlaylist: (name: string) => invoke<Playlist>("create_playlist", { name }),
+  renamePlaylist: (playlistId: number, name: string) =>
+    invoke<Playlist>("rename_playlist", { playlistId, name }),
+  deletePlaylist: (playlistId: number) =>
+    invoke<void>("delete_playlist", { playlistId }),
   addTrackToPlaylist: (playlistId: number, trackId: number) =>
     invoke<void>("add_track_to_playlist", { playlistId, trackId }),
+  removeTrackFromPlaylist: (playlistId: number, trackId: number) =>
+    invoke<void>("remove_track_from_playlist", { playlistId, trackId }),
+  reorderPlaylistTracks: (playlistId: number, trackIds: number[]) =>
+    invoke<void>("reorder_playlist_tracks", { playlistId, trackIds }),
   listPlaylistTracks: (playlistId: number) =>
     invoke<Track[]>("list_playlist_tracks", { playlistId }),
+  listLibraryFolder: (rootId: number, relativePath: string) =>
+    invoke<LibraryFolderListing>("list_library_folder", { rootId, relativePath }),
+  createLibraryFolder: (rootId: number, parentRelativePath: string, name: string) =>
+    invoke<LibraryFolderEntry>("create_library_folder", { rootId, parentRelativePath, name }),
+  renameLibraryFolder: (rootId: number, relativePath: string, name: string) =>
+    invoke<FolderRenameResult>("rename_library_folder", { rootId, relativePath, name }),
+  inspectLibraryFolder: (rootId: number, relativePath: string) =>
+    invoke<FolderInspection>("inspect_library_folder", { rootId, relativePath }),
+  deleteLibraryFolderToTrash: (rootId: number, relativePath: string) =>
+    invoke<FolderDeleteResult>("delete_library_folder_to_trash", { rootId, relativePath }),
+  revealLibraryFolder: (rootId: number, relativePath: string) =>
+    invoke<void>("reveal_library_folder", { rootId, relativePath }),
   listFetchers: () => invoke<FetcherDescriptor[]>("list_fetchers"),
   downloadMedia: (request: MediaDownloadRequest) =>
     invoke<DownloadResult>("download_media", { request }),

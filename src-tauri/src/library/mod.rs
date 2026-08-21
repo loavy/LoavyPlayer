@@ -1,3 +1,4 @@
+pub mod filesystem;
 mod scanner;
 
 pub use scanner::scan_library;

@@ -11,9 +11,12 @@ use crate::{
     fetchers::{self, FetchContext, FetchRequest},
     library,
     models::{
-        Album, ApiKeyUpdate, Artist, DiscoveredRoom, FetcherDescriptor, MusicFolder, Playlist,
-        RoomClientStatus, RoomCreateRequest, RoomJoinRequest, RoomJoinResult, RoomPlaybackState,
-        RoomStatus, ScanProgress, ScanSummary, ScanTaskState, SettingUpdate, Track,
+        Album, ApiKeyUpdate, Artist, DiscoveredRoom, FetcherDescriptor, FolderDeleteResult,
+        FolderInspection, FolderRenameResult, LibraryChange, LibraryFolderEntry,
+        LibraryFolderListing, MusicFolder, Playlist, RoomClientStatus, RoomCreateRequest,
+        RoomJoinRequest, RoomJoinResult, RoomPlaybackState, RoomStatus, ScanProgress, ScanSummary,
+        ScanTaskState, SettingUpdate, Track, TrackDeleteResult, TrackLyrics, TrackLyricsUpdate,
+        TrackPlaybackStats,
     },
     state::AppState,
 };
@@ -23,6 +26,7 @@ type CommandResult<T> = Result<T, String>;
 const BACKGROUND_TRAY_ID: &str = "loavy-background";
 const TRAY_OPEN_ID: &str = "tray-open";
 const TRAY_QUIT_ID: &str = "tray-quit";
+const MAX_LYRICS_FILE_BYTES: u64 = 2 * 1024 * 1024;
 
 pub(crate) fn show_main_window(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
@@ -50,7 +54,12 @@ pub(crate) fn sync_background_tray(app: &AppHandle, enabled: bool) -> tauri::Res
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id.as_ref() {
             TRAY_OPEN_ID => show_main_window(app),
-            TRAY_QUIT_ID => app.exit(0),
+            TRAY_QUIT_ID => {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.emit("app://backgrounding", ());
+                }
+                app.exit(0);
+            }
             _ => {}
         })
         .on_tray_icon_event(|tray, event| {
@@ -261,6 +270,24 @@ pub async fn create_playlist(state: State<'_, AppState>, name: String) -> Comman
 }
 
 #[tauri::command]
+pub async fn rename_playlist(
+    state: State<'_, AppState>,
+    playlist_id: i64,
+    name: String,
+) -> CommandResult<Playlist> {
+    let db = state.db.lock().map_err(|err| err.to_string())?;
+    db.rename_playlist(playlist_id, &name, chrono::Utc::now().timestamp_millis())
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+pub async fn delete_playlist(state: State<'_, AppState>, playlist_id: i64) -> CommandResult<()> {
+    let db = state.db.lock().map_err(|err| err.to_string())?;
+    db.delete_playlist(playlist_id)
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
 pub async fn add_track_to_playlist(
     state: State<'_, AppState>,
     playlist_id: i64,
@@ -272,6 +299,28 @@ pub async fn add_track_to_playlist(
 }
 
 #[tauri::command]
+pub async fn remove_track_from_playlist(
+    state: State<'_, AppState>,
+    playlist_id: i64,
+    track_id: i64,
+) -> CommandResult<()> {
+    let db = state.db.lock().map_err(|err| err.to_string())?;
+    db.remove_track_from_playlist(playlist_id, track_id)
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+pub async fn reorder_playlist_tracks(
+    state: State<'_, AppState>,
+    playlist_id: i64,
+    track_ids: Vec<i64>,
+) -> CommandResult<()> {
+    let db = state.db.lock().map_err(|err| err.to_string())?;
+    db.reorder_playlist_tracks(playlist_id, &track_ids)
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
 pub async fn list_playlist_tracks(
     state: State<'_, AppState>,
     playlist_id: i64,
@@ -279,6 +328,104 @@ pub async fn list_playlist_tracks(
     let db = state.db.lock().map_err(|err| err.to_string())?;
     db.list_playlist_tracks(playlist_id)
         .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+pub async fn get_track_lyrics(
+    state: State<'_, AppState>,
+    track_id: i64,
+) -> CommandResult<Option<TrackLyrics>> {
+    let db = state.db.lock().map_err(|err| err.to_string())?;
+    db.get_track_lyrics(track_id).map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+pub async fn save_track_lyrics(
+    state: State<'_, AppState>,
+    request: TrackLyricsUpdate,
+) -> CommandResult<TrackLyrics> {
+    let db = state.db.lock().map_err(|err| err.to_string())?;
+    db.save_track_lyrics(request, chrono::Utc::now().timestamp_millis())
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+pub async fn delete_track_lyrics(state: State<'_, AppState>, track_id: i64) -> CommandResult<()> {
+    let db = state.db.lock().map_err(|err| err.to_string())?;
+    db.delete_track_lyrics(track_id)
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+pub async fn import_track_lyrics(
+    state: State<'_, AppState>,
+    track_id: i64,
+) -> CommandResult<Option<TrackLyrics>> {
+    let Some(file) = rfd::AsyncFileDialog::new()
+        .add_filter("Lyrics", &["lrc", "txt"])
+        .pick_file()
+        .await
+    else {
+        return Ok(None);
+    };
+    let path = file.path();
+    let extension = path
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    if extension != "lrc" && extension != "txt" {
+        return Err("Lyrics imports must be .lrc or .txt files.".to_string());
+    }
+    let metadata = tokio::fs::metadata(path)
+        .await
+        .map_err(|error| format!("Could not inspect the lyrics file: {error}"))?;
+    if !metadata.is_file() {
+        return Err("The selected lyrics path is not a file.".to_string());
+    }
+    if metadata.len() > MAX_LYRICS_FILE_BYTES {
+        return Err("Lyrics files cannot exceed 2 MB.".to_string());
+    }
+    let bytes = tokio::fs::read(path)
+        .await
+        .map_err(|error| format!("Could not read the lyrics file: {error}"))?;
+    let text = String::from_utf8(bytes)
+        .map_err(|_| "The lyrics file must use UTF-8 text encoding.".to_string())?;
+    let text = text.trim_start_matches('\u{feff}').trim().to_string();
+    if text.is_empty() {
+        return Err("The lyrics file is empty.".to_string());
+    }
+    let synced = extension == "lrc" || contains_lrc_timestamp(&text);
+    let request = TrackLyricsUpdate {
+        track_id,
+        plain_text: if synced {
+            let plain = plain_text_from_lrc(&text);
+            (!plain.is_empty()).then_some(plain)
+        } else {
+            Some(text.clone())
+        },
+        synced_text: synced.then_some(text),
+        source: Some("local-file".to_string()),
+    };
+    let db = state.db.lock().map_err(|err| err.to_string())?;
+    db.save_track_lyrics(request, chrono::Utc::now().timestamp_millis())
+        .map(Some)
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+pub async fn mark_track_played(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    track_id: i64,
+) -> CommandResult<TrackPlaybackStats> {
+    let stats = {
+        let db = state.db.lock().map_err(|err| err.to_string())?;
+        db.mark_track_played(track_id, chrono::Utc::now().timestamp_millis())
+            .map_err(|err| err.to_string())?
+    };
+    emit_library_change(&app, "track-played", vec![track_id], None);
+    Ok(stats)
 }
 
 #[tauri::command]
@@ -401,6 +548,160 @@ pub async fn select_guest_song_folder(app: AppHandle) -> CommandResult<Option<St
 }
 
 #[tauri::command]
+pub async fn list_library_folder(
+    state: State<'_, AppState>,
+    root_id: i64,
+    relative_path: String,
+) -> CommandResult<LibraryFolderListing> {
+    let db_path = state.db_path.clone();
+    tokio::task::spawn_blocking(move || -> anyhow::Result<LibraryFolderListing> {
+        let db = crate::db::Database::open(db_path)?;
+        library::filesystem::list_library_folder(&db, root_id, &relative_path)
+    })
+    .await
+    .map_err(|err| err.to_string())?
+    .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+pub async fn create_library_folder(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    root_id: i64,
+    parent_relative_path: String,
+    name: String,
+) -> CommandResult<LibraryFolderEntry> {
+    let db_path = state.db_path.clone();
+    let entry = tokio::task::spawn_blocking(move || -> anyhow::Result<LibraryFolderEntry> {
+        let db = crate::db::Database::open(db_path)?;
+        library::filesystem::create_library_folder(&db, root_id, &parent_relative_path, &name)
+    })
+    .await
+    .map_err(|err| err.to_string())?
+    .map_err(|err| err.to_string())?;
+    emit_library_change(&app, "folder-created", Vec::new(), Some(root_id));
+    Ok(entry)
+}
+
+#[tauri::command]
+pub async fn rename_library_folder(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    root_id: i64,
+    relative_path: String,
+    name: String,
+) -> CommandResult<FolderRenameResult> {
+    let db_path = state.db_path.clone();
+    let result = tokio::task::spawn_blocking(move || -> anyhow::Result<FolderRenameResult> {
+        let db = crate::db::Database::open(db_path)?;
+        library::filesystem::rename_library_folder(&db, root_id, &relative_path, &name)
+    })
+    .await
+    .map_err(|err| err.to_string())?
+    .map_err(|err| err.to_string())?;
+    emit_library_change(
+        &app,
+        "folder-renamed",
+        result.affected_track_ids.clone(),
+        Some(root_id),
+    );
+    Ok(result)
+}
+
+#[tauri::command]
+pub async fn inspect_library_folder(
+    state: State<'_, AppState>,
+    root_id: i64,
+    relative_path: String,
+) -> CommandResult<FolderInspection> {
+    let db_path = state.db_path.clone();
+    tokio::task::spawn_blocking(move || -> anyhow::Result<FolderInspection> {
+        let db = crate::db::Database::open(db_path)?;
+        library::filesystem::inspect_library_folder(&db, root_id, &relative_path)
+    })
+    .await
+    .map_err(|err| err.to_string())?
+    .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+pub async fn delete_library_folder_to_trash(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    root_id: i64,
+    relative_path: String,
+) -> CommandResult<FolderDeleteResult> {
+    let db_path = state.db_path.clone();
+    let app_data_dir = state.app_data_dir.clone();
+    let result = tokio::task::spawn_blocking(move || -> anyhow::Result<FolderDeleteResult> {
+        let db = crate::db::Database::open(db_path)?;
+        library::filesystem::delete_library_folder_to_trash(
+            &db,
+            &app_data_dir,
+            root_id,
+            &relative_path,
+        )
+    })
+    .await
+    .map_err(|err| err.to_string())?
+    .map_err(|err| err.to_string())?;
+    emit_library_change(
+        &app,
+        "folder-deleted",
+        result.removed_track_ids.clone(),
+        Some(root_id),
+    );
+    Ok(result)
+}
+
+#[tauri::command]
+pub async fn reveal_library_folder(
+    state: State<'_, AppState>,
+    root_id: i64,
+    relative_path: String,
+) -> CommandResult<()> {
+    let db_path = state.db_path.clone();
+    tokio::task::spawn_blocking(move || -> anyhow::Result<()> {
+        let db = crate::db::Database::open(db_path)?;
+        library::filesystem::reveal_library_folder(&db, root_id, &relative_path)
+    })
+    .await
+    .map_err(|err| err.to_string())?
+    .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+pub async fn reveal_track(state: State<'_, AppState>, track_id: i64) -> CommandResult<()> {
+    let db_path = state.db_path.clone();
+    tokio::task::spawn_blocking(move || -> anyhow::Result<()> {
+        let db = crate::db::Database::open(db_path)?;
+        library::filesystem::reveal_track(&db, track_id)
+    })
+    .await
+    .map_err(|err| err.to_string())?
+    .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+pub async fn delete_track_to_trash(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    track_id: i64,
+) -> CommandResult<TrackDeleteResult> {
+    let db_path = state.db_path.clone();
+    let app_data_dir = state.app_data_dir.clone();
+    let result = tokio::task::spawn_blocking(move || -> anyhow::Result<TrackDeleteResult> {
+        let db = crate::db::Database::open(db_path)?;
+        library::filesystem::delete_track_to_trash(&db, &app_data_dir, track_id)
+    })
+    .await
+    .map_err(|err| err.to_string())?
+    .map_err(|err| err.to_string())?;
+    emit_library_change(&app, "track-deleted", vec![track_id], None);
+    Ok(result)
+}
+
+#[tauri::command]
 pub fn reveal_download(path: String) -> CommandResult<()> {
     let path = std::path::PathBuf::from(path);
     if !path.exists() {
@@ -435,6 +736,68 @@ fn reveal_file(path: &std::path::Path) -> std::io::Result<()> {
     let folder = path.parent().unwrap_or(path);
     std::process::Command::new("xdg-open").arg(folder).spawn()?;
     Ok(())
+}
+
+fn emit_library_change(app: &AppHandle, kind: &str, track_ids: Vec<i64>, root_id: Option<i64>) {
+    let _ = app.emit(
+        "library://changed",
+        LibraryChange {
+            kind: kind.to_string(),
+            track_ids,
+            root_id,
+        },
+    );
+}
+
+fn contains_lrc_timestamp(value: &str) -> bool {
+    value.lines().any(|line| {
+        line.trim_start()
+            .strip_prefix('[')
+            .and_then(|line| line.split_once(']'))
+            .map(|(tag, _)| is_lrc_timestamp(tag))
+            .unwrap_or(false)
+    })
+}
+
+fn is_lrc_timestamp(tag: &str) -> bool {
+    let Some((minutes, seconds)) = tag.split_once(':') else {
+        return false;
+    };
+    !minutes.is_empty()
+        && minutes.len() <= 3
+        && minutes.chars().all(|character| character.is_ascii_digit())
+        && seconds
+            .parse::<f64>()
+            .map(|seconds| (0.0..60.0).contains(&seconds))
+            .unwrap_or(false)
+}
+
+fn plain_text_from_lrc(value: &str) -> String {
+    value
+        .lines()
+        .filter_map(|line| {
+            let mut remaining = line.trim();
+            let mut timestamped = false;
+            let mut metadata_only = false;
+            while let Some(rest) = remaining.strip_prefix('[') {
+                let Some((tag, next)) = rest.split_once(']') else {
+                    break;
+                };
+                if is_lrc_timestamp(tag) {
+                    timestamped = true;
+                } else if tag.contains(':') {
+                    metadata_only = true;
+                } else {
+                    break;
+                }
+                remaining = next.trim_start();
+            }
+            let remaining = remaining.trim();
+            (!remaining.is_empty() && (timestamped || !metadata_only))
+                .then(|| remaining.to_string())
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 #[tauri::command]

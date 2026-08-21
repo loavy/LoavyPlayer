@@ -11,7 +11,7 @@ mod state;
 use std::sync::atomic::Ordering;
 
 use state::AppState;
-use tauri::{Manager, WindowEvent};
+use tauri::{Emitter, Manager, WindowEvent};
 
 pub fn run() {
     tauri::Builder::default()
@@ -27,16 +27,17 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            if window.label() == "main"
-                && matches!(event, WindowEvent::CloseRequested { .. })
-                && window
-                    .state::<AppState>()
-                    .background_mode
-                    .load(Ordering::SeqCst)
-            {
+            if window.label() == "main" {
                 if let WindowEvent::CloseRequested { api, .. } = event {
-                    api.prevent_close();
-                    let _ = window.hide();
+                    let _ = window.emit("app://backgrounding", ());
+                    if window
+                        .state::<AppState>()
+                        .background_mode
+                        .load(Ordering::SeqCst)
+                    {
+                        api.prevent_close();
+                        let _ = window.hide();
+                    }
                 }
             }
         })
@@ -56,8 +57,17 @@ pub fn run() {
             commands::list_artists,
             commands::list_playlists,
             commands::create_playlist,
+            commands::rename_playlist,
+            commands::delete_playlist,
             commands::add_track_to_playlist,
+            commands::remove_track_from_playlist,
+            commands::reorder_playlist_tracks,
             commands::list_playlist_tracks,
+            commands::get_track_lyrics,
+            commands::save_track_lyrics,
+            commands::delete_track_lyrics,
+            commands::import_track_lyrics,
+            commands::mark_track_played,
             commands::set_setting,
             commands::get_setting,
             commands::set_api_key,
@@ -69,6 +79,14 @@ pub fn run() {
             commands::select_download_folder,
             commands::get_default_guest_song_folder,
             commands::select_guest_song_folder,
+            commands::list_library_folder,
+            commands::create_library_folder,
+            commands::rename_library_folder,
+            commands::inspect_library_folder,
+            commands::delete_library_folder_to_trash,
+            commands::reveal_library_folder,
+            commands::reveal_track,
+            commands::delete_track_to_trash,
             commands::reveal_download,
             commands::create_room,
             commands::stop_room,

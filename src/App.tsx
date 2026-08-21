@@ -1,6 +1,6 @@
-import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { RefreshCw, Search, SidebarIcon, X } from "lucide-react";
+import { CheckCircle2, RefreshCw, Search, SidebarIcon, X } from "lucide-react";
 import { Sidebar } from "./components/Sidebar";
 import { PlayerBar } from "./components/PlayerBar";
 import { AlbumsView } from "./views/AlbumsView";
@@ -8,7 +8,8 @@ import { ArtistsView } from "./views/ArtistsView";
 import { SettingsView } from "./views/SettingsView";
 import { SongsView } from "./views/SongsView";
 import { RoomView } from "./views/RoomView";
-import { PlaylistsView } from "./views/PlaylistsView";
+import { FoldersView } from "./views/PlaylistsView";
+import { UserPlaylistsView } from "./views/UserPlaylistsView";
 import { FolderQueueView } from "./views/FolderQueueView";
 import { DownloaderView } from "./views/DownloaderView";
 import { api } from "./lib/api";
@@ -27,6 +28,7 @@ import type {
   ViewKey
 } from "./types";
 import { audioEngine } from "./lib/audioEngine";
+import { LibraryActionsProvider, errorMessage, type NoticeTone } from "./lib/LibraryContext";
 
 function streamTrackFromPlayback(playback: RoomPlaybackState, streamUrl: string): Track {
   const title = playback.title || "Host stream";
@@ -57,7 +59,6 @@ function receivedGuestTrack(playback: RoomPlaybackState, path: string): Track {
   const title = playback.title || path.split(/[\\/]/).pop()?.replace(/\.[^.]+$/, "") || "Guest song";
   return {
     ...streamTrackFromPlayback(playback, path),
-    id: playback.trackId || -Date.now(),
     fileName: path.split(/[\\/]/).pop() || title,
     fileExt: path.split(".").pop()?.toLowerCase() || "",
     path
@@ -65,7 +66,12 @@ function receivedGuestTrack(playback: RoomPlaybackState, path: string): Track {
 }
 
 function trackMatchesPlayback(track: Track, playback: RoomPlaybackState) {
-  return track.id === playback.trackId || (
+  const playbackTrackId = playback.trackId || null;
+  const sameRoomTrackId = playbackTrackId !== null && (
+    track.id === playbackTrackId
+    || (track.id < 0 && Math.abs(track.id) === Math.abs(playbackTrackId))
+  );
+  return sameRoomTrackId || (
     displayTrackTitle(track) === playback.title &&
     displayArtist(track.artist) === playback.artist &&
     displayAlbum(track.album) === playback.album
@@ -101,9 +107,12 @@ function App() {
   const [backgroundMode, setBackgroundMode] = useState(false);
   const [compactSidebar, setCompactSidebar] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<{ message: string; tone: NoticeTone } | null>(null);
   const audio = useAudio();
   const audioRef = useRef(audio);
-  const searchRequestRef = useRef(0);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const sessionRestoredRef = useRef(false);
+  const libraryRefreshTimerRef = useRef<number | null>(null);
   const roomClientStatusRef = useRef<{ connected: boolean; allowGuestControl: boolean; host?: string | null; port?: number | null }>({
     connected: false,
     allowGuestControl: false,
@@ -113,17 +122,9 @@ function App() {
   const deferredQuery = useDeferredValue(query);
   audioRef.current = audio;
 
-  async function refreshTracks(search = deferredQuery) {
-    const requestId = ++searchRequestRef.current;
-    const nextTracks = await api.listTracks(search);
-    if (requestId === searchRequestRef.current) {
-      setTracks(nextTracks);
-    }
-  }
-
-  async function refreshLibrary(search = deferredQuery) {
+  const refreshLibrary = useCallback(async () => {
     const [nextTracks, nextAlbums, nextArtists, nextFolders, nextFetchers] = await Promise.all([
-      api.listTracks(search),
+      api.listTracks(),
       api.listAlbums(),
       api.listArtists(),
       api.listMusicFolders(),
@@ -134,7 +135,26 @@ function App() {
     setArtists(nextArtists);
     setFolders(nextFolders);
     setFetchers(nextFetchers);
-  }
+    if (sessionRestoredRef.current) audioEngine.reconcileQueue(nextTracks);
+    return nextTracks;
+  }, []);
+
+  const notify = useCallback((message: string, tone: NoticeTone = "info") => {
+    if (tone === "error") setError(message);
+    else setNotice({ message, tone });
+  }, []);
+
+  const openAlbum = useCallback((album: string) => {
+    setCollectionFilter({ type: "album", value: album || "Unknown Album" });
+    setActiveView("songs");
+    setQuery("");
+  }, []);
+
+  const openArtist = useCallback((artist: string) => {
+    setCollectionFilter({ type: "artist", value: artist || "Unknown Artist" });
+    setActiveView("songs");
+    setQuery("");
+  }, []);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -165,14 +185,16 @@ function App() {
 
   useEffect(() => {
     setLoading(true);
-    Promise.all([refreshLibrary(""), api.getScanState(), api.getSetting("backgroundMode")])
-      .then(([, scanState, savedBackgroundMode]) => {
+    Promise.all([refreshLibrary(), api.getScanState(), api.getSetting("backgroundMode")])
+      .then(([initialTracks, scanState, savedBackgroundMode]) => {
+        audioEngine.restoreSession(initialTracks);
+        sessionRestoredRef.current = true;
         setScanning(scanState.running);
         setBackgroundMode(savedBackgroundMode === "true");
       })
-      .catch((err) => setError(String(err)))
+      .catch((err) => setError(errorMessage(err)))
       .finally(() => setLoading(false));
-  }, []);
+  }, [refreshLibrary]);
 
   useEffect(() => {
     async function refreshRoomClientPermission() {
@@ -345,13 +367,6 @@ function App() {
   }, []);
 
   useEffect(() => {
-    const timer = window.setTimeout(() => {
-      refreshTracks(deferredQuery).catch((err) => setError(String(err)));
-    }, 220);
-    return () => window.clearTimeout(timer);
-  }, [deferredQuery]);
-
-  useEffect(() => {
     function handleFavoriteChanged(event: Event) {
       const detail = (event as CustomEvent<{ trackId: number; favorite: boolean }>).detail;
       setTracks((currentTracks) =>
@@ -365,8 +380,133 @@ function App() {
     return () => window.removeEventListener("loavy:favorite-changed", handleFavoriteChanged);
   }, []);
 
+  useEffect(() => {
+    let disposed = false;
+    const refresh = () => {
+      if (libraryRefreshTimerRef.current !== null) window.clearTimeout(libraryRefreshTimerRef.current);
+      libraryRefreshTimerRef.current = window.setTimeout(() => {
+        libraryRefreshTimerRef.current = null;
+        refreshLibrary().catch((err) => !disposed && setError(errorMessage(err)));
+      }, 80);
+    };
+    window.addEventListener("loavy:library-changed", refresh);
+    const unlisten = listen("library://changed", refresh);
+    return () => {
+      disposed = true;
+      if (libraryRefreshTimerRef.current !== null) window.clearTimeout(libraryRefreshTimerRef.current);
+      window.removeEventListener("loavy:library-changed", refresh);
+      unlisten.then((callback) => callback()).catch(() => undefined);
+    };
+  }, [refreshLibrary]);
+
+  useEffect(() => {
+    function handleTrackStarted(event: Event) {
+      const { trackId } = (event as CustomEvent<{ trackId: number }>).detail;
+      if (trackId <= 0) return;
+      api.markTrackPlayed(trackId)
+        .then((stats) => {
+          setTracks((current) => current.map((track) => track.id === stats.trackId
+            ? { ...track, lastPlayedAt: stats.lastPlayedAt, playCount: stats.playCount }
+            : track));
+        })
+        .catch(() => undefined);
+    }
+    window.addEventListener("loavy:track-started", handleTrackStarted);
+    function handlePlaybackError(event: Event) {
+      const detail = (event as CustomEvent<{ message: string }>).detail;
+      if (detail?.message) setError(detail.message);
+    }
+    window.addEventListener("loavy:playback-error", handlePlaybackError);
+    return () => {
+      window.removeEventListener("loavy:track-started", handleTrackStarted);
+      window.removeEventListener("loavy:playback-error", handlePlaybackError);
+    };
+  }, []);
+
+  useEffect(() => {
+    const unlisten = listen("app://backgrounding", () => audioEngine.flushSession());
+    return () => { unlisten.then((callback) => callback()).catch(() => undefined); };
+  }, []);
+
+  useEffect(() => {
+    if (!notice) return;
+    const timer = window.setTimeout(() => setNotice(null), 3200);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
+
+  useEffect(() => {
+    function isTyping(target: EventTarget | null) {
+      return target instanceof Element && Boolean(
+        target.closest("input, textarea, select, [contenteditable='true']")
+      );
+    }
+    function hasOwnKeyboardAction(target: EventTarget | null) {
+      return target instanceof Element && Boolean(target.closest([
+        "button",
+        "a[href]",
+        "summary",
+        "[role='button']",
+        "[role='menuitem']",
+        "[role='option']",
+        "[role='switch']",
+        "[role='slider']",
+        "[role='row'][tabindex]",
+        "[tabindex]:not([tabindex='-1'])"
+      ].join(", ")));
+    }
+    function onKeyDown(event: KeyboardEvent) {
+      if (
+        event.defaultPrevented
+        || isTyping(event.target)
+        || document.querySelector("[role='dialog'][aria-modal='true'], [role='menu']")
+      ) return;
+
+      if (event.ctrlKey && !event.shiftKey && event.key.toLocaleLowerCase() === "l") {
+        event.preventDefault();
+        setActiveView("songs");
+        window.requestAnimationFrame(() => searchInputRef.current?.focus());
+        return;
+      }
+      if (event.code === "Space" && !event.ctrlKey && !event.altKey && !event.metaKey) {
+        if (hasOwnKeyboardAction(event.target)) return;
+        event.preventDefault();
+        void audioEngine.toggle();
+      } else if (event.ctrlKey && event.key === "ArrowRight") {
+        event.preventDefault();
+        void audioEngine.next();
+      } else if (event.ctrlKey && event.key === "ArrowLeft") {
+        event.preventDefault();
+        void audioEngine.previous();
+      } else if (event.ctrlKey && event.shiftKey && event.key.toLocaleLowerCase() === "f") {
+        event.preventDefault();
+        const current = audioRef.current.current;
+        if (!current || current.id <= 0) return;
+        const favorite = !current.favorite;
+        audioEngine.patchTrackFavorite(current.id, favorite);
+        api.setTrackFavorite(current.id, favorite)
+          .then(() => window.dispatchEvent(new CustomEvent("loavy:favorite-changed", { detail: { trackId: current.id, favorite } })))
+          .catch((err) => {
+            audioEngine.patchTrackFavorite(current.id, !favorite);
+            setError(errorMessage(err));
+          });
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
   const filteredTracks = useMemo(() => {
     let nextTracks = tracks;
+    const search = deferredQuery.trim().toLocaleLowerCase();
+    if (search) {
+      nextTracks = nextTracks.filter((track) => [
+        displayTrackTitle(track),
+        displayArtist(track.artist),
+        displayAlbum(track.album),
+        track.genre || "",
+        track.fileName
+      ].some((value) => value.toLocaleLowerCase().includes(search)));
+    }
     if (collectionFilter?.type === "album") {
       nextTracks = nextTracks.filter((track) => (track.album || "Unknown Album") === collectionFilter.value);
     }
@@ -374,9 +514,9 @@ function App() {
       nextTracks = nextTracks.filter((track) => displayArtist(track.artist) === collectionFilter.value);
     }
     if (activeView === "favorites") return nextTracks.filter((track) => track.favorite);
-    if (activeView === "recent") return [...nextTracks].sort((a, b) => (b.lastPlayedAt || 0) - (a.lastPlayedAt || 0));
+    if (activeView === "recent") return nextTracks.filter((track) => track.lastPlayedAt).sort((a, b) => (b.lastPlayedAt || 0) - (a.lastPlayedAt || 0));
     return nextTracks;
-  }, [activeView, collectionFilter, tracks]);
+  }, [activeView, collectionFilter, deferredQuery, tracks]);
 
   async function addFolder() {
     setError(null);
@@ -479,7 +619,8 @@ function App() {
     songs: "Songs",
     albums: "Albums",
     artists: "Artists",
-    playlists: "Folder Playlists",
+    playlists: "Playlists",
+    folders: "Folders",
     folderQueue: "Folder Queue",
     recent: "Recently Played",
     favorites: "Favorites",
@@ -494,10 +635,7 @@ function App() {
       return (
         <AlbumsView
           albums={albums}
-          onOpenAlbum={(album) => {
-            setCollectionFilter({ type: "album", value: album.title || "Unknown Album" });
-            setActiveView("songs");
-          }}
+          onOpenAlbum={(album) => openAlbum(album.title || "Unknown Album")}
         />
       );
     }
@@ -505,10 +643,7 @@ function App() {
       return (
         <ArtistsView
           artists={artists}
-          onOpenArtist={(artist) => {
-            setCollectionFilter({ type: "artist", value: artist.name });
-            setActiveView("songs");
-          }}
+          onOpenArtist={(artist) => openArtist(artist.name)}
         />
       );
     }
@@ -557,27 +692,33 @@ function App() {
       );
     }
     if (activeView === "room") return <RoomView onError={setError} />;
-    if (activeView === "playlists") {
-      return <PlaylistsView folders={folders} tracks={tracks} />;
-    }
+    if (activeView === "playlists") return <UserPlaylistsView />;
+    if (activeView === "folders") return <FoldersView folders={folders} tracks={tracks} onOpenSettings={() => setActiveView("settings")} />;
     if (activeView === "folderQueue") return <FolderQueueView tracks={tracks} />;
     return (
       <SongsView
         tracks={filteredTracks}
         collectionFilter={collectionFilter}
         onClearCollectionFilter={() => setCollectionFilter(null)}
+        emptyKind={activeView === "favorites" ? "favorites" : activeView === "recent" ? "recent" : deferredQuery ? "search" : "library"}
       />
     );
   }
 
   function selectView(view: ViewKey) {
     setActiveView(view);
-    if (view !== "songs" && view !== "favorites" && view !== "recent") {
-      setCollectionFilter(null);
-    }
+    if (view !== "songs") setCollectionFilter(null);
   }
 
+  const libraryActions = useMemo(() => ({
+    refreshLibrary: async () => { await refreshLibrary(); },
+    openArtist,
+    openAlbum,
+    notify
+  }), [notify, openAlbum, openArtist, refreshLibrary]);
+
   return (
+    <LibraryActionsProvider value={libraryActions}>
     <div className="appShell">
       <Sidebar active={activeView} onSelect={selectView} compact={compactSidebar} />
       <main className="mainPane">
@@ -609,11 +750,11 @@ function App() {
             </button>
             <label className="searchBox">
               <Search size={17} />
-              <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search songs, artists, albums" />
+              <input ref={searchInputRef} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search songs, artists, albums" aria-label="Search library" />
             </label>
           </div>
         </header>
-        {error && <pre className="errorBanner">{error}</pre>}
+        {error && <div className="errorBanner" role="alert"><span>{error}</span><button onClick={() => setError(null)} aria-label="Dismiss error"><X size={16} /></button></div>}
         <div className="contentArea">
           <div className="persistentViewHost" hidden={activeView !== "downloader"}>
             <DownloaderView
@@ -628,7 +769,9 @@ function App() {
         </div>
       </main>
       <PlayerBar />
+      {notice && <div className={`toastNotice ${notice.tone}`} role="status"><CheckCircle2 size={17} /><span>{notice.message}</span><button onClick={() => setNotice(null)} aria-label="Dismiss notification"><X size={15} /></button></div>}
     </div>
+    </LibraryActionsProvider>
   );
 }
 

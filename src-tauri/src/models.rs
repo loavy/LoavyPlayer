@@ -230,3 +230,97 @@ pub struct Playlist {
     pub updated_at: i64,
     pub track_count: i64,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TrackLyrics {
+    pub track_id: i64,
+    pub plain_text: Option<String>,
+    pub synced_text: Option<String>,
+    pub source: Option<String>,
+    pub updated_at: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TrackLyricsUpdate {
+    pub track_id: i64,
+    pub plain_text: Option<String>,
+    pub synced_text: Option<String>,
+    pub source: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TrackPlaybackStats {
+    pub track_id: i64,
+    pub last_played_at: i64,
+    pub play_count: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LibraryFolderEntry {
+    pub root_id: i64,
+    pub relative_path: String,
+    pub name: String,
+    pub path: String,
+    pub direct_track_count: usize,
+    pub indexed_track_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LibraryFolderListing {
+    pub root_id: i64,
+    pub relative_path: String,
+    pub path: String,
+    pub folders: Vec<LibraryFolderEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FolderRenameResult {
+    pub root_id: i64,
+    pub old_relative_path: String,
+    pub new_relative_path: String,
+    pub path: String,
+    pub affected_track_ids: Vec<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FolderInspection {
+    pub root_id: i64,
+    pub relative_path: String,
+    pub path: String,
+    pub indexed_track_count: usize,
+    pub descendant_folder_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FolderDeleteResult {
+    pub root_id: i64,
+    pub relative_path: String,
+    pub path: String,
+    pub removed_track_ids: Vec<i64>,
+    pub already_missing: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TrackDeleteResult {
+    pub track_id: i64,
+    pub path: String,
+    pub already_missing: bool,
+    pub cover_removed: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LibraryChange {
+    pub kind: String,
+    pub track_ids: Vec<i64>,
+    pub root_id: Option<i64>,
+}
