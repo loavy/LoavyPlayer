@@ -6,6 +6,7 @@ type TrackInput = Track | readonly Track[];
 export type TrackReference = Track | number | string;
 
 export type AudioSnapshot = {
+  playlistKey: string | null;
   current: Track | null;
   playing: boolean;
   duration: number;
@@ -43,6 +44,7 @@ type StoredTrackReference = {
 };
 
 type StoredPlaybackSession = {
+  playlistKey?: string | null;
   version: 1;
   currentTrackId: number;
   currentPath: string;
@@ -79,6 +81,7 @@ const MAX_PERSISTED_QUEUE_LENGTH = 20_000;
 const BLOCKED_MESSAGE = "Playback controls are managed by the Room host.";
 
 class AudioEngine {
+  private playlistKey: string | null = null;
   private audio = new Audio();
   private listeners = new Set<Listener>();
   private queue: Track[] = [];
@@ -101,6 +104,7 @@ class AudioEngine {
   private snapshotQueueIndex = Number.MIN_SAFE_INTEGER;
   private cachedSnapshotQueue: readonly Track[] = [];
   private cachedSnapshotUpNext: readonly Track[] = [];
+  private cachedSnapshot: AudioSnapshot | null = null;
 
   repeat: RepeatMode = "off";
   shuffle = false;
@@ -135,12 +139,15 @@ class AudioEngine {
     this.audio.addEventListener("canplay", () => this.applyPendingSeek());
 
     this.audio.addEventListener("play", () => {
+      if (this.audio.paused) return;
       this.playing = true;
       this.error = null;
       this.emit();
     });
 
     this.audio.addEventListener("pause", () => {
+      // A pause queued by replacing a source can arrive after its successor plays.
+      if (!this.audio.paused) return;
       this.playing = false;
       if (this.pendingSeekMs === null && Number.isFinite(this.audio.currentTime)) {
         this.position = Math.max(0, this.audio.currentTime * 1000);
@@ -179,13 +186,15 @@ class AudioEngine {
   }
 
   snapshot(): AudioSnapshot {
+    if (this.cachedSnapshot) return this.cachedSnapshot;
     if (this.snapshotQueueSource !== this.queue || this.snapshotQueueIndex !== this.index) {
       this.snapshotQueueSource = this.queue;
       this.snapshotQueueIndex = this.index;
       this.cachedSnapshotQueue = this.queue.slice();
       this.cachedSnapshotUpNext = this.cachedSnapshotQueue.slice(Math.max(0, this.index + 1));
     }
-    return {
+    this.cachedSnapshot = {
+      playlistKey: this.playlistKey,
       current: this.current,
       playing: this.playing,
       duration: this.duration,
@@ -200,6 +209,7 @@ class AudioEngine {
       localControlBlocked: this.localControlBlocked,
       error: this.error
     };
+    return this.cachedSnapshot;
   }
 
   /**
@@ -252,6 +262,7 @@ class AudioEngine {
 
       restoredPosition = clampPosition(stored.positionMs, current.durationMs);
       this.shuffle = stored.shuffle;
+      this.playlistKey = stored.playlistKey || null;
       this.repeat = stored.repeat;
       this.applyVolume(stored.volume);
     }
@@ -350,6 +361,7 @@ class AudioEngine {
     );
 
     const session: StoredPlaybackSession = {
+      playlistKey: this.playlistKey,
       version: SESSION_VERSION,
       currentTrackId: current.id,
       currentPath: current.path,
@@ -379,12 +391,14 @@ class AudioEngine {
     safeStorageRemove(LEGACY_LAST_TRACK_KEY);
   }
 
-  async playTrack(track: Track | null, queue: readonly Track[] = this.queue, index = this.index): Promise<boolean> {
+  async playTrack(track: Track | null, queue: readonly Track[] = this.queue, index = this.index, playlistKey: string | null = null): Promise<boolean> {
     if (!track || this.blockLocalControl()) return false;
+    this.playlistKey = playlistKey;
     return this.playTrackInternal(track, queue, index, true, 0, true);
   }
 
   async syncToRoomPlayback(track: Track, playback: RoomPlaybackState): Promise<boolean> {
+    this.playlistKey = null;
     const targetPosition = Math.max(0, finiteNumber(playback.positionMs, 0));
     const sameCurrentTrack = this.current?.id === track.id;
 
@@ -512,7 +526,7 @@ class AudioEngine {
     this.applyVolume(nextVolume);
     safeStorageSet(VOLUME_STORAGE_KEY, String(nextVolume));
     this.emit();
-    this.flushSession();
+    this.scheduleSeekSessionFlush();
     return true;
   }
 
@@ -986,7 +1000,7 @@ class AudioEngine {
     // From this point onward a missing current track represents an intentional
     // playback state, not an app that simply has not restored yet.
     this.sessionRestored = true;
-    this.flushSession();
+    // Start the new media source before serializing a potentially large queue.
     const normalized = normalizeQueueForTrack(track, queue, requestedIndex);
     const materialized = this.shuffle && materializeShuffle
       ? materializeShuffleContext(normalized.queue, normalized.index)
@@ -1004,7 +1018,7 @@ class AudioEngine {
       false
     );
     const success = await this.startCurrentPlayback(this.loadGeneration, true, broadcast);
-    if (success) this.flushSession();
+    if (success) this.scheduleSeekSessionFlush();
     return success;
   }
 
@@ -1168,6 +1182,7 @@ class AudioEngine {
   }
 
   private emit() {
+    this.cachedSnapshot = null;
     this.listeners.forEach((listener) => listener());
   }
 
@@ -1402,6 +1417,7 @@ function readStoredSession(): StoredPlaybackSession | null {
 
     return {
       version: SESSION_VERSION,
+      playlistKey: typeof candidate.playlistKey === "string" ? candidate.playlistKey : null,
       currentTrackId: candidate.currentTrackId,
       currentPath: candidate.currentPath,
       queue,

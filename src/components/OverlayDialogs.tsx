@@ -18,7 +18,7 @@ type DialogShellProps = {
   labelledBy: string;
 };
 
-function DialogShell({ title, description, children, onClose, danger, labelledBy }: DialogShellProps) {
+export function DialogShell({ title, description, children, onClose, danger, labelledBy }: DialogShellProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const restoreFocusRef = useRef<HTMLElement | null>(null);
   const onCloseRef = useRef(onClose);

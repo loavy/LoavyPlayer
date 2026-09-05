@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { ArrowDown, ArrowUp, AudioLines, Heart, MoreHorizontal, Pause, Play, Trash2 } from "lucide-react";
 import { audioEngine } from "../lib/audioEngine";
 import { displayAlbum, displayArtist, displayTrackTitle, formatDuration } from "../lib/format";
@@ -15,13 +15,15 @@ const OVERSCAN = 8;
 type Props = {
   tracks: Track[];
   playbackQueue?: Track[];
+  scrollParentRef?: RefObject<HTMLElement>;
+  playlistKey?: string;
   onRemoveTrack?: (track: Track) => void | Promise<void>;
   onMoveTrack?: (track: Track, index: number, direction: -1 | 1) => void | Promise<void>;
 };
 
 type OpenMenu = { track: Track; queueIndex: number; point: MenuPoint };
 
-export function VirtualSongList({ tracks, playbackQueue = tracks, onRemoveTrack, onMoveTrack }: Props) {
+export function VirtualSongList({ tracks, playbackQueue = tracks, scrollParentRef, playlistKey, onRemoveTrack, onMoveTrack }: Props) {
   const playback = useAudioSelector(
     (snapshot) => ({ currentId: snapshot.current?.id ?? null, playing: snapshot.playing }),
     samePlayback
@@ -40,11 +42,23 @@ export function VirtualSongList({ tracks, playbackQueue = tracks, onRemoveTrack,
   useEffect(() => {
     const node = scrollerRef.current;
     if (!node) return;
-    const resizeObserver = new ResizeObserver(([entry]) => setHeight(entry.contentRect.height));
-    resizeObserver.observe(node);
-    setHeight(node.clientHeight);
-    return () => resizeObserver.disconnect();
-  }, []);
+    const parent = scrollParentRef?.current || node;
+    const measure = () => {
+      const offset = parent === node ? 0 : node.getBoundingClientRect().top - parent.getBoundingClientRect().top + parent.scrollTop;
+      setScrollTop(Math.max(0, parent.scrollTop - offset));
+      setHeight(Math.max(1, parent.clientHeight - Math.max(0, offset - parent.scrollTop)));
+    };
+    const onScroll = () => {
+      if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
+      frameRef.current = requestAnimationFrame(() => { frameRef.current = null; measure(); });
+    };
+    const observer = new ResizeObserver(measure);
+    observer.observe(parent);
+    if (scrollParentRef) for (const child of parent.children) observer.observe(child);
+    parent.addEventListener("scroll", onScroll, { passive: true });
+    measure();
+    return () => { observer.disconnect(); parent.removeEventListener("scroll", onScroll); };
+  }, [scrollParentRef]);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -59,12 +73,12 @@ export function VirtualSongList({ tracks, playbackQueue = tracks, onRemoveTrack,
   }, []);
 
   useEffect(() => {
-    const node = scrollerRef.current;
+    const node = scrollParentRef?.current || scrollerRef.current;
     if (!node) return;
     node.scrollTop = 0;
     setScrollTop(0);
     setMenu(null);
-  }, [listKey]);
+  }, [listKey, scrollParentRef]);
 
   useEffect(() => () => {
     if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
@@ -79,26 +93,17 @@ export function VirtualSongList({ tracks, playbackQueue = tracks, onRemoveTrack,
     return { start, items: tracks.slice(start, end), offsetY: start * rowHeight, totalHeight: tracks.length * rowHeight };
   }, [height, rowHeight, scrollTop, tracks]);
 
-  function handleScroll(event: React.UIEvent<HTMLDivElement>) {
-    const nextScrollTop = event.currentTarget.scrollTop;
-    if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
-    frameRef.current = requestAnimationFrame(() => {
-      setScrollTop(nextScrollTop);
-      frameRef.current = null;
-    });
-  }
-
   return (
-    <section className="tableSurface virtualTable" role="grid" aria-rowcount={tracks.length}>
-      <div className="tableHeader songsGrid" role="row">
+    <div className={`tableSurface virtualTable${scrollParentRef ? " pageSongTable" : ""}${onMoveTrack || onRemoveTrack ? " hasManagement" : ""}`} role="table" aria-label="Songs" aria-colcount={4} aria-rowcount={tracks.length + 1}>
+      <div className="tableHeader songsGrid" role="row" aria-rowindex={1}>
         <span role="columnheader">Title</span>
         <span role="columnheader">Artist</span>
         <span role="columnheader">Album</span>
         <span role="columnheader">Time</span>
       </div>
-      <div className="virtualScroller" onScroll={handleScroll} ref={scrollerRef}>
-        <div style={{ height: windowed.totalHeight, position: "relative" }}>
-          <div className="virtualWindow" style={{ transform: `translate3d(0, ${windowed.offsetY}px, 0)` }}>
+      <div className="virtualScroller" ref={scrollerRef} role="rowgroup">
+        <div role="presentation" style={{ height: windowed.totalHeight, position: "relative" }}>
+          <div role="presentation" className="virtualWindow" style={{ transform: `translate3d(0, ${windowed.offsetY}px, 0)` }}>
             {windowed.items.map((track, virtualIndex) => {
               const index = windowed.start + virtualIndex;
               const queueIndex = queueIndexById.get(track.id) ?? index;
@@ -108,6 +113,7 @@ export function VirtualSongList({ tracks, playbackQueue = tracks, onRemoveTrack,
                   listIndex={index}
                   queueIndex={queueIndex}
                   queue={playbackQueue}
+                  playlistKey={playlistKey}
                   track={track}
                   current={playback.currentId === track.id}
                   playing={playback.currentId === track.id && playback.playing}
@@ -124,7 +130,7 @@ export function VirtualSongList({ tracks, playbackQueue = tracks, onRemoveTrack,
         </div>
       </div>
       {menu && <SongContextMenu track={menu.track} point={menu.point} playbackQueue={playbackQueue} queueIndex={menu.queueIndex} onClose={closeMenu} />}
-    </section>
+    </div>
   );
 }
 
@@ -140,7 +146,8 @@ const SongRow = memo(function SongRow({
   onMoveTrack,
   first,
   last,
-  rowHeight
+  rowHeight,
+  playlistKey
 }: {
   track: Track;
   queue: Track[];
@@ -154,12 +161,16 @@ const SongRow = memo(function SongRow({
   first: boolean;
   last: boolean;
   rowHeight: number;
+  playlistKey?: string;
 }) {
   const { openAlbum, openArtist } = useLibraryActions();
+  const title = displayTrackTitle(track);
+  const artist = displayArtist(track.artist);
+  const album = displayAlbum(track.album);
 
   function activate() {
     if (current) void audioEngine.toggle();
-    else void audioEngine.playTrack(track, queue, queueIndex);
+    else void audioEngine.playTrack(track, queue, queueIndex, playlistKey);
   }
 
   function openFromButton(button: HTMLButtonElement) {
@@ -192,16 +203,19 @@ const SongRow = memo(function SongRow({
         }
       }}
     >
-      <span className="titleCell" role="gridcell">
+      <span className="titleCell" role="cell">
         <button className="rowPlay" onClick={(event) => { event.stopPropagation(); activate(); }} title={playing ? "Pause" : "Play"} aria-label={`${playing ? "Pause" : "Play"} ${displayTrackTitle(track)}`}>
           {playing ? <Pause size={15} /> : current ? <AudioLines size={15} /> : <Play size={15} />}
         </button>
         <Cover path={track.coverPath} title={track.album || undefined} size="sm" />
-        <span><strong>{displayTrackTitle(track)}</strong><small>{track.fileExt.toUpperCase()}</small></span>
+        <span>
+          <strong title={title}>{title}</strong>
+          <span className="trackSubtitle"><small className="trackCompactArtist" title={artist}>{artist}</small><small className="trackFormat">{track.fileExt.toUpperCase()}</small></span>
+        </span>
       </span>
-      <span role="gridcell"><button className="metadataLink" disabled={!track.artist || track.id <= 0} onClick={() => track.artist && openArtist(displayArtist(track.artist))}>{displayArtist(track.artist)}</button></span>
-      <span role="gridcell"><button className="metadataLink" disabled={!track.album || track.id <= 0} onClick={() => track.album && openAlbum(displayAlbum(track.album))}>{displayAlbum(track.album)}</button></span>
-      <span className="durationCell" role="gridcell">
+      <span role="cell"><button className="metadataLink" title={artist} disabled={!track.artist || track.id <= 0} onClick={() => track.artist && openArtist(artist)}>{artist}</button></span>
+      <span role="cell"><button className="metadataLink" title={album} disabled={!track.album || track.id <= 0} onClick={() => track.album && openAlbum(album)}>{album}</button></span>
+      <span className="durationCell" role="cell">
         {track.favorite && <Heart className="rowFavorite" size={14} fill="currentColor" aria-label="Favorite" />}
         <span className="trackDuration">{formatDuration(track.durationMs)}</span>
         {onMoveTrack && <span className="rowManageActions">

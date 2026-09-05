@@ -1,218 +1,188 @@
-import { ArrowLeft, ListMusic, LoaderCircle, Pencil, Play, Plus, Shuffle, Trash2 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
+import { ArrowLeft, ArrowUpRight, AudioLines, FolderOpen, ListMusic, LoaderCircle, Pause, Pencil, Play, Plus, Search, Shuffle } from "lucide-react";
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import { PromptDialog, validateWindowsFolderName } from "../components/OverlayDialogs";
+import { PlaylistArtwork, PlaylistBanner, playlistStyle } from "../components/PlaylistArtwork";
+import { PlaylistEditor } from "../components/PlaylistEditor";
 import { VirtualSongList } from "../components/VirtualSongList";
-import { ConfirmDialog, PromptDialog, validateDisplayName } from "../components/OverlayDialogs";
 import { api } from "../lib/api";
 import { audioEngine } from "../lib/audioEngine";
 import { errorMessage, useLibraryActions } from "../lib/LibraryContext";
-import type { Playlist, Track } from "../types";
+import { defaultAppearance, playlistKey, retryPlaylistAppearances, usePlaylistAppearances } from "../lib/playlistAppearance";
+import { navigation, useNavigation } from "../lib/navigation";
+import { useAudioSelector } from "../lib/useAudio";
+import { displayTrackTitle } from "../lib/format";
+import type { LibraryFolderEntry, Track } from "../types";
 
-type PromptMode = { kind: "create" } | { kind: "rename"; playlist: Playlist };
+type Props = { tracks: Track[]; onOpenFolders: () => void };
 
-export function UserPlaylistsView() {
+export function UserPlaylistsView({ tracks, onOpenFolders }: Props) {
   const { notify } = useLibraryActions();
-  const [playlists, setPlaylists] = useState<Playlist[]>([]);
-  const [selected, setSelected] = useState<Playlist | null>(null);
-  const [tracks, setTracks] = useState<Track[]>([]);
+  const appearances = usePlaylistAppearances();
+  const [folders, setFolders] = useState<LibraryFolderEntry[]>([]);
+  const selectedKey = useNavigation().route.playlist;
+  const selected = useMemo(() => folders.find((folder) => playlistKey(folder) === selectedKey) || null, [folders, selectedKey]);
+  const pageRef = useRef<HTMLElement>(null);
+  const playback = useAudioSelector((audio) => ({ key: audio.playlistKey, current: audio.current, playing: audio.playing }),
+    (a, b) => a.key === b.key && a.current === b.current && a.playing === b.playing);
+  const [editing, setEditing] = useState<LibraryFolderEntry | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [prompt, setPrompt] = useState<PromptMode | null>(null);
-  const [confirmDelete, setConfirmDelete] = useState<Playlist | null>(null);
+  const [query, setQuery] = useState("");
+  const [sort, setSort] = useState("name");
+  const deferredQuery = useDeferredValue(query);
+  const revisionRef = useRef(0);
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  const folderRefs = useRef(new Map<string, HTMLButtonElement>());
+  const returnFocusRef = useRef<string | null>(null);
 
-  const refreshPlaylists = useCallback(async (preferredId?: number | null) => {
-    const next = await api.listPlaylists();
-    setPlaylists(next);
-    const targetId = preferredId === undefined ? selected?.id : preferredId;
-    const nextSelected = targetId ? next.find((playlist) => playlist.id === targetId) || null : null;
-    setSelected(nextSelected);
-    if (nextSelected) setTracks(await api.listPlaylistTracks(nextSelected.id));
-    else setTracks([]);
-  }, [selected?.id]);
+  const loadFolders = useCallback(async (showLoading = false) => {
+    const revision = ++revisionRef.current;
+    if (showLoading) setLoading(true);
+    setLoadError(null);
+    try {
+      const next = await api.listPlaylistFolders();
+      if (revision !== revisionRef.current) return;
+      setFolders(next);
+    } catch (reason) {
+      if (revision === revisionRef.current) setLoadError(errorMessage(reason));
+    } finally {
+      if (revision === revisionRef.current) setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    let disposed = false;
-    api.listPlaylists()
-      .then((next) => !disposed && setPlaylists(next))
-      .catch((error) => !disposed && notify(errorMessage(error), "error"))
-      .finally(() => !disposed && setLoading(false));
+    void loadFolders(true);
+    const unlisten = listen<{ kind: string }>("library://changed", (event) => {
+      if (event.payload.kind !== "track-played") void loadFolders();
+    }).catch(() => null);
+    return () => { revisionRef.current++; void unlisten.then((remove) => remove?.()); };
+  }, [loadFolders]);
 
-    function onPlaylistsChanged() {
-      void refreshPlaylists().catch((error) => notify(errorMessage(error), "error"));
-    }
-    function onLibraryChanged() {
-      void refreshPlaylists().catch((error) => notify(errorMessage(error), "error"));
-    }
-    function onFavoriteChanged(event: Event) {
-      const detail = (event as CustomEvent<{ trackId: number; favorite: boolean }>).detail;
-      if (!detail || !Number.isInteger(detail.trackId)) return;
-      setTracks((current) => current.map((track) => track.id === detail.trackId
-        ? { ...track, favorite: detail.favorite }
-        : track));
-    }
-    window.addEventListener("loavy:playlists-changed", onPlaylistsChanged);
-    window.addEventListener("loavy:library-changed", onLibraryChanged);
-    window.addEventListener("loavy:favorite-changed", onFavoriteChanged);
-    return () => {
-      disposed = true;
-      window.removeEventListener("loavy:playlists-changed", onPlaylistsChanged);
-      window.removeEventListener("loavy:library-changed", onLibraryChanged);
-      window.removeEventListener("loavy:favorite-changed", onFavoriteChanged);
-    };
-  }, [notify, refreshPlaylists]);
+  const normalizedTracks = useMemo(() => tracks.map((track) => ({ track, path: normalizePath(track.path) })), [tracks]);
+  const folderTracks = useCallback((folder: LibraryFolderEntry) => {
+    const prefix = `${normalizePath(folder.path)}\\`;
+    return normalizedTracks.filter(({ path }) => path.startsWith(prefix)).map(({ track }) => track);
+  }, [normalizedTracks]);
+  const selectedTracks = useMemo(() => selected ? folderTracks(selected) : [], [selected, folderTracks]);
+  const covers = useMemo(() => {
+    const withCovers = normalizedTracks.filter(({ track }) => track.coverPath);
+    return new Map(folders.map((folder) => {
+      const prefix = `${normalizePath(folder.path)}\\`;
+      return [playlistKey(folder), withCovers.find(({ path }) => path.startsWith(prefix))?.track.coverPath];
+    }));
+  }, [folders, normalizedTracks]);
+  const appearanceFor = (folder: LibraryFolderEntry) => appearances.items[playlistKey(folder)] || defaultAppearance(folder);
+  const visible = useMemo(() => {
+    const needle = deferredQuery.trim().toLocaleLowerCase();
+    return folders.filter((folder) => {
+      const look = appearances.items[playlistKey(folder)];
+      return !needle || `${look?.name || folder.name} ${look?.description || ""}`.toLocaleLowerCase().includes(needle);
+    }).sort((a, b) => sort === "tracks" ? b.indexedTrackCount - a.indexedTrackCount :
+      (appearances.items[playlistKey(a)]?.name || a.name).localeCompare(appearances.items[playlistKey(b)]?.name || b.name, undefined, { numeric: true, sensitivity: "base" }));
+  }, [folders, appearances.items, deferredQuery, sort]);
 
-  async function openPlaylist(playlist: Playlist) {
-    setSelected(playlist);
-    setLoading(true);
-    try {
-      setTracks(await api.listPlaylistTracks(playlist.id));
-    } catch (error) {
-      notify(errorMessage(error), "error");
-    } finally {
-      setLoading(false);
-    }
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => {
+      if (selectedKey) headingRef.current?.focus();
+      else if (returnFocusRef.current) folderRefs.current.get(returnFocusRef.current)?.focus();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [selectedKey]);
+
+  function open(folder: LibraryFolderEntry) {
+    returnFocusRef.current = playlistKey(folder);
+    navigation.navigate({ ...navigation.current(), view: "playlists", playlist: playlistKey(folder) });
   }
-
-  async function submitPrompt(name: string) {
+  function play(folder: LibraryFolderEntry, shuffle = false) {
+    if (!shuffle && playback.key === playlistKey(folder) && playback.current) { void audioEngine.toggle(); return; }
+    const queue = folderTracks(folder);
+    if (shuffle) for (let index = queue.length - 1; index > 0; index--) {
+      const swap = Math.floor(Math.random() * (index + 1));
+      [queue[index], queue[swap]] = [queue[swap], queue[index]];
+    }
+    if (queue.length) void audioEngine.playTrack(queue[0], queue, 0, playlistKey(folder));
+  }
+  async function reveal(folder: LibraryFolderEntry) {
+    try { await api.revealLibraryFolder(folder.rootId, folder.relativePath); }
+    catch (reason) { notify(`Could not open this folder: ${errorMessage(reason)}`, "error"); }
+  }
+  async function create(name: string) {
     setBusy(true);
     try {
-      if (prompt?.kind === "rename") {
-        const renamed = await api.renamePlaylist(prompt.playlist.id, name);
-        await refreshPlaylists(renamed.id);
-        notify("Playlist renamed.", "success");
-      } else {
-        const created = await api.createPlaylist(name);
-        await refreshPlaylists(created.id);
-        notify("Playlist created.", "success");
-      }
-      setPrompt(null);
-    } catch (error) {
-      notify(errorMessage(error), "error");
-    } finally {
-      setBusy(false);
-    }
+      const result = await api.createPlaylistFolder(name);
+      await loadFolders(false);
+      setCreating(false); open(result.folder);
+      setEditing(result.folder);
+      notify(result.status === "created" ? `Created “${result.folder.name}”.` : `Opened “${result.folder.name}”.`, "success");
+    } catch (reason) { notify(`Could not create playlist: ${errorMessage(reason)}`, "error"); }
+    finally { setBusy(false); }
   }
 
-  async function deletePlaylist() {
-    if (!confirmDelete) return;
-    setBusy(true);
-    try {
-      await api.deletePlaylist(confirmDelete.id);
-      setConfirmDelete(null);
-      await refreshPlaylists(null);
-      notify("Playlist deleted. Your music files were not changed.", "success");
-    } catch (error) {
-      notify(errorMessage(error), "error");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function removeTrack(track: Track) {
-    if (!selected) return;
-    try {
-      await api.removeTrackFromPlaylist(selected.id, track.id);
-      const next = tracks.filter((candidate) => candidate.id !== track.id);
-      setTracks(next);
-      setSelected({ ...selected, trackCount: Math.max(0, selected.trackCount - 1), updatedAt: Date.now() });
-      setPlaylists((current) => current.map((playlist) => playlist.id === selected.id ? { ...playlist, trackCount: Math.max(0, playlist.trackCount - 1), updatedAt: Date.now() } : playlist));
-    } catch (error) {
-      notify(errorMessage(error), "error");
-    }
-  }
-
-  async function moveTrack(_track: Track, index: number, direction: -1 | 1) {
-    if (!selected) return;
-    const target = index + direction;
-    if (target < 0 || target >= tracks.length) return;
-    const next = [...tracks];
-    [next[index], next[target]] = [next[target], next[index]];
-    setTracks(next);
-    try {
-      await api.reorderPlaylistTracks(selected.id, next.map((track) => track.id));
-    } catch (error) {
-      setTracks(tracks);
-      notify(errorMessage(error), "error");
-    }
-  }
-
-  function play(shuffle = false) {
-    if (!tracks.length) return;
-    const queue = shuffle ? shuffleTracks(tracks) : tracks;
-    void audioEngine.playTrack(queue[0], queue, 0);
-  }
+  const editor = editing && appearances.loaded && <PlaylistEditor key={playlistKey(editing)} folder={editing} appearance={appearanceFor(editing)} fallback={covers.get(playlistKey(editing))}
+    onClose={() => setEditing(null)} onSaved={() => notify("Playlist updated. Looking good.", "success")} />;
 
   if (selected) {
-    return (
-      <section className="playlistDetailView">
-        <header className="playlistDetailHeader">
-          <button className="iconButton" onClick={() => { setSelected(null); setTracks([]); }} aria-label="Back to playlists"><ArrowLeft size={19} /></button>
-          <span className="playlistHeroIcon"><ListMusic size={30} /></span>
-          <div><span>Playlist</span><h2>{selected.name}</h2><p>{tracks.length} {tracks.length === 1 ? "song" : "songs"} · created {new Date(selected.createdAt).toLocaleDateString()}</p></div>
-          <div className="playlistDetailActions">
-            <button className="primaryAction" onClick={() => play(false)} disabled={!tracks.length}><Play size={17} fill="currentColor" /> Play</button>
-            <button className="secondaryAction" onClick={() => play(true)} disabled={!tracks.length}><Shuffle size={17} /> Shuffle</button>
-            <button className="iconButton" onClick={() => setPrompt({ kind: "rename", playlist: selected })} aria-label="Rename playlist"><Pencil size={17} /></button>
-            <button className="iconButton dangerAction" onClick={() => setConfirmDelete(selected)} aria-label="Delete playlist"><Trash2 size={17} /></button>
-          </div>
-        </header>
-        <div className="playlistTrackHost">
-          {loading ? <div className="inlineLoading"><LoaderCircle className="spin" size={22} /> Loading playlist</div> : tracks.length ? (
-            <VirtualSongList tracks={tracks} playbackQueue={tracks} onRemoveTrack={removeTrack} onMoveTrack={moveTrack} />
-          ) : (
-            <section className="emptyState compactEmpty"><ListMusic size={38} /><h2>This playlist is empty</h2><p>Open a song menu and choose Add to playlist.</p></section>
-          )}
+    const look = appearanceFor(selected);
+    const minutes = Math.round(selectedTracks.reduce((total, track) => total + (track.durationMs || 0), 0) / 60000);
+    const active = playback.key === selectedKey && !!playback.current;
+    return <section className="playlistDetailView" ref={pageRef} style={playlistStyle(look)} data-playlist-source="folder">
+      <header className="playlistHero">
+        <PlaylistBanner appearance={look} />
+        <button className="playlistBackButton" onClick={() => navigation.view("playlists")} aria-label="Back to playlists"><ArrowLeft size={18} /></button>
+        <button className="playlistHeroCover" onClick={() => setEditing(selected)} disabled={!appearances.loaded} aria-label="Edit playlist cover"><PlaylistArtwork appearance={look} fallback={covers.get(selectedKey!)} /><span><Pencil size={18} /> Change cover</span></button>
+        <div className="playlistHeroText"><span className="playlistEyebrow">YOUR PLAYLIST</span>
+          <h2 ref={headingRef} tabIndex={-1}>{look.name}</h2>
+          {look.description && <p>{look.description}</p>}
+          <div className="playlistHeroMeta"><span>Made by you</span><i />{selectedTracks.length} songs{minutes > 0 && <><i />{minutes >= 60 ? `${Math.floor(minutes / 60)} hr ${minutes % 60} min` : `${minutes} min`}</>}</div>
         </div>
-        {prompt?.kind === "rename" && <PromptDialog title="Rename playlist" label="Playlist name" initialValue={prompt.playlist.name} submitLabel="Save name" busy={busy} validate={validateDisplayName} onSubmit={(value) => void submitPrompt(value)} onClose={() => setPrompt(null)} />}
-        {confirmDelete && <ConfirmDialog title={`Delete “${confirmDelete.name}”?`} description="This removes the playlist only. Your music files stay where they are." confirmLabel="Delete playlist" danger busy={busy} onConfirm={() => void deletePlaylist()} onClose={() => setConfirmDelete(null)} />}
-      </section>
-    );
-  }
-
-  if (loading) return <section className="emptyState"><LoaderCircle className="spin" size={32} /><h2>Loading playlists</h2></section>;
-
-  return (
-    <section className="userPlaylistsView">
-      <header className="playlistsIntro">
-        <div><span>Your library</span><h2>Playlists</h2><p>Build collections without moving or copying any music files.</p></div>
-        <button className="primaryAction" onClick={() => setPrompt({ kind: "create" })}><Plus size={17} /> Create playlist</button>
       </header>
-      {playlists.length ? (
-        <div className="playlistGrid">
-          {playlists.map((playlist) => (
-            <button className="playlistCard" key={playlist.id} onClick={() => void openPlaylist(playlist)}>
-              <span className="playlistCardIcon"><ListMusic size={26} /></span>
-              <strong>{playlist.name}</strong>
-              <span>{playlist.trackCount} {playlist.trackCount === 1 ? "song" : "songs"}</span>
-              <small>Updated {relativeDate(playlist.updatedAt)}</small>
-            </button>
-          ))}
-        </div>
-      ) : (
-        <section className="emptyState compactEmpty">
-          <span className="emptyStateIcon"><ListMusic size={42} /></span>
-          <h2>Create your first playlist</h2>
-          <p>Group songs for a mood, activity, or anything else—your folders stay untouched.</p>
-          <button className="primaryAction" onClick={() => setPrompt({ kind: "create" })}><Plus size={17} /> Create playlist</button>
-        </section>
-      )}
-      {prompt?.kind === "create" && <PromptDialog title="New playlist" description="Give this collection a memorable name." label="Playlist name" submitLabel="Create playlist" busy={busy} validate={validateDisplayName} onSubmit={(value) => void submitPrompt(value)} onClose={() => setPrompt(null)} />}
-    </section>
-  );
-}
-
-function shuffleTracks(tracks: Track[]) {
-  const next = [...tracks];
-  for (let index = next.length - 1; index > 0; index -= 1) {
-    const target = Math.floor(Math.random() * (index + 1));
-    [next[index], next[target]] = [next[target], next[index]];
+      <div className="playlistActionBar">
+        <button className="playlistPlayButton" onClick={() => play(selected)} disabled={!selectedTracks.length}>{active && playback.playing ? <Pause size={19} fill="currentColor" /> : <Play size={19} fill="currentColor" />} {active && playback.playing ? "Pause" : active ? "Resume" : "Play"}</button>
+        <button className="iconButton" onClick={() => play(selected, true)} disabled={!selectedTracks.length} aria-label="Shuffle playlist" title="Shuffle"><Shuffle size={20} /></button>
+        <button className="secondaryAction playlistEditButton" onClick={() => setEditing(selected)} disabled={!appearances.loaded}><Pencil size={15} /> Edit playlist</button>
+        <button className="playlistFolderLink" onClick={() => void reveal(selected)} title={selected.path}><FolderOpen size={16} /><span>Open folder</span><ArrowUpRight size={13} /></button>
+      </div>
+      <div className="playlistTrackHost">
+        {selectedTracks.length ? <VirtualSongList tracks={selectedTracks} playbackQueue={selectedTracks} scrollParentRef={pageRef} playlistKey={selectedKey!} /> :
+          <section className="emptyState compactEmpty"><ListMusic size={32} /><h2>A fresh start.</h2><p>Add a song from its menu to start this playlist.</p></section>}
+      </div>
+      {editor}
+    </section>;
   }
-  return next;
+
+  return <section className="userPlaylistsView" data-playlist-source="folder">
+    <header className="playlistsIntro"><div><span>CURATED BY YOU</span><h2>Every mood. Every moment.</h2><p>Your music, in collections that feel like you.</p></div>
+      <button className="primaryAction" onClick={() => setCreating(true)}><Plus size={17} /> New playlist</button>
+    </header>
+    <div className="playlistCollectionToolbar">
+      <label className="playlistSearch"><Search size={16} /><input aria-label="Find a playlist" placeholder="Find a playlist" value={query} onChange={(event) => setQuery(event.target.value)} /></label>
+      <span>{visible.length} playlists</span>
+      <select aria-label="Sort playlists" value={sort} onChange={(event) => setSort(event.target.value)}><option value="name">Name A–Z</option><option value="tracks">Most songs</option></select>
+      <button className="iconButton" title="Browse folders" aria-label="Browse folders" onClick={onOpenFolders}><FolderOpen size={17} /></button>
+    </div>
+    {appearances.error && <p className="playlistAppearanceError" role="status">Your saved playlist style could not be loaded. <button className="secondaryAction" onClick={() => void retryPlaylistAppearances().catch(() => undefined)}>Try again</button></p>}
+    {loading ? <div className="emptyState"><LoaderCircle size={28} className="spin" /><p>Finding your collections…</p></div> :
+      loadError ? <div className="emptyState" role="alert"><h2>Could not load playlists</h2><p>{loadError}</p><button className="secondaryAction" onClick={() => void loadFolders(true)}>Try again</button></div> :
+      visible.length ? <div className="playlistGrid" role="list" aria-label="Your playlists">
+        {visible.map((folder) => {
+          const key = playlistKey(folder); const look = appearanceFor(folder);
+          const active = playback.key === key && !!playback.current;
+          return <div className={`playlistGridItem${active ? " activePlaylist" : ""}`} role="listitem" key={key} style={playlistStyle(look)}>
+            <button className="playlistCard" onClick={() => open(folder)} ref={(node) => { if (node) folderRefs.current.set(key, node); else folderRefs.current.delete(key); }}>
+              <PlaylistArtwork appearance={look} fallback={covers.get(key)} />
+              <strong title={look.name}>{look.name}</strong>{active ? <span className="playlistPlayingStatus" title={displayTrackTitle(playback.current!)}><AudioLines size={13} />{playback.playing ? "Playing" : "Paused"} · {displayTrackTitle(playback.current!)}</span> : <span>{folder.indexedTrackCount} songs{look.description ? ` · ${look.description}` : " · Your collection"}</span>}
+            </button>
+            <button className="playlistCardEdit" onClick={() => setEditing(folder)} disabled={!appearances.loaded} aria-label={`Edit ${look.name}`}><Pencil size={15} /></button>
+            <button className="playlistCardPlay" onClick={() => play(folder)} disabled={!folder.indexedTrackCount} aria-label={`${active && playback.playing ? "Pause" : active ? "Resume" : "Play"} ${look.name}`}>{active && playback.playing ? <Pause size={19} fill="currentColor" /> : <Play size={19} fill="currentColor" />}</button>
+          </div>;
+        })}
+      </div> : <div className="emptyState"><ListMusic size={38} /><h2>{query ? "No playlists found" : "Make room for your favorites."}</h2><p>{query ? "Try a different name." : "Create a playlist, add a few songs, and make it yours."}</p>{!query && <button className="primaryAction" onClick={() => setCreating(true)}><Plus size={16} /> New playlist</button>}</div>}
+    {creating && <PromptDialog title="A new collection" description="Give your playlist a name. You can add artwork and color next." label="Playlist name" submitLabel="Create playlist" busy={busy} validate={validateWindowsFolderName} onSubmit={(name) => void create(name)} onClose={() => !busy && setCreating(false)} />}
+    {editor}
+  </section>;
 }
 
-function relativeDate(timestamp: number) {
-  const days = Math.max(0, Math.floor((Date.now() - timestamp) / 86_400_000));
-  if (days === 0) return "today";
-  if (days === 1) return "yesterday";
-  if (days < 30) return `${days} days ago`;
-  return new Date(timestamp).toLocaleDateString();
-}
+function normalizePath(path: string) { return path.replace(/\//g, "\\").replace(/\\+$/, "").toLowerCase(); }

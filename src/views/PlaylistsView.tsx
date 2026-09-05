@@ -1,5 +1,5 @@
 import { ChevronRight, Folder, FolderOpen, FolderPlus, Home, ListPlus, MoreHorizontal, Pencil, Play, Rows3, Trash2 } from "lucide-react";
-import { type MouseEvent, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ContextMenu, MenuItem, MenuSeparator, type MenuPoint } from "../components/ContextMenu";
 import { ConfirmDialog, PromptDialog, validateWindowsFolderName } from "../components/OverlayDialogs";
 import { VirtualSongList } from "../components/VirtualSongList";
@@ -8,9 +8,9 @@ import { api } from "../lib/api";
 import { audioEngine } from "../lib/audioEngine";
 import { errorMessage, useLibraryActions } from "../lib/LibraryContext";
 import { useAudioSelector } from "../lib/useAudio";
+import { navigation, useNavigation, type FolderLocation as Location } from "../lib/navigation";
 import type { FolderInspection, LibraryFolderEntry, LibraryFolderListing, MusicFolder, Track } from "../types";
 
-type Location = { rootId: number; relativePath: string; path: string; rootName: string };
 type FolderMenu = { entry: LibraryFolderEntry; point: MenuPoint };
 
 type Props = {
@@ -50,7 +50,7 @@ function sameRelativePath(left: string, right: string) {
 export function FoldersView({ folders, tracks, onOpenSettings }: Props) {
   const currentPath = useAudioSelector((snapshot) => snapshot.current?.path || null);
   const { refreshLibrary, notify } = useLibraryActions();
-  const [location, setLocation] = useState<Location | null>(null);
+  const location = useNavigation().route.folder;
   const [listing, setListing] = useState<LibraryFolderListing | null>(null);
   const [loading, setLoading] = useState(false);
   const [revision, setRevision] = useState(0);
@@ -59,8 +59,6 @@ export function FoldersView({ folders, tracks, onOpenSettings }: Props) {
   const [folderMenu, setFolderMenu] = useState<FolderMenu | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<{ entry: LibraryFolderEntry; inspection: FolderInspection } | null>(null);
   const [busy, setBusy] = useState(false);
-  const historyRef = useRef<Array<Location | null>>([null]);
-  const historyIndexRef = useRef(0);
 
   useEffect(() => {
     let disposed = false;
@@ -75,11 +73,11 @@ export function FoldersView({ folders, tracks, onOpenSettings }: Props) {
       .then((next) => {
         if (!disposed) {
           setListing(next);
-          setLocation((current) => current
-            && current.rootId === requestedRootId
-            && sameRelativePath(current.relativePath, requestedRelativePath)
-            ? { ...current, path: next.path }
-            : current);
+          const current = navigation.current();
+          if (current.view === "folders" && current.folder?.rootId === requestedRootId
+            && sameRelativePath(current.folder.relativePath, requestedRelativePath)) {
+            navigation.navigate({ ...current, folder: { ...current.folder, path: next.path } }, true);
+          }
         }
       })
       .catch((error) => !disposed && notify(errorMessage(error), "error"))
@@ -97,7 +95,7 @@ export function FoldersView({ folders, tracks, onOpenSettings }: Props) {
     if (location?.rootId === next.rootId && sameRelativePath(location.relativePath, next.relativePath)) return;
     setListing(null);
     setFolderMenu(null);
-    setLocation(next);
+    navigation.navigate({ ...navigation.current(), folder: next }, true);
   }, [continueAcrossFolders, currentPath, folders]);
 
   const folderTracks = useMemo(() => location ? tracks.filter((track) => isInside(parentPath(track.path), location.path)) : [], [location, tracks]);
@@ -116,16 +114,10 @@ export function FoldersView({ folders, tracks, onOpenSettings }: Props) {
     return values;
   }, [location]);
 
-  function navigate(next: Location | null, push = true) {
-    if (push) {
-      const history = historyRef.current.slice(0, historyIndexRef.current + 1);
-      history.push(next);
-      historyRef.current = history;
-      historyIndexRef.current = history.length - 1;
-    }
+  function navigate(next: Location | null) {
     setListing(null);
     setFolderMenu(null);
-    setLocation(next);
+    navigation.navigate({ ...navigation.current(), folder: next });
   }
 
   function openRoot(folder: MusicFolder) {
@@ -141,15 +133,6 @@ export function FoldersView({ folders, tracks, onOpenSettings }: Props) {
     if (!location) return;
     const path = relativePath ? `${folders.find((folder) => folder.id === location.rootId)?.path || ""}\\${relativePath.replace(/\//g, "\\")}` : folders.find((folder) => folder.id === location.rootId)?.path || location.path;
     navigate({ ...location, relativePath, path });
-  }
-
-  function handleMouseNavigation(event: MouseEvent<HTMLElement>) {
-    if (event.button !== 3 && event.button !== 4) return;
-    event.preventDefault();
-    const nextIndex = historyIndexRef.current + (event.button === 3 ? -1 : 1);
-    if (nextIndex < 0 || nextIndex >= historyRef.current.length) return;
-    historyIndexRef.current = nextIndex;
-    navigate(historyRef.current[nextIndex], false);
   }
 
   function playFolder() {
@@ -236,7 +219,7 @@ export function FoldersView({ folders, tracks, onOpenSettings }: Props) {
   }
 
   return (
-    <section className="folderBrowser" onAuxClick={handleMouseNavigation}>
+    <section className="folderBrowser">
       <header className="folderToolbar">
         <div className="folderBreadcrumbs">
           <button onClick={() => navigate(null)} title="Music folders"><Home size={16} /></button>

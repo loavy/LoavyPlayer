@@ -269,6 +269,47 @@ pub struct LibraryFolderEntry {
     pub indexed_track_count: usize,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum LibraryTrackCopyConflictAction {
+    Report,
+    KeepBoth,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(
+    tag = "status",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+pub enum LibraryTrackCopyResult {
+    Copied {
+        folder: LibraryFolderEntry,
+        track: Track,
+    },
+    AlreadyPresent {
+        folder: LibraryFolderEntry,
+        track: Track,
+    },
+    Conflict {
+        folder: LibraryFolderEntry,
+        existing_path: String,
+        suggested_file_name: String,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "status", rename_all = "camelCase")]
+pub enum PlaylistFolderCreateResult {
+    Created {
+        folder: LibraryFolderEntry,
+        copy: Option<LibraryTrackCopyResult>,
+    },
+    AlreadyExists {
+        folder: LibraryFolderEntry,
+    },
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LibraryFolderListing {
@@ -323,4 +364,46 @@ pub struct LibraryChange {
     pub kind: String,
     pub track_ids: Vec<i64>,
     pub root_id: Option<i64>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        LibraryFolderEntry, LibraryTrackCopyConflictAction, LibraryTrackCopyResult,
+        PlaylistFolderCreateResult,
+    };
+
+    fn folder() -> LibraryFolderEntry {
+        LibraryFolderEntry {
+            root_id: 1,
+            relative_path: "PLAYLISTS/Mix".to_string(),
+            name: "Mix".to_string(),
+            path: r"C:\Music\PLAYLISTS\Mix".to_string(),
+            direct_track_count: 0,
+            indexed_track_count: 0,
+        }
+    }
+
+    #[test]
+    fn folder_playlist_results_are_frontend_friendly_discriminated_unions() {
+        let conflict = serde_json::to_value(LibraryTrackCopyResult::Conflict {
+            folder: folder(),
+            existing_path: r"C:\Music\PLAYLISTS\Mix\song.mp3".to_string(),
+            suggested_file_name: "song (2).mp3".to_string(),
+        })
+        .unwrap();
+        assert_eq!(conflict["status"], "conflict");
+        assert_eq!(conflict["existing_path"], serde_json::Value::Null);
+        assert_eq!(conflict["existingPath"], r"C:\Music\PLAYLISTS\Mix\song.mp3");
+        assert_eq!(conflict["suggestedFileName"], "song (2).mp3");
+
+        let existing =
+            serde_json::to_value(PlaylistFolderCreateResult::AlreadyExists { folder: folder() })
+                .unwrap();
+        assert_eq!(existing["status"], "alreadyExists");
+        assert_eq!(
+            serde_json::from_str::<LibraryTrackCopyConflictAction>(r#""keepBoth""#).unwrap(),
+            LibraryTrackCopyConflictAction::KeepBoth
+        );
+    }
 }

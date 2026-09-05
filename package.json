@@ -1,11 +1,14 @@
 {
   "name": "loavy-player",
-  "version": "9.8.1",
+  "version": "10.1.1",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "test:downloader": "node tests/downloader-browser.mjs",
+    "test:playlists": "node tests/playlist-browser.mjs",
+    "test:desktop": "node tests/desktop-startup.mjs",
     "preview": "vite preview",
     "tauri": "tauri",
     "desktop:dev": "tauri dev",

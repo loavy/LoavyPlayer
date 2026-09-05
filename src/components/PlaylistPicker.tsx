@@ -1,7 +1,9 @@
-import { LoaderCircle, Plus, RotateCw, X } from "lucide-react";
+import { LoaderCircle, Plus, RotateCw, Search, X } from "lucide-react";
 import {
   useEffect,
   useId,
+  useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type FormEvent,
@@ -9,81 +11,92 @@ import {
   type MouseEvent
 } from "react";
 import { createPortal } from "react-dom";
-import type { Playlist, Track } from "../types";
+import type { LibraryFolderEntry, LibraryTrackCopyResult, Track } from "../types";
 import { api } from "../lib/api";
+import { displayArtist, displayTrackTitle } from "../lib/format";
 import { errorMessage, useLibraryActions } from "../lib/LibraryContext";
-import { displayTrackTitle } from "../lib/format";
-import { validateDisplayName } from "./OverlayDialogs";
+import { ConfirmDialog, validateWindowsFolderName } from "./OverlayDialogs";
+import { defaultAppearance, playlistKey, usePlaylistAppearances } from "../lib/playlistAppearance";
+import { PlaylistArtwork } from "./PlaylistArtwork";
 
 export type PlaylistPickerProps = {
   track: Track;
   onClose: () => void;
-  onAdded?: (playlist: Playlist) => void;
 };
 
-type Feedback = {
-  tone: "info" | "error";
-  message: string;
-};
+type Feedback = { tone: "info" | "error"; message: string };
+type Conflict = Extract<LibraryTrackCopyResult, { status: "conflict" }>;
 
-export function PlaylistPicker({ track, onClose, onAdded }: PlaylistPickerProps) {
+export function PlaylistPicker({ track, onClose }: PlaylistPickerProps) {
   const { notify } = useLibraryActions();
+  const appearances = usePlaylistAppearances();
+  const folderLabel = (folder: LibraryFolderEntry) => appearances.items[playlistKey(folder)]?.name || folder.name;
   const titleId = useId();
+  const backdropRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const restoreFocusRef = useRef<HTMLElement | null>(null);
   const loadRequestRef = useRef(0);
-  const [playlists, setPlaylists] = useState<Playlist[]>([]);
+  const [folders, setFolders] = useState<LibraryFolderEntry[]>([]);
+  const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [busyPlaylistId, setBusyPlaylistId] = useState<number | null>(null);
+  const [busyKey, setBusyKey] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
   const [nameTouched, setNameTouched] = useState(false);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
+  const [conflict, setConflict] = useState<Conflict | null>(null);
   const trackTitle = displayTrackTitle(track);
-  const normalizedNewName = normalizePlaylistName(newName);
-  const duplicateName = playlists.find(
-    (playlist) => normalizePlaylistName(playlist.name) === normalizedNewName
-  );
-  const nameValidation = validateDisplayName(newName) || (
-    duplicateName ? `A playlist named “${duplicateName.name}” already exists. Choose it above.` : null
-  );
-  const showNameValidation = Boolean(nameValidation && (nameTouched || duplicateName));
-  const busy = busyPlaylistId !== null;
+  const trackArtist = displayArtist(track.artist);
+  const nameValidation = validateWindowsFolderName(newName);
+  const busy = busyKey !== null;
 
-  async function loadPlaylists() {
+  const visibleFolders = useMemo(() => {
+    const query = search.trim().toLocaleLowerCase();
+    return [...folders]
+      .filter((folder) => !query || [folderLabel(folder), folder.name, folder.relativePath, folder.path]
+        .some((value) => value.toLocaleLowerCase().includes(query)))
+      .sort((left, right) => {
+        const preferred = Number(isPlaylistFolder(right)) - Number(isPlaylistFolder(left));
+        return preferred || folderLabel(left).localeCompare(folderLabel(right), undefined, { sensitivity: "base" });
+      });
+  }, [folders, search, appearances.items]);
+
+  async function loadFolders() {
     const requestId = ++loadRequestRef.current;
     setLoading(true);
     setLoadError(null);
     try {
-      const next = await api.listPlaylists();
-      if (loadRequestRef.current === requestId) setPlaylists(next);
+      const next = await api.listPlaylistFolders();
+      if (loadRequestRef.current === requestId) setFolders(next);
     } catch (error) {
       if (loadRequestRef.current !== requestId) return;
       const message = errorMessage(error);
       setLoadError(message);
-      notify(`Could not load playlists: ${message}`, "error");
+      notify(`Could not load music folders: ${message}`, "error");
     } finally {
       if (loadRequestRef.current === requestId) setLoading(false);
     }
   }
 
   useEffect(() => {
-    void loadPlaylists();
-    return () => {
-      loadRequestRef.current += 1;
-    };
+    void loadFolders();
+    return () => { loadRequestRef.current += 1; };
   }, []);
 
   useEffect(() => {
-    restoreFocusRef.current = document.activeElement instanceof HTMLElement
-      ? document.activeElement
-      : null;
-    const panel = panelRef.current;
-    panel?.querySelector<HTMLElement>("button:not(:disabled), input:not(:disabled)")?.focus();
-
+    restoreFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    panelRef.current?.querySelector<HTMLElement>("input, button:not(:disabled)")?.focus();
     return () => restoreFocusRef.current?.focus();
   }, []);
+
+  useLayoutEffect(() => {
+    const backdrop = backdropRef.current;
+    if (!backdrop) return;
+    if (conflict) backdrop.setAttribute("inert", "");
+    else backdrop.removeAttribute("inert");
+    return () => backdrop.removeAttribute("inert");
+  }, [conflict]);
 
   function handleDialogKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     if (event.key === "Escape" && !busy) {
@@ -92,7 +105,6 @@ export function PlaylistPicker({ track, onClose, onAdded }: PlaylistPickerProps)
       return;
     }
     if (event.key !== "Tab") return;
-
     const focusable = [...(panelRef.current?.querySelectorAll<HTMLElement>(
       "button:not(:disabled), input:not(:disabled), [href], [tabindex]:not([tabindex='-1'])"
     ) || [])];
@@ -112,78 +124,81 @@ export function PlaylistPicker({ track, onClose, onAdded }: PlaylistPickerProps)
     if (!busy && event.target === event.currentTarget) onClose();
   }
 
-  async function addToPlaylist(playlist: Playlist) {
-    setBusyPlaylistId(playlist.id);
+  async function copyToFolder(folder: LibraryFolderEntry, keepBoth = false) {
+    const key = folderKey(folder);
+    setBusyKey(key);
     setFeedback(null);
     try {
-      const tracks = await api.listPlaylistTracks(playlist.id);
-      if (tracks.some((candidate) => candidate.id === track.id)) {
-        const message = `“${trackTitle}” is already in “${playlist.name}”.`;
+      const result = await api.copyTrackToLibraryFolder(
+        track.id,
+        folder.rootId,
+        folder.relativePath,
+        keepBoth ? "keepBoth" : "report"
+      );
+      if (result.status === "conflict") {
+        setConflict(result);
+        return;
+      }
+      if (result.status === "alreadyPresent") {
+        const message = `“${trackTitle}” is already in “${folderLabel(result.folder)}”.`;
         setFeedback({ tone: "info", message });
         notify(message, "info");
         return;
       }
-
-      await api.addTrackToPlaylist(playlist.id, track.id);
-      announcePlaylistChange(track.id);
-      notify(`Added “${trackTitle}” to “${playlist.name}”.`, "success");
-      onAdded?.({ ...playlist, trackCount: playlist.trackCount + 1, updatedAt: Date.now() });
+      notify(`Added “${trackTitle}” to “${folderLabel(result.folder)}”.`, "success");
       onClose();
     } catch (error) {
-      const message = `Could not add “${trackTitle}” to “${playlist.name}”: ${errorMessage(error)}`;
+      const message = `Could not copy “${trackTitle}” into “${folderLabel(folder)}”: ${errorMessage(error)}`;
       setFeedback({ tone: "error", message });
       notify(message, "error");
     } finally {
-      setBusyPlaylistId(null);
+      setBusyKey(null);
     }
   }
 
   async function createAndAdd(event: FormEvent) {
     event.preventDefault();
     setNameTouched(true);
-    if (nameValidation) {
-      if (duplicateName) {
-        const message = `A playlist named “${duplicateName.name}” already exists. Choose it from the list instead.`;
+    if (nameValidation) return;
+    setBusyKey("create");
+    setFeedback(null);
+    try {
+      const result = await api.createPlaylistFolderWithTrack(newName.trim(), track.id);
+      if (result.status === "alreadyExists") {
+        setFolders((current) => includeFolder(current, result.folder));
+        setSearch("");
+        setCreating(false);
+        const message = `A folder named “${result.folder.name}” already exists. Choose it from the list.`;
         setFeedback({ tone: "info", message });
         notify(message, "info");
+        return;
       }
-      return;
-    }
-
-    setBusyPlaylistId(-1);
-    setFeedback(null);
-    let created: Playlist | null = null;
-    try {
-      created = await api.createPlaylist(newName.trim());
-      await api.addTrackToPlaylist(created.id, track.id);
-      announcePlaylistChange(track.id);
-      notify(`Created “${created.name}” and added “${trackTitle}”.`, "success");
-      onAdded?.({ ...created, trackCount: 1, updatedAt: Date.now() });
+      const copy = result.copy;
+      if (!copy || copy.status !== "copied") {
+        throw new Error("The folder was created, but the copied track was not confirmed.");
+      }
+      notify(`Created “${result.folder.name}” and added “${trackTitle}”.`, "success");
       onClose();
     } catch (error) {
-      const prefix = created
-        ? `“${created.name}” was created, but the song could not be added`
-        : "Could not create the playlist";
-      const message = `${prefix}: ${errorMessage(error)}`;
+      const message = `Could not create the playlist folder: ${errorMessage(error)}`;
       setFeedback({ tone: "error", message });
       notify(message, "error");
-      if (created) {
-        setPlaylists((current) => [created as Playlist, ...current]);
-        setCreating(false);
-        setNewName("");
-      }
     } finally {
-      setBusyPlaylistId(null);
+      setBusyKey(null);
     }
   }
 
-  return createPortal(
-    <div className="dialogBackdrop playlistPickerBackdrop" onMouseDown={handleBackdrop}>
+  const picker = (
+    <div
+      ref={backdropRef}
+      className="dialogBackdrop playlistPickerBackdrop"
+      onMouseDown={handleBackdrop}
+    >
       <div
         ref={panelRef}
         className="dialogPanel playlistPicker"
         role="dialog"
-        aria-modal="true"
+        aria-modal={conflict ? undefined : true}
         aria-labelledby={titleId}
         onKeyDown={handleDialogKeyDown}
       >
@@ -191,123 +206,100 @@ export function PlaylistPicker({ track, onClose, onAdded }: PlaylistPickerProps)
           <div>
             <h2 id={titleId}>Add to playlist</h2>
             <p className="playlistPickerTrack" title={trackTitle}>{trackTitle}</p>
+            <p className="playlistPickerArtist" title={trackArtist}>{trackArtist}</p>
           </div>
-          <button type="button" className="iconButton" onClick={onClose} disabled={busy} aria-label="Close playlist picker">
-            <X size={18} />
-          </button>
+          <button type="button" className="iconButton" onClick={onClose} disabled={busy} aria-label="Close playlist picker"><X size={18} /></button>
         </header>
 
         <div className="playlistPickerBody">
-          {loading && (
-            <p className="playlistPickerStatus" role="status">
-              <LoaderCircle className="spin" size={17} aria-hidden="true" />
-              Loading playlists…
-            </p>
+          {!loading && !loadError && (
+            <label className="playlistPickerSearch">
+              <Search size={16} aria-hidden="true" />
+              <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search playlists..." aria-label="Search playlist folders" disabled={busy} />
+            </label>
           )}
 
+          {loading && <p className="playlistPickerStatus" role="status"><LoaderCircle className="spin" size={17} /> Loading music folders…</p>}
           {!loading && loadError && (
             <div className="playlistPickerError" role="alert">
-              <p>Could not load playlists: {loadError}</p>
-              <button type="button" className="secondaryAction" onClick={() => void loadPlaylists()}>
-                <RotateCw size={16} aria-hidden="true" />
-                Try again
-              </button>
+              <p>Could not load music folders: {loadError}</p>
+              <button type="button" className="secondaryAction" onClick={() => void loadFolders()}><RotateCw size={16} /> Try again</button>
             </div>
           )}
 
           {!loading && !loadError && (
-            <>
-              <ul className="playlistPickerList" aria-label="Your playlists">
-                {playlists.map((playlist) => (
-                  <li key={playlist.id}>
-                    <button
-                      type="button"
-                      className="playlistPickerOption"
-                      disabled={busy}
-                      onClick={() => void addToPlaylist(playlist)}
-                    >
-                      <span>{playlist.name}</span>
-                      <small>{playlist.trackCount === 1 ? "1 song" : `${playlist.trackCount} songs`}</small>
-                      {busyPlaylistId === playlist.id && <LoaderCircle className="spin" size={16} aria-label="Adding song" />}
+            <ul className="playlistPickerList" aria-label="Music folders">
+              {visibleFolders.map((folder) => {
+                const key = folderKey(folder);
+                return (
+                  <li key={key}>
+                    <button type="button" className="playlistPickerOption" disabled={busy} onClick={() => void copyToFolder(folder)} title={folder.path}>
+                      <PlaylistArtwork appearance={appearances.items[playlistKey(folder)] || defaultAppearance(folder)} />
+                      <span><strong>{folderLabel(folder)}</strong><small className="playlistPickerPath">{appearances.items[playlistKey(folder)]?.description || "Your collection"}</small></span>
+                      <small>{songCount(folder.indexedTrackCount)}</small>
+                      {busyKey === key && <LoaderCircle className="spin" size={16} aria-label="Copying song" />}
                     </button>
                   </li>
-                ))}
-                {!playlists.length && !creating && (
-                  <li className="playlistPickerEmpty">No playlists yet. Create your first one below.</li>
-                )}
-              </ul>
+                );
+              })}
+              {!visibleFolders.length && <li className="playlistPickerEmpty">{search ? "No folders match that search." : "No eligible music folders were found."}</li>}
+            </ul>
+          )}
 
+          {!loading && !loadError && (
+            <div className="playlistPickerFooter">
               {creating ? (
                 <form className="playlistPickerCreateForm" onSubmit={(event) => void createAndAdd(event)}>
-                  <label htmlFor={`${titleId}-name`}>Playlist name</label>
-                  <input
-                    id={`${titleId}-name`}
-                    autoFocus
-                    maxLength={120}
-                    value={newName}
-                    disabled={busy}
-                    aria-invalid={showNameValidation}
-                    aria-describedby={showNameValidation ? `${titleId}-name-error` : undefined}
-                    onChange={(event) => setNewName(event.target.value)}
-                    onBlur={() => setNameTouched(true)}
-                  />
-                  {showNameValidation && nameValidation && (
-                    <p className="fieldError" id={`${titleId}-name-error`}>{nameValidation}</p>
-                  )}
+                  <label htmlFor={`${titleId}-name`}>Playlist folder name</label>
+                  <input id={`${titleId}-name`} autoFocus maxLength={120} value={newName} disabled={busy} aria-invalid={Boolean(nameTouched && nameValidation)} aria-describedby={nameTouched && nameValidation ? `${titleId}-name-error` : undefined} onChange={(event) => setNewName(event.target.value)} onBlur={() => setNameTouched(true)} />
+                  {nameTouched && nameValidation && <p className="fieldError" id={`${titleId}-name-error`}>{nameValidation}</p>}
                   <div className="playlistPickerCreateActions">
-                    <button
-                      type="button"
-                      className="secondaryAction"
-                      disabled={busy}
-                      onClick={() => {
-                        setCreating(false);
-                        setNewName("");
-                        setNameTouched(false);
-                      }}
-                    >
-                      Cancel
-                    </button>
-                    <button type="submit" className="primaryAction" disabled={busy || Boolean(nameValidation)}>
-                      {busyPlaylistId === -1 && <LoaderCircle className="spin" size={16} aria-hidden="true" />}
-                      Create and add
-                    </button>
+                    <button type="button" className="secondaryAction" disabled={busy} onClick={() => { setCreating(false); setNewName(""); setNameTouched(false); }}>Cancel</button>
+                    <button type="submit" className="primaryAction" disabled={busy || Boolean(nameValidation)}>{busyKey === "create" && <LoaderCircle className="spin" size={16} />} Create and add</button>
                   </div>
                 </form>
               ) : (
-                <button
-                  type="button"
-                  className="playlistPickerCreate"
-                  disabled={busy}
-                  onClick={() => {
-                    setCreating(true);
-                    setFeedback(null);
-                  }}
-                >
-                  <Plus size={17} aria-hidden="true" />
-                  Create new playlist
-                </button>
+                <button type="button" className="playlistPickerCreate" disabled={busy} onClick={() => { setCreating(true); setFeedback(null); }}><Plus size={17} /> Create new playlist</button>
               )}
-            </>
+            </div>
           )}
 
-          <p
-            className={feedback?.tone === "error" ? "playlistPickerFeedback error" : "playlistPickerFeedback"}
-            aria-live="polite"
-          >
-            {feedback?.message || ""}
-          </p>
+          <p className={feedback?.tone === "error" ? "playlistPickerFeedback error" : "playlistPickerFeedback"} aria-live="polite">{feedback?.message || ""}</p>
         </div>
       </div>
-    </div>,
-    document.body
+    </div>
+  );
+
+  return (
+    <>
+      {createPortal(picker, document.body)}
+      {conflict && (
+        <ConfirmDialog
+          title={`Keep both files in “${folderLabel(conflict.folder)}”?`}
+          description={`A different file with the same name already exists. Loavy will save this copy as “${conflict.suggestedFileName}” and will never overwrite the existing song.`}
+          confirmLabel="Keep both"
+          busy={busy}
+          onConfirm={() => { const next = conflict; setConflict(null); void copyToFolder(next.folder, true); }}
+          onClose={() => setConflict(null)}
+        />
+      )}
+    </>
   );
 }
 
-function normalizePlaylistName(name: string) {
-  return name.trim().toLocaleLowerCase();
+function folderKey(folder: LibraryFolderEntry) {
+  return `${folder.rootId}:${folder.relativePath.toLocaleLowerCase()}`;
 }
 
-function announcePlaylistChange(trackId: number) {
-  const detail = { kind: "playlist-updated", trackIds: [trackId] };
-  window.dispatchEvent(new CustomEvent("loavy:playlists-changed", { detail }));
+function isPlaylistFolder(folder: LibraryFolderEntry) {
+  return folder.name.toLocaleUpperCase() === "PLAYLISTS"
+    || folder.relativePath.split(/[\\/]/).some((part) => part.toLocaleUpperCase() === "PLAYLISTS");
+}
+
+function songCount(count: number) {
+  return count === 1 ? "1 song" : `${count} songs`;
+}
+
+function includeFolder(folders: LibraryFolderEntry[], folder: LibraryFolderEntry) {
+  return folders.some((candidate) => folderKey(candidate) === folderKey(folder)) ? folders : [folder, ...folders];
 }

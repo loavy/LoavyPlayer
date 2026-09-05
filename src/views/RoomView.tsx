@@ -1,5 +1,5 @@
 import { Copy, ExternalLink, FolderOpen, LogOut, Radio, Radar, RefreshCw, ShieldCheck, Square, UserX, UsersRound, Wifi } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { api } from "../lib/api";
 import type { DiscoveredRoom, RoomClientStatus, RoomJoinResult, RoomStatus } from "../types";
@@ -30,6 +30,8 @@ export function RoomView({ onError }: Props) {
   const [joinResult, setJoinResult] = useState<RoomJoinResult | null>(null);
   const [clientStatus, setClientStatus] = useState<RoomClientStatus | null>(null);
   const [busy, setBusy] = useState(false);
+  const refreshRevisionRef = useRef(0);
+  const refreshInFlightRef = useRef<Promise<void> | null>(null);
 
   async function openRoomGuide() {
     try {
@@ -39,24 +41,37 @@ export function RoomView({ onError }: Props) {
     }
   }
 
-  async function refresh() {
-    const [nextStatus, nextClientStatus] = await Promise.all([
-      api.getRoomStatus(),
-      api.getRoomClientStatus()
-    ]);
-    setStatus(nextStatus);
-    setClientStatus(nextClientStatus);
+  function refresh(force = false) {
+    if (!force && refreshInFlightRef.current) return refreshInFlightRef.current;
+    const revision = ++refreshRevisionRef.current;
+    let request: Promise<void>;
+    request = Promise.all([api.getRoomStatus(), api.getRoomClientStatus()])
+      .then(([nextStatus, nextClientStatus]) => {
+        if (refreshRevisionRef.current !== revision) return;
+        setStatus(nextStatus);
+        setClientStatus(nextClientStatus);
+        announceRoomStatus(nextStatus, nextClientStatus);
+      })
+      .finally(() => {
+        if (refreshInFlightRef.current === request) refreshInFlightRef.current = null;
+      });
+    refreshInFlightRef.current = request;
+    return request;
   }
 
   useEffect(() => {
-    refresh().catch((err) => onError(String(err)));
+    refresh(true).catch((err) => onError(String(err)));
     api.getDefaultGuestSongFolder()
       .then((folder) => {
         if (folder) setGuestSongDir((current) => current || folder);
       })
       .catch(() => undefined);
     const timer = window.setInterval(() => refresh().catch(() => undefined), 2500);
-    return () => window.clearInterval(timer);
+    return () => {
+      window.clearInterval(timer);
+      refreshRevisionRef.current += 1;
+      refreshInFlightRef.current = null;
+    };
   }, []);
 
   async function scanNearby() {
@@ -96,7 +111,9 @@ export function RoomView({ onError }: Props) {
         bindAddr: "0.0.0.0",
         port: hostPort
       });
+      refreshRevisionRef.current += 1;
       setStatus(next);
+      announceRoomStatus(next, clientStatus);
       if (next.port) setJoinPort(next.port);
       if (next.shareAddr) setJoinHost(next.shareAddr);
       setJoinName(name);
@@ -109,14 +126,14 @@ export function RoomView({ onError }: Props) {
 
   async function stopRoom() {
     await api.stopRoom();
-    await refresh();
+    await refresh(true);
   }
 
   async function kickUser(userId: number) {
     onError(null);
     try {
       await api.kickRoomUser(userId);
-      await refresh();
+      await refresh(true);
     } catch (err) {
       onError(String(err));
     }
@@ -152,7 +169,7 @@ export function RoomView({ onError }: Props) {
         displayName
       });
       setJoinResult(result);
-      await refresh();
+      await refresh(true);
     } catch (err) {
       onError(String(err));
     } finally {
@@ -165,7 +182,7 @@ export function RoomView({ onError }: Props) {
     try {
       await api.leaveRoom();
       setJoinResult({ success: true, message: "Left room.", playback: null });
-      await refresh();
+      await refresh(true);
     } catch (err) {
       onError(String(err));
     }
@@ -345,4 +362,18 @@ export function RoomView({ onError }: Props) {
       </div>
     </section>
   );
+}
+
+function announceRoomStatus(status: RoomStatus, clientStatus: RoomClientStatus | null) {
+  window.dispatchEvent(new CustomEvent("loavy:room-status", {
+    detail: {
+      hostRunning: status.running,
+      client: {
+        connected: Boolean(clientStatus?.connected),
+        allowGuestControl: Boolean(clientStatus?.allowGuestControl),
+        host: clientStatus?.host || null,
+        port: clientStatus?.port || null
+      }
+    }
+  }));
 }

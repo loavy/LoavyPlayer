@@ -46,4 +46,3 @@ impl MetadataFetcher for CoverArtArchiveFetcher {
         }))
     }
 }
-

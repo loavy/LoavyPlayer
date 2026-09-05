@@ -3,7 +3,7 @@ use std::sync::atomic::Ordering;
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    AppHandle, Emitter, Manager, State,
+    AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder,
 };
 
 use crate::{
@@ -13,9 +13,10 @@ use crate::{
     models::{
         Album, ApiKeyUpdate, Artist, DiscoveredRoom, FetcherDescriptor, FolderDeleteResult,
         FolderInspection, FolderRenameResult, LibraryChange, LibraryFolderEntry,
-        LibraryFolderListing, MusicFolder, Playlist, RoomClientStatus, RoomCreateRequest,
-        RoomJoinRequest, RoomJoinResult, RoomPlaybackState, RoomStatus, ScanProgress, ScanSummary,
-        ScanTaskState, SettingUpdate, Track, TrackDeleteResult, TrackLyrics, TrackLyricsUpdate,
+        LibraryFolderListing, LibraryTrackCopyConflictAction, LibraryTrackCopyResult, MusicFolder,
+        PlaylistFolderCreateResult, RoomClientStatus, RoomCreateRequest, RoomJoinRequest,
+        RoomJoinResult, RoomPlaybackState, RoomStatus, ScanProgress, ScanSummary, ScanTaskState,
+        SettingUpdate, Track, TrackDeleteResult, TrackLyrics, TrackLyricsUpdate,
         TrackPlaybackStats,
     },
     state::AppState,
@@ -23,9 +24,22 @@ use crate::{
 
 type CommandResult<T> = Result<T, String>;
 
+#[tauri::command]
+pub async fn import_playlist_image(state: State<'_, AppState>) -> CommandResult<Option<String>> {
+    let selected = rfd::AsyncFileDialog::new()
+        .set_title("Choose a playlist picture")
+        .add_filter("Pictures", &["png", "jpg", "jpeg", "webp"])
+        .pick_file().await;
+    let Some(selected) = selected else { return Ok(None); };
+    crate::playlist_art::import_image(selected.path(), &state.app_data_dir).await
+        .map(|path| Some(path.to_string_lossy().into_owned()))
+        .map_err(|error| format!("{error:#}"))
+}
+
 const BACKGROUND_TRAY_ID: &str = "loavy-background";
 const TRAY_OPEN_ID: &str = "tray-open";
 const TRAY_QUIT_ID: &str = "tray-quit";
+pub(crate) const MINI_PLAYER_LABEL: &str = "mini-player";
 const MAX_LYRICS_FILE_BYTES: u64 = 2 * 1024 * 1024;
 
 pub(crate) fn show_main_window(app: &AppHandle) {
@@ -34,6 +48,51 @@ pub(crate) fn show_main_window(app: &AppHandle) {
         let _ = window.show();
         let _ = window.set_focus();
     }
+}
+
+#[tauri::command]
+pub fn open_mini_player(app: AppHandle) -> CommandResult<()> {
+    if let Some(window) = app.get_webview_window(MINI_PLAYER_LABEL) {
+        window.unminimize().map_err(|error| error.to_string())?;
+        window.show().map_err(|error| error.to_string())?;
+        window.set_focus().map_err(|error| error.to_string())?;
+    } else {
+        WebviewWindowBuilder::new(
+            &app,
+            MINI_PLAYER_LABEL,
+            WebviewUrl::App("index.html?window=mini-player".into()),
+        )
+        .title("Loavy Mini Player")
+        .inner_size(420.0, 230.0)
+        .min_inner_size(360.0, 190.0)
+        .resizable(true)
+        .build()
+        .map_err(|error| format!("Could not create the Mini Player window: {error}"))?;
+    }
+
+    if let Some(main) = app.get_webview_window("main") {
+        main.hide().map_err(|error| error.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn set_mini_player_always_on_top(app: AppHandle, enabled: bool) -> CommandResult<()> {
+    let window = app
+        .get_webview_window(MINI_PLAYER_LABEL)
+        .ok_or_else(|| "The Mini Player window is not open.".to_string())?;
+    window
+        .set_always_on_top(enabled)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn show_full_player(app: AppHandle) -> CommandResult<()> {
+    show_main_window(&app);
+    if let Some(window) = app.get_webview_window(MINI_PLAYER_LABEL) {
+        window.close().map_err(|error| error.to_string())?;
+    }
+    Ok(())
 }
 
 pub(crate) fn sync_background_tray(app: &AppHandle, enabled: bool) -> tauri::Result<()> {
@@ -257,77 +316,122 @@ pub async fn list_artists(state: State<'_, AppState>) -> CommandResult<Vec<Artis
 }
 
 #[tauri::command]
-pub async fn list_playlists(state: State<'_, AppState>) -> CommandResult<Vec<Playlist>> {
-    let db = state.db.lock().map_err(|err| err.to_string())?;
-    db.list_playlists().map_err(|err| err.to_string())
-}
-
-#[tauri::command]
-pub async fn create_playlist(state: State<'_, AppState>, name: String) -> CommandResult<Playlist> {
-    let db = state.db.lock().map_err(|err| err.to_string())?;
-    db.create_playlist(&name, chrono::Utc::now().timestamp_millis())
-        .map_err(|err| err.to_string())
-}
-
-#[tauri::command]
-pub async fn rename_playlist(
+pub async fn list_playlist_folders(
     state: State<'_, AppState>,
-    playlist_id: i64,
+) -> CommandResult<Vec<LibraryFolderEntry>> {
+    let db_path = state.db_path.clone();
+    tokio::task::spawn_blocking(move || -> anyhow::Result<Vec<LibraryFolderEntry>> {
+        let db = crate::db::Database::open(db_path)?;
+        library::filesystem::list_library_folders_recursive(&db)
+    })
+    .await
+    .map_err(|error| error.to_string())?
+    .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub async fn copy_track_to_library_folder(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    track_id: i64,
+    root_id: i64,
+    relative_path: String,
+    conflict_action: LibraryTrackCopyConflictAction,
+) -> CommandResult<LibraryTrackCopyResult> {
+    let db_path = state.db_path.clone();
+    let app_data_dir = state.app_data_dir.clone();
+    let result = tokio::task::spawn_blocking(move || -> anyhow::Result<LibraryTrackCopyResult> {
+        let db = crate::db::Database::open(db_path)?;
+        library::filesystem::copy_track_to_library_folder(
+            &db,
+            &app_data_dir,
+            track_id,
+            root_id,
+            &relative_path,
+            conflict_action,
+        )
+    })
+    .await
+    .map_err(|error| error.to_string())?
+    .map_err(|error| error.to_string())?;
+
+    if let LibraryTrackCopyResult::Copied { folder, track }
+    | LibraryTrackCopyResult::AlreadyPresent { folder, track } = &result
+    {
+        emit_library_change(
+            &app,
+            "playlist-track-copied",
+            vec![track.id],
+            Some(folder.root_id),
+        );
+    }
+    Ok(result)
+}
+
+#[tauri::command]
+pub async fn create_playlist_folder(
+    app: AppHandle,
+    state: State<'_, AppState>,
     name: String,
-) -> CommandResult<Playlist> {
-    let db = state.db.lock().map_err(|err| err.to_string())?;
-    db.rename_playlist(playlist_id, &name, chrono::Utc::now().timestamp_millis())
-        .map_err(|err| err.to_string())
+) -> CommandResult<PlaylistFolderCreateResult> {
+    let db_path = state.db_path.clone();
+    let result =
+        tokio::task::spawn_blocking(move || -> anyhow::Result<PlaylistFolderCreateResult> {
+            let db = crate::db::Database::open(db_path)?;
+            library::filesystem::create_preferred_playlist_folder(&db, &name)
+        })
+        .await
+        .map_err(|error| error.to_string())?
+        .map_err(|error| error.to_string())?;
+
+    if let PlaylistFolderCreateResult::Created { folder, .. } = &result {
+        emit_library_change(
+            &app,
+            "playlist-folder-created",
+            Vec::new(),
+            Some(folder.root_id),
+        );
+    }
+    Ok(result)
 }
 
 #[tauri::command]
-pub async fn delete_playlist(state: State<'_, AppState>, playlist_id: i64) -> CommandResult<()> {
-    let db = state.db.lock().map_err(|err| err.to_string())?;
-    db.delete_playlist(playlist_id)
-        .map_err(|err| err.to_string())
-}
-
-#[tauri::command]
-pub async fn add_track_to_playlist(
+pub async fn create_playlist_folder_with_track(
+    app: AppHandle,
     state: State<'_, AppState>,
-    playlist_id: i64,
+    name: String,
     track_id: i64,
-) -> CommandResult<()> {
-    let db = state.db.lock().map_err(|err| err.to_string())?;
-    db.add_track_to_playlist(playlist_id, track_id)
-        .map_err(|err| err.to_string())
-}
+) -> CommandResult<PlaylistFolderCreateResult> {
+    let db_path = state.db_path.clone();
+    let app_data_dir = state.app_data_dir.clone();
+    let result =
+        tokio::task::spawn_blocking(move || -> anyhow::Result<PlaylistFolderCreateResult> {
+            let db = crate::db::Database::open(db_path)?;
+            library::filesystem::create_preferred_playlist_folder_with_track(
+                &db,
+                &app_data_dir,
+                &name,
+                track_id,
+            )
+        })
+        .await
+        .map_err(|error| error.to_string())?
+        .map_err(|error| error.to_string())?;
 
-#[tauri::command]
-pub async fn remove_track_from_playlist(
-    state: State<'_, AppState>,
-    playlist_id: i64,
-    track_id: i64,
-) -> CommandResult<()> {
-    let db = state.db.lock().map_err(|err| err.to_string())?;
-    db.remove_track_from_playlist(playlist_id, track_id)
-        .map_err(|err| err.to_string())
-}
-
-#[tauri::command]
-pub async fn reorder_playlist_tracks(
-    state: State<'_, AppState>,
-    playlist_id: i64,
-    track_ids: Vec<i64>,
-) -> CommandResult<()> {
-    let db = state.db.lock().map_err(|err| err.to_string())?;
-    db.reorder_playlist_tracks(playlist_id, &track_ids)
-        .map_err(|err| err.to_string())
-}
-
-#[tauri::command]
-pub async fn list_playlist_tracks(
-    state: State<'_, AppState>,
-    playlist_id: i64,
-) -> CommandResult<Vec<Track>> {
-    let db = state.db.lock().map_err(|err| err.to_string())?;
-    db.list_playlist_tracks(playlist_id)
-        .map_err(|err| err.to_string())
+    if let PlaylistFolderCreateResult::Created { folder, copy } = &result {
+        let track_ids = match copy {
+            Some(LibraryTrackCopyResult::Copied { track, .. })
+            | Some(LibraryTrackCopyResult::AlreadyPresent { track, .. }) => vec![track.id],
+            _ => Vec::new(),
+        };
+        emit_library_change(
+            &app,
+            "playlist-folder-created",
+            track_ids,
+            Some(folder.root_id),
+        );
+    }
+    Ok(result)
 }
 
 #[tauri::command]
@@ -490,10 +594,10 @@ pub async fn download_media(
             let _ = app.emit("download://completed", download);
         }
         Err(error) => {
-            let _ = app.emit("download://failed", error.to_string());
+            let _ = app.emit("download://failed", error);
         }
     }
-    result.map_err(|err| err.to_string())
+    result.map_err(|error| serde_json::to_string(&error).unwrap_or_else(|_| error.to_string()))
 }
 
 #[tauri::command]
@@ -504,6 +608,36 @@ pub async fn get_downloader_status(state: State<'_, AppState>) -> CommandResult<
     // as still running.
     status.running = state.download_running.load(Ordering::SeqCst);
     Ok(status)
+}
+
+#[tauri::command]
+pub async fn repair_downloader_tools(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> CommandResult<DownloaderStatus> {
+    if !state.try_start_download() {
+        return Err("A download or tool repair is already running.".to_string());
+    }
+
+    state.download_cancel.store(false, Ordering::SeqCst);
+    let progress_app = app.clone();
+    let result = downloader::repair_downloader_tools(
+        &state.app_data_dir,
+        state.download_cancel.clone(),
+        move |progress| {
+            let _ = progress_app.emit("download://progress", progress);
+        },
+    )
+    .await;
+    state.download_running.store(false, Ordering::SeqCst);
+    state.download_cancel.store(false, Ordering::SeqCst);
+
+    result
+        .map(|mut status| {
+            status.running = false;
+            status
+        })
+        .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -704,38 +838,7 @@ pub async fn delete_track_to_trash(
 #[tauri::command]
 pub fn reveal_download(path: String) -> CommandResult<()> {
     let path = std::path::PathBuf::from(path);
-    if !path.exists() {
-        return Err("The download location no longer exists.".to_string());
-    }
-
-    reveal_file(&path).map_err(|err| err.to_string())
-}
-
-#[cfg(target_os = "windows")]
-fn reveal_file(path: &std::path::Path) -> std::io::Result<()> {
-    let mut command = std::process::Command::new("explorer");
-    if path.is_file() {
-        command.arg("/select,");
-    }
-    command.arg(path).spawn()?;
-    Ok(())
-}
-
-#[cfg(target_os = "macos")]
-fn reveal_file(path: &std::path::Path) -> std::io::Result<()> {
-    let mut command = std::process::Command::new("open");
-    if path.is_file() {
-        command.arg("-R");
-    }
-    command.arg(path).spawn()?;
-    Ok(())
-}
-
-#[cfg(all(unix, not(target_os = "macos")))]
-fn reveal_file(path: &std::path::Path) -> std::io::Result<()> {
-    let folder = path.parent().unwrap_or(path);
-    std::process::Command::new("xdg-open").arg(folder).spawn()?;
-    Ok(())
+    crate::explorer::reveal_existing_path(&path).map_err(|error| error.to_string())
 }
 
 fn emit_library_change(app: &AppHandle, kind: &str, track_ids: Vec<i64>, root_id: Option<i64>) {

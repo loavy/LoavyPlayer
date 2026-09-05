@@ -2,9 +2,11 @@ mod audio;
 mod commands;
 mod db;
 mod downloader;
+mod explorer;
 mod fetchers;
 mod library;
 mod models;
+mod playlist_art;
 mod room;
 mod state;
 
@@ -30,19 +32,34 @@ pub fn run() {
             if window.label() == "main" {
                 if let WindowEvent::CloseRequested { api, .. } = event {
                     let _ = window.emit("app://backgrounding", ());
-                    if window
-                        .state::<AppState>()
-                        .background_mode
-                        .load(Ordering::SeqCst)
+                    let mini_player_open = window
+                        .app_handle()
+                        .get_webview_window(commands::MINI_PLAYER_LABEL)
+                        .is_some();
+                    if mini_player_open
+                        || window
+                            .state::<AppState>()
+                            .background_mode
+                            .load(Ordering::SeqCst)
                     {
                         api.prevent_close();
                         let _ = window.hide();
                     }
                 }
+            } else if window.label() == commands::MINI_PLAYER_LABEL
+                && matches!(event, WindowEvent::Destroyed)
+            {
+                commands::show_main_window(window.app_handle());
+                let _ = window
+                    .app_handle()
+                    .emit_to("main", "mini-player://closed", ());
             }
         })
         .invoke_handler(tauri::generate_handler![
             commands::set_background_mode,
+            commands::open_mini_player,
+            commands::set_mini_player_always_on_top,
+            commands::show_full_player,
             commands::select_music_folder,
             commands::list_music_folders,
             commands::remove_music_folder,
@@ -55,14 +72,11 @@ pub fn run() {
             commands::find_room_playback_track,
             commands::list_albums,
             commands::list_artists,
-            commands::list_playlists,
-            commands::create_playlist,
-            commands::rename_playlist,
-            commands::delete_playlist,
-            commands::add_track_to_playlist,
-            commands::remove_track_from_playlist,
-            commands::reorder_playlist_tracks,
-            commands::list_playlist_tracks,
+            commands::list_playlist_folders,
+            commands::import_playlist_image,
+            commands::copy_track_to_library_folder,
+            commands::create_playlist_folder,
+            commands::create_playlist_folder_with_track,
             commands::get_track_lyrics,
             commands::save_track_lyrics,
             commands::delete_track_lyrics,
@@ -75,6 +89,7 @@ pub fn run() {
             commands::fetch_metadata,
             commands::download_media,
             commands::get_downloader_status,
+            commands::repair_downloader_tools,
             commands::cancel_media_download,
             commands::select_download_folder,
             commands::get_default_guest_song_folder,

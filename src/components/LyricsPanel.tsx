@@ -1,5 +1,5 @@
 import { FileUp, LoaderCircle, Pencil, Save, SearchX, Trash2, X } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { api } from "../lib/api";
 import { errorMessage, useLibraryActions } from "../lib/LibraryContext";
 import { useAudio } from "../lib/useAudio";
@@ -11,6 +11,7 @@ type TimedLine = { at: number; text: string; key: string };
 export function LyricsPanel({ track }: { track: Track | null }) {
   const audio = useAudio();
   const { notify } = useLibraryActions();
+  const headingId = useId();
   const [lyrics, setLyrics] = useState<TrackLyrics | null>(null);
   const [loading, setLoading] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -18,6 +19,7 @@ export function LyricsPanel({ track }: { track: Track | null }) {
   const [saving, setSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const activeLineRef = useRef<HTMLParagraphElement | null>(null);
+  const lyricsScrollRef = useRef<HTMLDivElement | null>(null);
   const requestGenerationRef = useRef(0);
   const activeTrackIdRef = useRef<number | null>(null);
   activeTrackIdRef.current = track?.id ?? null;
@@ -64,8 +66,17 @@ export function LyricsPanel({ track }: { track: Track | null }) {
   }, [audio.position, timedLines]);
 
   useEffect(() => {
-    activeLineRef.current?.scrollIntoView({
-      block: "center",
+    const container = lyricsScrollRef.current;
+    const activeLine = activeLineRef.current;
+    if (!container || !activeLine) return;
+    const containerBounds = container.getBoundingClientRect();
+    const lineBounds = activeLine.getBoundingClientRect();
+    const centeredTop = container.scrollTop
+      + lineBounds.top
+      - containerBounds.top
+      - (container.clientHeight - lineBounds.height) / 2;
+    container.scrollTo({
+      top: Math.max(0, centeredTop),
       behavior: document.documentElement.dataset.motion === "reduced" ? "auto" : "smooth"
     });
   }, [activeIndex]);
@@ -160,21 +171,22 @@ export function LyricsPanel({ track }: { track: Track | null }) {
   }
 
   return (
-    <section className="lyricsPanel" aria-label="Lyrics">
+    <section className="lyricsPanel" aria-labelledby={headingId} aria-busy={loading || saving}>
       <header className="lyricsHeader">
-        <div>
-          <span>Lyrics</span>
-          <strong>{lyrics?.source ? `Saved from ${sourceLabel(lyrics.source)}` : "Stored on this device"}</strong>
+        <div className="lyricsHeaderCopy">
+          <h2 id={headingId} className="lyricsHeading">Lyrics</h2>
+          <p className="lyricsSource">{lyrics?.source ? `Saved from ${sourceLabel(lyrics.source)}` : "Stored on this device"}</p>
         </div>
-        <div className="lyricsActions">
+        <div className="lyricsActions" role="group" aria-label="Lyrics actions">
           {!editing && <button className="glassTextButton" onClick={() => void importLyrics()} disabled={loading} title="Import .lrc or .txt lyrics"><FileUp size={16} /> Import</button>}
-          {!editing && <button className="glassTextButton" onClick={beginEdit} disabled={loading}><Pencil size={16} /> {lyrics ? "Edit" : "Paste lyrics"}</button>}
-          {lyrics && !editing && <button className="glassIconButton" onClick={() => setConfirmDelete(true)} aria-label="Delete saved lyrics"><Trash2 size={17} /></button>}
+          {!editing && <button className="glassTextButton" onClick={beginEdit} disabled={loading} title={lyrics ? "Edit lyrics" : "Paste lyrics"}><Pencil size={16} /> {lyrics ? "Edit" : "Paste lyrics"}</button>}
+          {lyrics && !editing && <button className="glassIconButton" onClick={() => setConfirmDelete(true)} title="Delete saved lyrics" aria-label="Delete saved lyrics"><Trash2 size={17} /></button>}
         </div>
       </header>
 
-      {loading ? (
-        <div className="lyricsLoading"><LoaderCircle className="spin" size={24} /><span>Loading lyrics</span></div>
+      <div className="lyricsBody">
+        {loading ? (
+        <div className="lyricsLoading" role="status" aria-live="polite"><LoaderCircle className="spin" size={24} /><span>Loading lyrics</span></div>
       ) : editing ? (
         <div className="lyricsEditor">
           <textarea
@@ -193,7 +205,7 @@ export function LyricsPanel({ track }: { track: Track | null }) {
           </div>
         </div>
       ) : timedLines.length ? (
-        <div className="lyricsScroll syncedLyrics" aria-live="off">
+        <div ref={lyricsScrollRef} className="lyricsScroll syncedLyrics" role="region" aria-label="Synchronized lyrics" tabIndex={0}>
           {timedLines.map((line, index) => (
             <p
               key={line.key}
@@ -205,7 +217,7 @@ export function LyricsPanel({ track }: { track: Track | null }) {
           ))}
         </div>
       ) : lyrics?.plainText ? (
-        <div className="lyricsScroll plainLyrics">
+        <div className="lyricsScroll plainLyrics" role="region" aria-label="Lyrics text" tabIndex={0}>
           {lyrics.plainText.split(/\r?\n/).map((line, index) => <p key={`${index}-${line}`}>{line || "\u00a0"}</p>)}
         </div>
       ) : (
@@ -215,7 +227,8 @@ export function LyricsPanel({ track }: { track: Track | null }) {
           <p>Import an LRC or text file, or paste lyrics you already have.</p>
           <div><button className="secondaryAction" onClick={() => void importLyrics()}><FileUp size={16} /> Import file</button><button className="primaryAction" onClick={beginEdit}><Pencil size={16} /> Paste lyrics</button></div>
         </div>
-      )}
+        )}
+      </div>
 
       {confirmDelete && (
         <ConfirmDialog

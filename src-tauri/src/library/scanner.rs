@@ -8,7 +8,7 @@ use std::{
     time::UNIX_EPOCH,
 };
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use lofty::{
     file::{AudioFile, TaggedFileExt},
@@ -29,6 +29,30 @@ const AUDIO_EXTENSIONS: &[&str] = &["mp3", "flac", "wav", "ogg", "oga", "opus", 
 
 pub fn scan_library(db: &Database, app_data_dir: &Path) -> Result<ScanSummary> {
     scan_library_with_progress(db, app_data_dir, Arc::new(AtomicBool::new(false)), |_| {})
+}
+
+pub fn index_audio_file(db: &Database, app_data_dir: &Path, path: &Path) -> Result<Track> {
+    if !is_audio_file(path) {
+        bail!("The selected file is not a supported audio file.");
+    }
+    let metadata = fs::metadata(path)
+        .with_context(|| format!("Could not read audio file {}.", path.display()))?;
+    if !metadata.is_file() {
+        bail!("The selected audio path is not a file.");
+    }
+
+    let path_string = path.to_string_lossy().to_string();
+    let modified_at = metadata_modified_at(&metadata);
+    let track = read_track(
+        path,
+        app_data_dir,
+        chrono::Utc::now().timestamp_millis(),
+        metadata,
+        modified_at,
+    )?;
+    db.upsert_track(&track)?;
+    db.track_by_path(&path_string)?
+        .context("The indexed track could not be read back from the library.")
 }
 
 pub fn scan_library_with_progress(
@@ -128,12 +152,7 @@ fn scan_folder(
                 continue;
             }
         };
-        let modified_at = metadata
-            .modified()
-            .ok()
-            .and_then(|modified| modified.duration_since(UNIX_EPOCH).ok())
-            .map(|duration| duration.as_millis() as i64)
-            .unwrap_or_default();
+        let modified_at = metadata_modified_at(&metadata);
         let path_string = path.to_string_lossy().to_string();
         if db
             .track_file_signature(&path_string)?
@@ -210,7 +229,16 @@ fn count_audio_files(root: &Path) -> usize {
         .count()
 }
 
-fn is_audio_file(path: &Path) -> bool {
+fn metadata_modified_at(metadata: &fs::Metadata) -> i64 {
+    metadata
+        .modified()
+        .ok()
+        .and_then(|modified| modified.duration_since(UNIX_EPOCH).ok())
+        .map(|duration| duration.as_millis() as i64)
+        .unwrap_or_default()
+}
+
+pub(crate) fn is_audio_file(path: &Path) -> bool {
     path.extension()
         .and_then(|ext| ext.to_str())
         .map(|ext| AUDIO_EXTENSIONS.contains(&ext.to_ascii_lowercase().as_str()))

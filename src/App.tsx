@@ -1,6 +1,6 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { CheckCircle2, RefreshCw, Search, SidebarIcon, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, CheckCircle2, RefreshCw, Search, SidebarIcon, X } from "lucide-react";
 import { Sidebar } from "./components/Sidebar";
 import { PlayerBar } from "./components/PlayerBar";
 import { AlbumsView } from "./views/AlbumsView";
@@ -13,7 +13,6 @@ import { UserPlaylistsView } from "./views/UserPlaylistsView";
 import { FolderQueueView } from "./views/FolderQueueView";
 import { DownloaderView } from "./views/DownloaderView";
 import { api } from "./lib/api";
-import { useAudio } from "./lib/useAudio";
 import { displayAlbum, displayArtist, displayTrackTitle } from "./lib/format";
 import type {
   Album,
@@ -28,6 +27,8 @@ import type {
   ViewKey
 } from "./types";
 import { audioEngine } from "./lib/audioEngine";
+import { installMouseNavigation, navigation, useNavigation } from "./lib/navigation";
+import { toggleAudioTrackFavorite } from "./lib/favoriteActions";
 import { LibraryActionsProvider, errorMessage, type NoticeTone } from "./lib/LibraryContext";
 
 function streamTrackFromPlayback(playback: RoomPlaybackState, streamUrl: string): Track {
@@ -79,8 +80,12 @@ function trackMatchesPlayback(track: Track, playback: RoomPlaybackState) {
 }
 
 function App() {
-  const [activeView, setActiveView] = useState<ViewKey>("songs");
-  const [collectionFilter, setCollectionFilter] = useState<{ type: "album" | "artist"; value: string } | null>(null);
+  const nav = useNavigation();
+  const activeView = nav.route.view;
+  const collectionFilter = nav.route.collection;
+  const setActiveView = (view: ViewKey) => navigation.view(view);
+  const setCollectionFilter = (collection: typeof collectionFilter) => navigation.navigate({ ...navigation.current(), collection });
+  useEffect(installMouseNavigation, []);
   const [tracks, setTracks] = useState<Track[]>([]);
   const [albums, setAlbums] = useState<Album[]>([]);
   const [artists, setArtists] = useState<Artist[]>([]);
@@ -91,25 +96,24 @@ function App() {
   const [scanning, setScanning] = useState(false);
   const [scanSummary, setScanSummary] = useState<ScanSummary | null>(null);
   const [scanProgress, setScanProgress] = useState<ScanProgress | null>(null);
-  const [theme, setTheme] = useState(localStorage.getItem("loavy.theme") || "dark");
-  const [accent, setAccent] = useState(localStorage.getItem("loavy.accent") || "#48c6a8");
-  const [density, setDensity] = useState(localStorage.getItem("loavy.density") || "comfortable");
-  const [cardStyle, setCardStyle] = useState(localStorage.getItem("loavy.cardStyle") || "soft");
-  const [playerStyle, setPlayerStyle] = useState(localStorage.getItem("loavy.playerStyle") || "docked");
-  const [fontScale, setFontScale] = useState(localStorage.getItem("loavy.fontScale") || "100");
-  const [showCovers, setShowCovers] = useState(localStorage.getItem("loavy.showCovers") !== "false");
-  const [reduceMotion, setReduceMotion] = useState(localStorage.getItem("loavy.reduceMotion") === "true");
-  const [cornerStyle, setCornerStyle] = useState(localStorage.getItem("loavy.cornerStyle") || "rounded");
-  const [backgroundStyle, setBackgroundStyle] = useState(localStorage.getItem("loavy.backgroundStyle") || "ambient");
-  const [highContrast, setHighContrast] = useState(localStorage.getItem("loavy.highContrast") === "true");
-  const [showTrackFormat, setShowTrackFormat] = useState(localStorage.getItem("loavy.showTrackFormat") !== "false");
-  const [offlineMode, setOfflineMode] = useState(localStorage.getItem("loavy.offlineMode") === "true");
+  const [theme, setTheme] = useState(() => localStorage.getItem("loavy.theme") || "dark");
+  const [accent, setAccent] = useState(() => localStorage.getItem("loavy.accent") || "#48c6a8");
+  const [density, setDensity] = useState(() => localStorage.getItem("loavy.density") || "comfortable");
+  const [cardStyle, setCardStyle] = useState(() => localStorage.getItem("loavy.cardStyle") || "soft");
+  const [playerStyle, setPlayerStyle] = useState(() => localStorage.getItem("loavy.playerStyle") || "docked");
+  const [fontScale, setFontScale] = useState(() => localStorage.getItem("loavy.fontScale") || "100");
+  const [showCovers, setShowCovers] = useState(() => localStorage.getItem("loavy.showCovers") !== "false");
+  const [reduceMotion, setReduceMotion] = useState(() => localStorage.getItem("loavy.reduceMotion") === "true");
+  const [cornerStyle, setCornerStyle] = useState(() => localStorage.getItem("loavy.cornerStyle") || "rounded");
+  const [backgroundStyle, setBackgroundStyle] = useState(() => localStorage.getItem("loavy.backgroundStyle") || "ambient");
+  const [highContrast, setHighContrast] = useState(() => localStorage.getItem("loavy.highContrast") === "true");
+  const [showTrackFormat, setShowTrackFormat] = useState(() => localStorage.getItem("loavy.showTrackFormat") !== "false");
+  const [offlineMode, setOfflineMode] = useState(() => localStorage.getItem("loavy.offlineMode") === "true");
   const [backgroundMode, setBackgroundMode] = useState(false);
   const [compactSidebar, setCompactSidebar] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ message: string; tone: NoticeTone } | null>(null);
-  const audio = useAudio();
-  const audioRef = useRef(audio);
+  const [roomHostRunning, setRoomHostRunning] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const sessionRestoredRef = useRef(false);
   const libraryRefreshTimerRef = useRef<number | null>(null);
@@ -120,7 +124,6 @@ function App() {
     port: null
   });
   const deferredQuery = useDeferredValue(query);
-  audioRef.current = audio;
 
   const refreshLibrary = useCallback(async () => {
     const [nextTracks, nextAlbums, nextArtists, nextFolders, nextFetchers] = await Promise.all([
@@ -145,14 +148,12 @@ function App() {
   }, []);
 
   const openAlbum = useCallback((album: string) => {
-    setCollectionFilter({ type: "album", value: album || "Unknown Album" });
-    setActiveView("songs");
+    navigation.navigate({ view: "songs", collection: { type: "album", value: album || "Unknown Album" }, playlist: null, folder: null });
     setQuery("");
   }, []);
 
   const openArtist = useCallback((artist: string) => {
-    setCollectionFilter({ type: "artist", value: artist || "Unknown Artist" });
-    setActiveView("songs");
+    navigation.navigate({ view: "songs", collection: { type: "artist", value: artist || "Unknown Artist" }, playlist: null, folder: null });
     setQuery("");
   }, []);
 
@@ -197,28 +198,22 @@ function App() {
   }, [refreshLibrary]);
 
   useEffect(() => {
-    async function refreshRoomClientPermission() {
-      try {
-        const status = await api.getRoomClientStatus();
-        roomClientStatusRef.current = {
-          connected: status.connected,
-          allowGuestControl: status.allowGuestControl,
-          host: status.host,
-          port: status.port
-        };
-        audioEngine.setLocalControlBlocked(status.connected && !status.allowGuestControl, () => {
-          setError("The host does not allow guests to change songs.");
-        });
-      } catch {
-        roomClientStatusRef.current = { connected: false, allowGuestControl: false, host: null, port: null };
-        audioEngine.setLocalControlBlocked(false);
-      }
+    function handleRoomStatus(event: Event) {
+      const detail = (event as CustomEvent<{
+        hostRunning: boolean;
+        client: { connected: boolean; allowGuestControl: boolean; host?: string | null; port?: number | null };
+      }>).detail;
+      if (!detail) return;
+      setRoomHostRunning(detail.hostRunning);
+      roomClientStatusRef.current = detail.client;
+      audioEngine.setLocalControlBlocked(detail.client.connected && !detail.client.allowGuestControl, () => {
+        setError("The host does not allow guests to change songs.");
+      });
     }
 
-    refreshRoomClientPermission();
-    const timer = window.setInterval(refreshRoomClientPermission, 1500);
+    window.addEventListener("loavy:room-status", handleRoomStatus);
     return () => {
-      window.clearInterval(timer);
+      window.removeEventListener("loavy:room-status", handleRoomStatus);
       audioEngine.setLocalControlBlocked(false);
     };
   }, []);
@@ -232,7 +227,7 @@ function App() {
         setError("The host does not allow guests to change songs.");
         return;
       }
-      const current = audioRef.current.current;
+      const current = audioEngine.snapshot().current;
       const send = current && !/^https?:\/\//i.test(current.path)
         ? api.sendGuestTrack(detail, current.path)
         : api.sendGuestPlaybackState(detail);
@@ -249,7 +244,7 @@ function App() {
     async function syncToRoomPlayback(playback: RoomPlaybackState, receivedTrack?: Track) {
       if (disposed) return;
       try {
-        const current = audioRef.current.current;
+        const current = audioEngine.snapshot().current;
         let track = receivedTrack
           || (current && trackMatchesPlayback(current, playback) ? current : null)
           || await api.findRoomPlaybackTrack(playback);
@@ -306,29 +301,41 @@ function App() {
   }, []);
 
   useEffect(() => {
-    const timer = window.setInterval(async () => {
-      const snapshot = audioRef.current;
-      if (!snapshot.current) return;
-      try {
-        const status = await api.getRoomStatus();
-        if (!status.running) return;
-        await api.broadcastRoomPlaybackState({
-          trackId: snapshot.current.id,
-          title: displayTrackTitle(snapshot.current),
-          artist: displayArtist(snapshot.current.artist),
-          album: displayAlbum(snapshot.current.album),
-          coverPath: snapshot.current.coverPath,
-          durationMs: Math.round(snapshot.duration || snapshot.current.durationMs || 0) || null,
-          positionMs: Math.round(snapshot.position),
-          playing: snapshot.playing,
-          hostTimestampMs: Date.now()
-        });
-      } catch {
-        // Room sync is best-effort; the Room panel shows explicit server errors.
+    if (!roomHostRunning) return;
+    let disposed = false;
+    let timer = 0;
+    let lastSignature = "";
+    async function broadcast() {
+      const snapshot = audioEngine.snapshot();
+      if (snapshot.current) {
+        const signature = `${snapshot.current.id}:${snapshot.playing ? 1 : 0}:${Math.floor(snapshot.position / 1_000)}`;
+        if (signature !== lastSignature) {
+          lastSignature = signature;
+          try {
+            await api.broadcastRoomPlaybackState({
+              trackId: snapshot.current.id,
+              title: displayTrackTitle(snapshot.current),
+              artist: displayArtist(snapshot.current.artist),
+              album: displayAlbum(snapshot.current.album),
+              coverPath: snapshot.current.coverPath,
+              durationMs: Math.round(snapshot.duration || snapshot.current.durationMs || 0) || null,
+              positionMs: Math.round(snapshot.position),
+              playing: snapshot.playing,
+              hostTimestampMs: Date.now()
+            });
+          } catch {
+            // Room sync is best-effort; the Room panel shows explicit server errors.
+          }
+        }
       }
-    }, 2000);
-    return () => window.clearInterval(timer);
-  }, []);
+      if (!disposed) timer = window.setTimeout(() => void broadcast(), 2_000);
+    }
+    void broadcast();
+    return () => {
+      disposed = true;
+      window.clearTimeout(timer);
+    };
+  }, [roomHostRunning]);
 
   useEffect(() => {
     let disposed = false;
@@ -389,12 +396,13 @@ function App() {
         refreshLibrary().catch((err) => !disposed && setError(errorMessage(err)));
       }, 80);
     };
-    window.addEventListener("loavy:library-changed", refresh);
-    const unlisten = listen("library://changed", refresh);
+    const unlisten = listen<{ kind: string }>("library://changed", (event) => {
+      // markTrackPlayed already updates the returned statistics locally.
+      if (event.payload.kind !== "track-played") refresh();
+    });
     return () => {
       disposed = true;
       if (libraryRefreshTimerRef.current !== null) window.clearTimeout(libraryRefreshTimerRef.current);
-      window.removeEventListener("loavy:library-changed", refresh);
       unlisten.then((callback) => callback()).catch(() => undefined);
     };
   }, [refreshLibrary]);
@@ -479,16 +487,9 @@ function App() {
         void audioEngine.previous();
       } else if (event.ctrlKey && event.shiftKey && event.key.toLocaleLowerCase() === "f") {
         event.preventDefault();
-        const current = audioRef.current.current;
+        const current = audioEngine.snapshot().current;
         if (!current || current.id <= 0) return;
-        const favorite = !current.favorite;
-        audioEngine.patchTrackFavorite(current.id, favorite);
-        api.setTrackFavorite(current.id, favorite)
-          .then(() => window.dispatchEvent(new CustomEvent("loavy:favorite-changed", { detail: { trackId: current.id, favorite } })))
-          .catch((err) => {
-            audioEngine.patchTrackFavorite(current.id, !favorite);
-            setError(errorMessage(err));
-          });
+        void toggleAudioTrackFavorite(current.id).catch((err) => setError(errorMessage(err)));
       }
     }
     window.addEventListener("keydown", onKeyDown);
@@ -692,7 +693,7 @@ function App() {
       );
     }
     if (activeView === "room") return <RoomView onError={setError} />;
-    if (activeView === "playlists") return <UserPlaylistsView />;
+    if (activeView === "playlists") return <UserPlaylistsView tracks={tracks} onOpenFolders={() => setActiveView("folders")} />;
     if (activeView === "folders") return <FoldersView folders={folders} tracks={tracks} onOpenSettings={() => setActiveView("settings")} />;
     if (activeView === "folderQueue") return <FolderQueueView tracks={tracks} />;
     return (
@@ -707,7 +708,6 @@ function App() {
 
   function selectView(view: ViewKey) {
     setActiveView(view);
-    if (view !== "songs") setCollectionFilter(null);
   }
 
   const libraryActions = useMemo(() => ({
@@ -724,6 +724,10 @@ function App() {
       <main className="mainPane">
         <header className="topBar">
           <div className="titleGroup">
+            <div className="navigationButtons">
+              <button className="iconButton" onClick={() => navigation.back()} disabled={!nav.canBack} aria-label="Go back" title="Back (mouse back button or Alt+Left)"><ArrowLeft size={17} /></button>
+              <button className="iconButton" onClick={() => navigation.forward()} disabled={!nav.canForward} aria-label="Go forward" title="Forward (mouse forward button or Alt+Right)"><ArrowRight size={17} /></button>
+            </div>
             <button className="iconButton" onClick={() => setCompactSidebar(!compactSidebar)} title="Toggle sidebar">
               <SidebarIcon size={18} />
             </button>
@@ -760,6 +764,7 @@ function App() {
             <DownloaderView
               onDownloadMedia={api.downloadMedia}
               onGetStatus={api.getDownloaderStatus}
+              onRepairTools={api.repairDownloaderTools}
               onCancel={api.cancelMediaDownload}
               onSelectFolder={api.selectDownloadFolder}
               onRevealDownload={api.revealDownload}

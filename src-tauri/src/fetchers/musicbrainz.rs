@@ -65,4 +65,3 @@ impl MetadataFetcher for MusicBrainzFetcher {
         }))
     }
 }
-

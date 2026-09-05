@@ -1,5 +1,6 @@
 import {
   Album,
+  AudioLines,
   Download,
   Heart,
   History,
@@ -12,7 +13,6 @@ import {
   type LucideIcon
 } from "lucide-react";
 import type { ViewKey } from "../types";
-import loavyIcon from "../assets/loavy-icon.png";
 
 const items: Array<{ key: ViewKey; label: string; icon: LucideIcon }> = [
   { key: "songs", label: "Songs", icon: Music2 },
@@ -38,8 +38,8 @@ export function Sidebar({ active, onSelect, compact }: Props) {
   return (
     <aside className={compact ? "sidebar compact" : "sidebar"}>
       <div className="brand">
-        <div className="brandMark"><img src={loavyIcon} alt="" /></div>
-        {!compact && <span>Loavy Player</span>}
+        <div className="brandMark"><AudioLines size={24} /></div>
+        {!compact && <span>loavy<span className="brandDot">.</span></span>}
       </div>
       <nav>
         {items.map((item) => {
@@ -50,6 +50,8 @@ export function Sidebar({ active, onSelect, compact }: Props) {
               className={active === item.key ? "navItem active" : "navItem"}
               onClick={() => onSelect(item.key)}
               title={item.label}
+              aria-label={item.label}
+              aria-current={active === item.key ? "page" : undefined}
             >
               <Icon size={18} />
               {!compact && <span>{item.label}</span>}

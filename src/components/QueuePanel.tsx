@@ -1,5 +1,11 @@
 import { ChevronDown, ChevronUp, ListMusic, Pause, Play, Trash2, X } from "lucide-react";
-import { useEffect, useRef, useState, type UIEvent as ReactUIEvent } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type UIEvent as ReactUIEvent
+} from "react";
 import { createPortal } from "react-dom";
 import { audioEngine, type AudioSnapshot } from "../lib/audioEngine";
 import { displayArtist, displayTrackTitle } from "../lib/format";
@@ -36,7 +42,7 @@ function sameQueuePanelAudio(left: QueuePanelAudio, right: QueuePanelAudio) {
 
 export function QueuePanel({ onClose }: { onClose: () => void }) {
   const audio = useAudioSelector(selectQueuePanelAudio, sameQueuePanelAudio);
-  const panelRef = useRef<HTMLElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const queueListRef = useRef<HTMLDivElement>(null);
   const scrollFrameRef = useRef<number | null>(null);
   const onCloseRef = useRef(onClose);
@@ -53,6 +59,10 @@ export function QueuePanel({ onClose }: { onClose: () => void }) {
 
   useEffect(() => {
     const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const previousRootOverflow = document.documentElement.style.overflow;
+    const previousBodyOverflow = document.body.style.overflow;
+    document.documentElement.style.overflow = "hidden";
+    document.body.style.overflow = "hidden";
     panelRef.current?.querySelector<HTMLElement>("button")?.focus();
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
@@ -87,7 +97,9 @@ export function QueuePanel({ onClose }: { onClose: () => void }) {
     window.addEventListener("keydown", onKeyDown);
     return () => {
       window.removeEventListener("keydown", onKeyDown);
-      previousFocus?.focus();
+      document.documentElement.style.overflow = previousRootOverflow;
+      document.body.style.overflow = previousBodyOverflow;
+      if (previousFocus?.isConnected) previousFocus.focus();
     };
   }, []);
 
@@ -124,9 +136,44 @@ export function QueuePanel({ onClose }: { onClose: () => void }) {
     });
   }
 
+  function onQueueKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
+    if (event.target !== event.currentTarget) return;
+
+    const list = event.currentTarget;
+    const maximum = Math.max(0, audio.upNext.length * QUEUE_ROW_STRIDE - list.clientHeight);
+    const page = Math.max(QUEUE_ROW_STRIDE, list.clientHeight - QUEUE_ROW_STRIDE);
+    let nextScrollTop: number | null = null;
+
+    switch (event.key) {
+      case "ArrowDown":
+        nextScrollTop = list.scrollTop + QUEUE_ROW_STRIDE;
+        break;
+      case "ArrowUp":
+        nextScrollTop = list.scrollTop - QUEUE_ROW_STRIDE;
+        break;
+      case "PageDown":
+        nextScrollTop = list.scrollTop + page;
+        break;
+      case "PageUp":
+        nextScrollTop = list.scrollTop - page;
+        break;
+      case "Home":
+        nextScrollTop = 0;
+        break;
+      case "End":
+        nextScrollTop = maximum;
+        break;
+      default:
+        return;
+    }
+
+    event.preventDefault();
+    list.scrollTo({ top: Math.max(0, Math.min(maximum, nextScrollTop)) });
+  }
+
   return createPortal(
     <div className="queueBackdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-      <aside className="queuePanel" ref={panelRef} role="dialog" aria-modal="true" aria-label="Playback queue" tabIndex={-1}>
+      <div className="queuePanel" ref={panelRef} role="dialog" aria-modal="true" aria-label="Playback queue" tabIndex={-1}>
         <header className="queueHeader">
           <div><ListMusic size={20} /><span><strong>Queue</strong><small>{audio.upNext.length} next up</small></span></div>
           <button className="iconButton" onClick={onClose} aria-label="Close queue"><X size={19} /></button>
@@ -138,7 +185,12 @@ export function QueuePanel({ onClose }: { onClose: () => void }) {
           <section className="queueSection">
             <header><span>Now playing</span></header>
             {audio.current ? (
-              <button className="queueTrack current" onClick={() => void audioEngine.toggle()} disabled={audio.localControlBlocked}>
+              <button
+                className="queueTrack current"
+                onClick={() => void audioEngine.toggle()}
+                disabled={audio.localControlBlocked}
+                title={`${displayTrackTitle(audio.current)} — ${displayArtist(audio.current.artist)}`}
+              >
                 <Cover path={audio.current.coverPath} title={audio.current.album || undefined} size="sm" />
                 <span><strong>{displayTrackTitle(audio.current)}</strong><small>{displayArtist(audio.current.artist)}</small></span>
                 {audio.playing ? <Pause size={18} /> : <Play size={18} fill="currentColor" />}
@@ -149,14 +201,22 @@ export function QueuePanel({ onClose }: { onClose: () => void }) {
           <section className="queueSection queueUpcoming">
             <header>
               <span>Next up</span>
-              {!!audio.upNext.length && <button onClick={() => audioEngine.clearUpcoming()} disabled={audio.localControlBlocked}>Clear</button>}
+              {!!audio.upNext.length && (
+                <button
+                  onClick={() => audioEngine.clearUpcoming()}
+                  disabled={audio.localControlBlocked}
+                  aria-label={`Clear ${audio.upNext.length} upcoming songs`}
+                >Clear</button>
+              )}
             </header>
             <div
               className={`queueList${audio.upNext.length ? "" : " empty"}`}
               ref={queueListRef}
               onScroll={onQueueScroll}
+              onKeyDown={onQueueKeyDown}
               role="list"
-              aria-label="Next up"
+              tabIndex={0}
+              aria-label={`Next up, ${audio.upNext.length} ${audio.upNext.length === 1 ? "song" : "songs"}`}
             >
               {!!audio.upNext.length && (
                 <div className="queueListSpacer" style={{ height: audio.upNext.length * QUEUE_ROW_STRIDE }}>
@@ -206,7 +266,7 @@ export function QueuePanel({ onClose }: { onClose: () => void }) {
             </div>
           </section>
         </div>
-      </aside>
+      </div>
     </div>,
     document.body
   );

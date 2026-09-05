@@ -108,7 +108,7 @@ export type MediaDownloadRequest = {
 
 export type DownloadProgress = {
   source: DownloadSource;
-  phase: "installing" | "resolving" | "starting" | "downloading" | "converting" | "tagging";
+  phase: "preparing" | "reading" | "downloading" | "processing" | "embedding" | "saving";
   percent: number | null;
   bytesWritten: number;
   totalBytes: number | null;
@@ -135,6 +135,44 @@ export type DownloaderStatus = {
   running: boolean;
   spotdlInstalled: boolean;
   spotdlVersion: string | null;
+  ffmpegInstalled: boolean;
+  ffmpegVersion: string | null;
+  jsRuntimeInstalled: boolean;
+  jsRuntimeVersion: string | null;
+  jsRuntimeName: string | null;
+  ytDlp: DownloaderToolHealth;
+  ffmpeg: DownloaderToolHealth;
+  jsRuntime: DownloaderToolHealth;
+  spotdl: DownloaderToolHealth;
+};
+
+export type DownloaderToolHealthState = "ready" | "missing" | "corrupt" | "updateAvailable";
+
+export type DownloaderToolHealth = {
+  state: DownloaderToolHealthState;
+  version: string | null;
+  expectedVersion: string | null;
+  provider: string | null;
+  detail: string | null;
+};
+
+export type DownloadDiagnostic = {
+  loavyVersion: string;
+  ytDlpVersion: string | null;
+  ffmpegVersion: string | null;
+  jsRuntime: string | null;
+  source: DownloadSource;
+  requestedFormat: DownloadFormat;
+  exitCode: number | null;
+  reason: string;
+  relevantStderr: string;
+};
+
+export type DownloadFailure = {
+  message: string;
+  category: string;
+  retryable: boolean;
+  diagnostic: DownloadDiagnostic | null;
 };
 
 export type RoomCreateRequest = {
@@ -200,14 +238,6 @@ export type RoomPlaybackState = {
   hostTimestampMs: number;
 };
 
-export type Playlist = {
-  id: number;
-  name: string;
-  createdAt: number;
-  updatedAt: number;
-  trackCount: number;
-};
-
 export type TrackLyrics = {
   trackId: number;
   plainText?: string | null;
@@ -237,6 +267,22 @@ export type LibraryFolderEntry = {
   directTrackCount: number;
   indexedTrackCount: number;
 };
+
+export type LibraryTrackCopyConflictAction = "report" | "keepBoth";
+
+export type LibraryTrackCopyResult =
+  | { status: "copied"; folder: LibraryFolderEntry; track: Track }
+  | { status: "alreadyPresent"; folder: LibraryFolderEntry; track: Track }
+  | {
+      status: "conflict";
+      folder: LibraryFolderEntry;
+      existingPath: string;
+      suggestedFileName: string;
+    };
+
+export type PlaylistFolderCreateResult =
+  | { status: "created"; folder: LibraryFolderEntry; copy?: LibraryTrackCopyResult | null }
+  | { status: "alreadyExists"; folder: LibraryFolderEntry };
 
 export type LibraryFolderListing = {
   rootId: number;

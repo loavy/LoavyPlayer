@@ -7,16 +7,16 @@ use std::{
 };
 
 use anyhow::{bail, Context, Result};
-use sha2::{Digest, Sha256};
 use tokio::{
-    io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWriteExt, BufReader},
+    io::{AsyncRead, AsyncReadExt},
     process::Command,
     sync::mpsc,
 };
 
 use super::{
-    executable_on_path, hide_console_window, strip_ansi, terminate_child, useful_error,
-    DownloadOptions, DownloadProgress, DownloadResult, DownloadSource,
+    atomic_replace, download_verified_asset, file_sha256, hide_console_window, read_bounded,
+    strip_ansi, terminate_child, useful_error, DownloadOptions, DownloadProgress, DownloadResult,
+    DownloadSource, PinnedAsset, ProcessFailure, ToolHealth,
 };
 
 const SPOTDL_VERSION: &str = "4.5.0";
@@ -30,12 +30,15 @@ const FFMPEG_DOWNLOAD_URL: &str =
 // Filled from the pinned release asset rather than a mutable latest URL.
 const FFMPEG_SHA256: &str = "8d7e6cf86ba7e0462643d3cc3745455adca6c9af5795574d67d125ae238296b2";
 const FFMPEG_MAX_BYTES: u64 = 128 * 1024 * 1024;
+const MAX_ERROR_FILE_BYTES: usize = 64 * 1024;
+const MAX_PROCESS_LINE_BYTES: usize = 4 * 1024;
+const PROCESS_LINE_QUEUE_CAPACITY: usize = 64;
 
 const LOG_MARKER: &str = "LOAVY|";
 
-pub(super) struct ToolStatus {
-    pub installed: bool,
-    pub version: Option<String>,
+pub(super) struct SpotifyToolStatus {
+    pub spotdl: ToolHealth,
+    pub ffmpeg: ToolHealth,
 }
 
 #[derive(Default)]
@@ -44,21 +47,9 @@ struct SpotdlProgressState {
     completed: u64,
 }
 
-struct PinnedTool<'a> {
-    url: &'a str,
-    sha256: &'a str,
-    max_bytes: u64,
-    destination: &'a Path,
-    title: &'a str,
-}
-
-pub(super) async fn status(app_data_dir: &Path) -> ToolStatus {
-    let executable = spotdl_path(app_data_dir);
-    let version = tool_version(&executable, app_data_dir).await;
-    ToolStatus {
-        installed: version.is_some() && audio_processor_installed(app_data_dir),
-        version,
-    }
+pub(super) async fn status(app_data_dir: &Path) -> SpotifyToolStatus {
+    let (spotdl, ffmpeg) = tokio::join!(spotdl_health(app_data_dir), ffmpeg_health(app_data_dir));
+    SpotifyToolStatus { spotdl, ffmpeg }
 }
 
 pub(super) async fn download<F>(
@@ -78,12 +69,14 @@ where
         naming,
     } = options;
     let (spotdl, ffmpeg) = ensure_tools(app_data_dir, cancel, report_progress).await?;
+    let js_runtime =
+        super::direct::ensure_js_runtime(app_data_dir, cancel, report_progress, true).await?;
     if cancel.load(Ordering::SeqCst) {
         bail!("Download cancelled.");
     }
 
     report_progress(DownloadProgress {
-        phase: "resolving".to_string(),
+        phase: "reading".to_string(),
         percent: None,
         bytes_written: 0,
         total_bytes: None,
@@ -150,9 +143,9 @@ where
             "--print-errors",
         ]);
 
-    if executable_on_path(&["node.exe", "node"]) {
-        command.args(["--yt-dlp-args", "--js-runtimes node"]);
-    }
+    command
+        .arg("--yt-dlp-args")
+        .arg(spotdl_runtime_args(&js_runtime));
 
     let mut child = command
         .spawn()
@@ -165,15 +158,17 @@ where
         .stderr
         .take()
         .context("Could not read Spotify downloader errors.")?;
-    let (line_tx, mut line_rx) = mpsc::unbounded_channel();
+    let (line_tx, mut line_rx) = mpsc::channel(PROCESS_LINE_QUEUE_CAPACITY);
     let stdout_task = tokio::spawn(forward_lines(stdout, line_tx.clone()));
     let stderr_task = tokio::spawn(forward_lines(stderr, line_tx));
 
     let mut progress_state = SpotdlProgressState::default();
     let mut recent_output = VecDeque::with_capacity(24);
+    let mut output_closed = false;
     let exit_status = loop {
         if cancel.load(Ordering::SeqCst) {
             terminate_child(&mut child).await;
+            line_rx.close();
             let _ = stdout_task.await;
             let _ = stderr_task.await;
             cleanup_run_files(&manifest_path, &errors_path).await;
@@ -188,33 +183,40 @@ where
         }
 
         tokio::select! {
-            line = line_rx.recv() => {
+            line = line_rx.recv(), if !output_closed => {
                 if let Some(line) = line {
                     remember_line(&mut recent_output, &line);
                     if let Some(progress) = parse_spotdl_progress(&line, &mut progress_state) {
                         report_progress(progress);
                     }
+                } else {
+                    output_closed = true;
                 }
             }
             _ = tokio::time::sleep(Duration::from_millis(120)) => {}
         }
     };
 
-    let _ = stdout_task.await;
-    let _ = stderr_task.await;
-    while let Ok(line) = line_rx.try_recv() {
+    while let Some(line) = line_rx.recv().await {
         remember_line(&mut recent_output, &line);
         if let Some(progress) = parse_spotdl_progress(&line, &mut progress_state) {
             report_progress(progress);
         }
     }
+    let _ = stdout_task.await;
+    let _ = stderr_task.await;
 
-    let error_file = tokio::fs::read_to_string(&errors_path)
-        .await
-        .unwrap_or_default();
-    let warnings = parse_error_file(&error_file);
-    let mut files = read_manifest_paths(&manifest_path, destination).await?;
+    let error_file = match tokio::fs::File::open(&errors_path).await {
+        Ok(file) => read_bounded(file, MAX_ERROR_FILE_BYTES).await,
+        Err(_) => String::new(),
+    };
+    let mut warnings = parse_error_file(&error_file);
+    let manifest_result = read_manifest_paths(&manifest_path, destination).await;
     cleanup_run_files(&manifest_path, &errors_path).await;
+    let mut files = manifest_result?;
+    files.retain(|path| path.is_file());
+    files.sort();
+    files.dedup();
 
     if !exit_status.success() {
         let output = recent_output.into_iter().collect::<Vec<_>>().join("\n");
@@ -223,18 +225,24 @@ where
         } else {
             format!("{output}\n{error_file}")
         };
-        bail!(
-            "{}",
-            useful_error(
-                &combined,
-                "The Spotify downloader could not finish this link."
-            )
+        let summary = useful_error(
+            &combined,
+            "The Spotify downloader could not finish this link.",
         );
+        if files.is_empty() {
+            return Err(ProcessFailure {
+                summary,
+                exit_code: exit_status.code(),
+                stderr: combined,
+            }
+            .into());
+        }
+        // A collection may have saved usable tracks before a later item failed.
+        if warnings.is_empty() {
+            warnings.push(summary);
+        }
     }
 
-    files.retain(|path| path.is_file());
-    files.sort();
-    files.dedup();
     if files.is_empty() {
         let detail = warnings
             .first()
@@ -260,6 +268,14 @@ where
     })
 }
 
+fn spotdl_runtime_args(runtime: &super::direct::JsRuntime) -> String {
+    // spotDL parses this one argument again with Python's POSIX shlex.split.
+    // Single-quote the value to preserve Windows backslashes and spaces, and
+    // escape embedded apostrophes using adjacent quoted/unquoted segments.
+    let value = runtime.yt_dlp_argument().replace('\'', "'\"'\"'");
+    format!("--js-runtimes '{value}'")
+}
+
 async fn ensure_tools<F>(
     app_data_dir: &Path,
     cancel: &AtomicBool,
@@ -277,32 +293,39 @@ where
         .context("Could not create the Spotify tool data folder.")?;
 
     let spotdl = spotdl_path(app_data_dir);
-    if tool_version(&spotdl, app_data_dir).await.is_none() {
-        if spotdl.exists() {
-            tokio::fs::remove_file(&spotdl)
-                .await
-                .context("Could not replace the damaged spotDL executable.")?;
-        }
-        download_verified_tool(
-            PinnedTool {
+    if !spotdl_is_trusted(&spotdl, app_data_dir).await {
+        let partial = spotdl.with_extension("exe.download");
+        download_verified_asset(
+            PinnedAsset {
                 url: SPOTDL_DOWNLOAD_URL,
                 sha256: SPOTDL_SHA256,
                 max_bytes: SPOTDL_MAX_BYTES,
-                destination: &spotdl,
-                title: "Installing Spotify support",
+                partial: &partial,
+                title: "Preparing Spotify support",
+                source: DownloadSource::Spotify,
             },
-            DownloadSource::Spotify,
             cancel,
             report_progress,
         )
         .await?;
-        let version = tool_version(&spotdl, app_data_dir)
-            .await
-            .context("The downloaded spotDL executable did not start correctly.")?;
-        if version != SPOTDL_VERSION {
-            let _ = tokio::fs::remove_file(&spotdl).await;
-            bail!("The Spotify downloader version could not be verified.");
+        let install_result: Result<()> = async {
+            validate_windows_executable(&partial, "Spotify support").await?;
+            let version = tool_version(&partial, app_data_dir)
+                .await
+                .context("The downloaded spotDL executable did not start correctly.")?;
+            if version != SPOTDL_VERSION {
+                bail!("The Spotify downloader version could not be verified.");
+            }
+            atomic_replace(&partial, &spotdl)
+                .await
+                .context("Could not atomically install Spotify support.")?;
+            Ok(())
         }
+        .await;
+        if install_result.is_err() {
+            let _ = tokio::fs::remove_file(&partial).await;
+        }
+        install_result?;
     }
 
     let ffmpeg = ensure_audio_processor(
@@ -329,122 +352,38 @@ where
         .await
         .context("Could not create the audio tools folder.")?;
     let ffmpeg = ffmpeg_path(app_data_dir);
-    if !ffmpeg.is_file() {
-        download_verified_tool(
-            PinnedTool {
+    if !ffmpeg_is_trusted(&ffmpeg).await {
+        let partial = ffmpeg.with_extension("exe.download");
+        download_verified_asset(
+            PinnedAsset {
                 url: FFMPEG_DOWNLOAD_URL,
                 sha256: FFMPEG_SHA256,
                 max_bytes: FFMPEG_MAX_BYTES,
-                destination: &ffmpeg,
-                title: "Installing the audio processor",
+                partial: &partial,
+                title: "Preparing the audio processor",
+                source,
             },
-            source,
             cancel,
             report_progress,
         )
         .await?;
+        let install_result: Result<()> = async {
+            validate_windows_executable(&partial, "audio processor").await?;
+            ffmpeg_version(&partial)
+                .await
+                .context("The downloaded audio processor did not start correctly.")?;
+            atomic_replace(&partial, &ffmpeg)
+                .await
+                .context("Could not atomically install the audio processor.")?;
+            Ok(())
+        }
+        .await;
+        if install_result.is_err() {
+            let _ = tokio::fs::remove_file(&partial).await;
+        }
+        install_result?;
     }
     Ok(ffmpeg)
-}
-
-async fn download_verified_tool<F>(
-    tool: PinnedTool<'_>,
-    source: DownloadSource,
-    cancel: &AtomicBool,
-    report_progress: &mut F,
-) -> Result<()>
-where
-    F: FnMut(DownloadProgress),
-{
-    let partial = tool.destination.with_extension("exe.download");
-    let _ = tokio::fs::remove_file(&partial).await;
-    let client = reqwest::Client::builder()
-        .user_agent(concat!("Loavy-Player/", env!("CARGO_PKG_VERSION")))
-        .connect_timeout(Duration::from_secs(20))
-        .timeout(Duration::from_secs(300))
-        .build()
-        .context("Could not prepare the Spotify tool installer.")?;
-    let request = client.get(tool.url).send();
-    tokio::pin!(request);
-    let mut response = loop {
-        tokio::select! {
-            response = &mut request => {
-                break response.with_context(|| format!("Could not download {}.", tool.title))?;
-            }
-            _ = tokio::time::sleep(Duration::from_millis(150)) => {
-                if cancel.load(Ordering::SeqCst) {
-                    bail!("Download cancelled.");
-                }
-            }
-        }
-    }
-    .error_for_status()
-    .with_context(|| format!("The {} download was rejected.", tool.title))?;
-    let total_bytes = response.content_length();
-    if total_bytes.is_some_and(|size| size > tool.max_bytes) {
-        bail!("The {} download was unexpectedly large.", tool.title);
-    }
-
-    let mut file = tokio::fs::File::create(&partial)
-        .await
-        .with_context(|| format!("Could not create the file for {}.", tool.title))?;
-    let mut hasher = Sha256::new();
-    let mut bytes_written = 0_u64;
-
-    loop {
-        let chunk = tokio::select! {
-            chunk = response.chunk() => chunk.with_context(|| format!("The {} download was interrupted.", tool.title))?,
-            _ = tokio::time::sleep(Duration::from_millis(150)) => {
-                if cancel.load(Ordering::SeqCst) {
-                    drop(file);
-                    let _ = tokio::fs::remove_file(&partial).await;
-                    bail!("Download cancelled.");
-                }
-                continue;
-            }
-        };
-        let Some(chunk) = chunk else { break };
-
-        bytes_written += chunk.len() as u64;
-        if bytes_written > tool.max_bytes {
-            drop(file);
-            let _ = tokio::fs::remove_file(&partial).await;
-            bail!("The {} download exceeded the allowed size.", tool.title);
-        }
-        hasher.update(&chunk);
-        file.write_all(&chunk)
-            .await
-            .with_context(|| format!("Could not write {}.", tool.title))?;
-        report_progress(DownloadProgress {
-            phase: "installing".to_string(),
-            percent: total_bytes.map(|total| bytes_written as f64 / total as f64 * 100.0),
-            bytes_written,
-            total_bytes,
-            title: tool.title.to_string(),
-            item_index: None,
-            item_count: None,
-            source,
-        });
-    }
-
-    file.flush()
-        .await
-        .with_context(|| format!("Could not finish writing {}.", tool.title))?;
-    drop(file);
-
-    let actual_sha256 = format!("{:x}", hasher.finalize());
-    if !actual_sha256.eq_ignore_ascii_case(tool.sha256) {
-        let _ = tokio::fs::remove_file(&partial).await;
-        bail!(
-            "The {} checksum did not match the pinned release.",
-            tool.title
-        );
-    }
-    validate_windows_executable(&partial, tool.title).await?;
-    tokio::fs::rename(&partial, tool.destination)
-        .await
-        .with_context(|| format!("Could not finish installing {}.", tool.title))?;
-    Ok(())
 }
 
 async fn validate_windows_executable(path: &Path, title: &str) -> Result<()> {
@@ -456,9 +395,111 @@ async fn validate_windows_executable(path: &Path, title: &str) -> Result<()> {
         .await
         .with_context(|| format!("The {title} download was incomplete."))?;
     if magic != *b"MZ" {
-        let _ = tokio::fs::remove_file(path).await;
         bail!("The {title} download was not a valid Windows executable.");
     }
+    Ok(())
+}
+
+async fn spotdl_is_trusted(executable: &Path, app_data_dir: &Path) -> bool {
+    file_sha256(executable)
+        .await
+        .is_ok_and(|hash| hash.eq_ignore_ascii_case(SPOTDL_SHA256))
+        && tool_version(executable, app_data_dir).await.as_deref() == Some(SPOTDL_VERSION)
+}
+
+async fn ffmpeg_is_trusted(executable: &Path) -> bool {
+    file_sha256(executable)
+        .await
+        .is_ok_and(|hash| hash.eq_ignore_ascii_case(FFMPEG_SHA256))
+        && ffmpeg_version(executable).await.is_some()
+}
+
+async fn spotdl_health(app_data_dir: &Path) -> ToolHealth {
+    let executable = spotdl_path(app_data_dir);
+    if !executable.is_file() {
+        return ToolHealth::missing(Some(SPOTDL_VERSION));
+    }
+    if !file_sha256(&executable)
+        .await
+        .is_ok_and(|hash| hash.eq_ignore_ascii_case(SPOTDL_SHA256))
+    {
+        return ToolHealth::corrupt(
+            None,
+            Some(SPOTDL_VERSION),
+            "The spotDL executable failed its checksum verification.",
+        );
+    }
+    let version = tool_version(&executable, app_data_dir).await;
+    if version.as_deref() == Some(SPOTDL_VERSION) {
+        ToolHealth::ready(version, Some(SPOTDL_VERSION))
+    } else {
+        ToolHealth::corrupt(
+            version,
+            Some(SPOTDL_VERSION),
+            "The spotDL executable failed its version verification.",
+        )
+    }
+}
+
+async fn ffmpeg_health(app_data_dir: &Path) -> ToolHealth {
+    let executable = ffmpeg_path(app_data_dir);
+    if !executable.is_file() {
+        return ToolHealth::missing(Some("4.4"));
+    }
+    if !file_sha256(&executable)
+        .await
+        .is_ok_and(|hash| hash.eq_ignore_ascii_case(FFMPEG_SHA256))
+    {
+        return ToolHealth::corrupt(
+            None,
+            Some("4.4"),
+            "The FFmpeg executable failed its checksum verification.",
+        );
+    }
+    let version = ffmpeg_version(&executable).await;
+    if version.is_some() {
+        ToolHealth::ready(version, Some("4.4"))
+    } else {
+        ToolHealth::corrupt(
+            version,
+            Some("4.4"),
+            "The FFmpeg executable failed its version verification.",
+        )
+    }
+}
+
+async fn ffmpeg_version(executable: &Path) -> Option<String> {
+    if !executable.is_file() {
+        return None;
+    }
+    let mut command = Command::new(executable);
+    command.kill_on_drop(true).stdin(Stdio::null());
+    hide_console_window(&mut command);
+    tokio::time::timeout(Duration::from_secs(8), command.arg("-version").output())
+        .await
+        .ok()
+        .and_then(std::result::Result::ok)
+        .filter(|output| output.status.success())
+        .and_then(|output| String::from_utf8(output.stdout).ok())
+        .and_then(|output| {
+            output
+                .lines()
+                .next()
+                .and_then(|line| line.strip_prefix("ffmpeg version "))
+                .and_then(|version| version.split_whitespace().next())
+                .map(str::to_string)
+        })
+}
+
+pub(super) async fn repair_tools<F>(
+    app_data_dir: &Path,
+    cancel: &AtomicBool,
+    report_progress: &mut F,
+) -> Result<()>
+where
+    F: FnMut(DownloadProgress),
+{
+    ensure_tools(app_data_dir, cancel, report_progress).await?;
     Ok(())
 }
 
@@ -467,6 +508,7 @@ async fn tool_version(executable: &Path, app_data_dir: &Path) -> Option<String> 
         return None;
     }
     let mut command = Command::new(executable);
+    command.kill_on_drop(true).stdin(Stdio::null());
     configure_spotdl_command(&mut command, app_data_dir);
     hide_console_window(&mut command);
     tokio::time::timeout(Duration::from_secs(12), command.arg("--version").output())
@@ -488,15 +530,44 @@ fn configure_spotdl_command(command: &mut Command, app_data_dir: &Path) {
         .env("PYTHONUTF8", "1");
 }
 
-async fn forward_lines<R>(reader: R, sender: mpsc::UnboundedSender<String>)
+async fn forward_lines<R>(mut reader: R, sender: mpsc::Sender<String>)
 where
     R: AsyncRead + Unpin,
 {
-    let mut lines = BufReader::new(reader).lines();
-    while let Ok(Some(line)) = lines.next_line().await {
-        if sender.send(line).is_err() {
+    let mut chunk = [0_u8; 4 * 1024];
+    let mut pending = Vec::with_capacity(MAX_PROCESS_LINE_BYTES);
+    let mut truncated = false;
+    loop {
+        let Ok(read) = reader.read(&mut chunk).await else {
+            break;
+        };
+        if read == 0 {
             break;
         }
+        for byte in &chunk[..read] {
+            if *byte == b'\n' {
+                let mut line = String::from_utf8_lossy(&pending).into_owned();
+                if truncated {
+                    line.push_str("...");
+                }
+                if sender.send(line).await.is_err() {
+                    return;
+                }
+                pending.clear();
+                truncated = false;
+            } else if pending.len() < MAX_PROCESS_LINE_BYTES {
+                pending.push(*byte);
+            } else {
+                truncated = true;
+            }
+        }
+    }
+    if !pending.is_empty() || truncated {
+        let mut line = String::from_utf8_lossy(&pending).into_owned();
+        if truncated {
+            line.push_str("...");
+        }
+        let _ = sender.send(line).await;
     }
 }
 
@@ -519,7 +590,7 @@ fn parse_spotdl_progress(
         {
             state.total = Some(count);
             return Some(progress_event(
-                "resolving",
+                "reading",
                 None,
                 format!("Found {count} Spotify tracks"),
                 None,
@@ -549,7 +620,7 @@ fn parse_spotdl_progress(
 
     if message.starts_with("Processing query:") {
         return Some(progress_event(
-            "resolving",
+            "reading",
             None,
             "Reading Spotify metadata".to_string(),
             None,
@@ -559,17 +630,19 @@ fn parse_spotdl_progress(
 
     let (title, status) = message.rsplit_once(": ")?;
     let (phase, item_percent) = match status.trim() {
-        "Downloading" => ("downloading", 35.0),
-        "Converting" => ("converting", 70.0),
-        "Embedding metadata" => ("tagging", 95.0),
-        "Done" | "Skipped" => ("tagging", 100.0),
-        "Error" => ("downloading", 100.0),
+        "Downloading" => ("downloading", Some(35.0)),
+        "Converting" => ("processing", None),
+        "Embedding metadata" => ("embedding", None),
+        "Done" | "Skipped" => ("saving", None),
+        "Error" => ("downloading", Some(100.0)),
         _ => return None,
     };
-    let percent = state.total.and_then(|total| {
-        (total > 0).then_some(
-            ((state.completed as f64 * 100.0) + item_percent) / (total as f64 * 100.0) * 100.0,
-        )
+    let percent = item_percent.and_then(|item_percent| {
+        state.total.and_then(|total| {
+            (total > 0).then_some(
+                ((state.completed as f64 * 100.0) + item_percent) / (total as f64 * 100.0) * 100.0,
+            )
+        })
     });
 
     Some(progress_event(
@@ -604,7 +677,17 @@ fn remember_line(lines: &mut VecDeque<String>, line: &str) {
     if lines.len() == 24 {
         lines.pop_front();
     }
-    lines.push_back(strip_ansi(line));
+    let line = strip_ansi(line);
+    let line = if line.len() > 4096 {
+        let mut start = line.len() - 4096;
+        while !line.is_char_boundary(start) {
+            start += 1;
+        }
+        format!("...{}", &line[start..])
+    } else {
+        line
+    };
+    lines.push_back(line);
 }
 
 async fn read_manifest_paths(manifest: &Path, destination: &Path) -> Result<Vec<PathBuf>> {
@@ -619,6 +702,7 @@ async fn read_manifest_paths(manifest: &Path, destination: &Path) -> Result<Vec<
         .context("Could not validate the download destination.")?;
     let mut paths = Vec::new();
     for line in content
+        .trim_start_matches('\u{feff}')
         .lines()
         .map(str::trim)
         .filter(|line| !line.is_empty() && !line.starts_with('#'))
@@ -672,17 +756,62 @@ fn ffmpeg_path(app_data_dir: &Path) -> PathBuf {
     spotdl_root(app_data_dir).join("ffmpeg.exe")
 }
 
-pub(super) fn audio_processor_installed(app_data_dir: &Path) -> bool {
-    ffmpeg_path(app_data_dir).is_file()
-}
-
 fn spotdl_home(app_data_dir: &Path) -> PathBuf {
     spotdl_root(app_data_dir).join("home")
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_error_file, parse_spotdl_progress, SpotdlProgressState};
+    use std::collections::VecDeque;
+
+    use super::{
+        forward_lines, parse_error_file, parse_spotdl_progress, read_manifest_paths, remember_line,
+        spotdl_runtime_args, SpotdlProgressState, MAX_PROCESS_LINE_BYTES,
+    };
+    use tokio::io::AsyncWriteExt;
+
+    #[test]
+    fn quotes_windows_runtime_paths_for_spotdl_shlex() {
+        let runtime = crate::downloader::direct::JsRuntime {
+            name: "node",
+            version: "22.0.0".into(),
+            executable: std::path::PathBuf::from(r"C:\Program Files\O'Brien\node.exe"),
+        };
+        assert_eq!(
+            spotdl_runtime_args(&runtime),
+            r#"--js-runtimes 'node:C:\Program Files\O'"'"'Brien\node.exe'"#
+        );
+    }
+
+    #[tokio::test]
+    async fn manifest_keeps_completed_files_and_rejects_missing_or_outside_paths() {
+        let root = std::env::temp_dir().join(format!(
+            "loavy-manifest-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let destination = root.join("My Music");
+        tokio::fs::create_dir_all(&destination).await.unwrap();
+        tokio::fs::write(destination.join("Song.m4a"), b"audio")
+            .await
+            .unwrap();
+        tokio::fs::write(root.join("outside.m4a"), b"outside")
+            .await
+            .unwrap();
+        let manifest = destination.join("result.m3u8");
+        tokio::fs::write(
+            &manifest,
+            "\u{feff}Song.m4a\n#EXTINF:0,Missing\nMissing.m4a\n../outside.m4a\n",
+        )
+        .await
+        .unwrap();
+        let files = read_manifest_paths(&manifest, &destination).await.unwrap();
+        assert_eq!(files, vec![destination.join("Song.m4a")]);
+        tokio::fs::remove_dir_all(root).await.unwrap();
+    }
 
     #[test]
     fn parses_collection_and_track_progress() {
@@ -707,6 +836,22 @@ mod tests {
             parse_spotdl_progress("12:00 INFO LOAVY|INFO|1/12 complete", &mut state).unwrap();
         assert!((complete.percent.unwrap() - (100.0 / 12.0)).abs() < 1e-10);
         assert_eq!(complete.item_index, Some(1));
+
+        let converting = parse_spotdl_progress(
+            "12:00 INFO LOAVY|INFO|Artist - Song: Converting",
+            &mut state,
+        )
+        .unwrap();
+        assert_eq!(converting.phase, "processing");
+        assert_eq!(converting.percent, None);
+
+        let embedding = parse_spotdl_progress(
+            "12:00 INFO LOAVY|INFO|Artist - Song: Embedding metadata",
+            &mut state,
+        )
+        .unwrap();
+        assert_eq!(embedding.phase, "embedding");
+        assert_eq!(embedding.percent, None);
     }
 
     #[test]
@@ -715,5 +860,36 @@ mod tests {
             "2026-07-11-12-30-00\nLookupError: first track\nLookupError: second track\n",
         );
         assert_eq!(errors.len(), 2);
+    }
+
+    #[test]
+    fn bounds_recent_process_output_by_lines_and_bytes() {
+        let mut lines = VecDeque::new();
+        for index in 0..30 {
+            remember_line(&mut lines, &format!("line {index}"));
+        }
+        assert_eq!(lines.len(), 24);
+        assert_eq!(lines.front().unwrap(), "line 6");
+
+        remember_line(&mut lines, &"x".repeat(5_000));
+        assert!(lines.back().unwrap().len() <= 4_099);
+        assert!(lines.back().unwrap().starts_with("..."));
+    }
+
+    #[tokio::test]
+    async fn bounds_a_single_process_output_line_before_queueing_it() {
+        let (mut writer, reader) = tokio::io::duplex(8 * 1024);
+        let (sender, mut receiver) = tokio::sync::mpsc::channel(2);
+        let forwarder = tokio::spawn(forward_lines(reader, sender));
+        writer.write_all(&vec![b'x'; 6 * 1024]).await.unwrap();
+        writer.write_all(b"\nshort\n").await.unwrap();
+        drop(writer);
+
+        let long = receiver.recv().await.unwrap();
+        let short = receiver.recv().await.unwrap();
+        assert_eq!(long.len(), MAX_PROCESS_LINE_BYTES + 3);
+        assert!(long.ends_with("..."));
+        assert_eq!(short, "short");
+        forwarder.await.unwrap();
     }
 }

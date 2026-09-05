@@ -10,9 +10,10 @@ import {
   UserRound
 } from "lucide-react";
 import { useState } from "react";
-import type { LibraryChange, Track, TrackDeleteResult } from "../types";
+import type { Track, TrackDeleteResult } from "../types";
 import { api } from "../lib/api";
 import { audioEngine } from "../lib/audioEngine";
+import { toggleAudioTrackFavorite } from "../lib/favoriteActions";
 import { displayTrackTitle } from "../lib/format";
 import { errorMessage, useLibraryActions } from "../lib/LibraryContext";
 import { ConfirmDialog } from "./OverlayDialogs";
@@ -75,13 +76,8 @@ export function SongContextMenu({
   }
 
   async function toggleFavorite() {
-    const favorite = !track.favorite;
     try {
-      await api.setTrackFavorite(track.id, favorite);
-      audioEngine.patchTrackFavorite(track.id, favorite);
-      window.dispatchEvent(new CustomEvent("loavy:favorite-changed", {
-        detail: { trackId: track.id, favorite }
-      }));
+      const favorite = await toggleAudioTrackFavorite(track.id, track.favorite);
       notify(favorite ? `Added “${title}” to Favorites.` : `Removed “${title}” from Favorites.`, "success");
     } catch (error) {
       notify(`Could not update Favorites: ${errorMessage(error)}`, "error");
@@ -135,13 +131,6 @@ export function SongContextMenu({
       }
     }
 
-    const detail: LibraryChange = {
-      kind: "track-deleted",
-      trackIds: [track.id],
-      rootId: null
-    };
-    window.dispatchEvent(new CustomEvent<LibraryChange>("loavy:library-changed", { detail }));
-    window.dispatchEvent(new CustomEvent("loavy:track-deleted", { detail }));
     notify(
       result.alreadyMissing
         ? `“${title}” was already missing and has been removed from Loavy.`

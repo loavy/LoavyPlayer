@@ -43,7 +43,9 @@ Downloads/Loavy Player
 
 Use the folder button beside **Save to** to choose another destination. M4A, MP3, Opus, and FLAC output are available; M4A is the recommended default for good quality without unnecessary transcoding.
 
-Use the **Naming** tab to choose how downloaded files and collection folders are organized. The default filename is `{artist} - {title}` (the audio extension is added automatically), and the default collection folder is `{album_artist}/{album}`. Metadata token buttons can insert track, disc, date, ISRC, playlist, and position fields; these choices are saved on this device. Folder structure applies to albums and playlists by default and can optionally be enabled for single tracks.
+The destination and audio format are remembered on this device. Use **Paste** or enter a link directly; Loavy detects Spotify links and their collection type automatically. Format cards and an example filename show how the output will be saved. Expand **Download tools** to inspect tool health or repair an installation. Completed files can be revealed individually, and collection warnings remain available even when some tracks succeed.
+
+Use the **Naming** tab to choose how downloaded files and collection folders are organized. The default filename is `{artist} - {title}` (the audio extension is added automatically), and the default collection folder is `{album_artist}/{album}`. Metadata token buttons can insert track, disc, date, ISRC, playlist, and position fields; these choices are saved on this device. Folder structure applies to albums and direct-link playlists by default and can optionally be enabled for single tracks. Spotify playlists keep their tracks together in the selected destination.
 
 ### Spotify links
 
@@ -51,13 +53,13 @@ Paste a public `open.spotify.com` track, album, or playlist URL in the **Spotify
 
 Spotify supplies identity and metadata only: Loavy does **not** download Spotify's audio stream. The quality is limited by the matched source. Selecting FLAC converts that source into a FLAC file; it cannot recreate lossless detail that was not present in the source.
 
-The first Spotify download installs pinned Windows releases of spotDL and FFmpeg in Loavy's app-data `tools` folder. Their combined download is approximately 121 MB. Both files are checksum-verified before use.
+The first Spotify download installs pinned Windows releases of spotDL and FFmpeg in Loavy's app-data `tools` folder. Loavy also installs a managed Deno runtime if a supported JavaScript runtime is unavailable. Managed downloads are checksum-verified before use.
 
 ### Direct links
 
 Paste a supported public media URL in the **Direct link** tab and choose whether it is a single item or playlist. Loavy uses yt-dlp for extraction and FFmpeg for the selected output format. The first direct download installs those managed tools in the app-data `tools` folder. See the [yt-dlp supported sites list](https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md) for extractor coverage.
 
-Current yt-dlp releases recommend a JavaScript runtime for complete YouTube support. Loavy uses Node.js when it is available on `PATH`; many downloads work without it, but some formats may be unavailable.
+For YouTube downloads, Loavy uses its managed Deno runtime, Deno 2.3+ on `PATH`, or Node.js 22+ on `PATH`. It installs managed Deno automatically when none is available. Other supported sites can download without a JavaScript runtime.
 
 The downloader does not bypass subscriptions, DRM, private access, or regional restrictions. Only download media you own or have permission to save, and follow the source website's terms.
 
@@ -66,6 +68,16 @@ To add a downloaded track to the library, save it inside a configured music fold
 ## Folder Playlists
 
 The **Folders** view uses your existing directory structure as a set of playlists. Breadcrumbs navigate subfolders, and **Play folder** queues indexed tracks from the selected folder and its descendants.
+
+Open **Playlists** for an artwork-led collection view with search and sorting. Choose **New playlist**, or open an existing playlist and select **Edit playlist** to personalize its displayed name, description, signature color, cover picture, and banner. The editor previews your changes and lets you adjust the banner's vertical position. **Reset look** restores the default appearance; **Save changes** applies it.
+
+PNG, JPEG, and WebP pictures up to 12 MB are copied into Loavy's app-data folder, so moving the original image does not break the artwork. Styles are saved locally and appear in the **Add to playlist** picker too. Changing a displayed playlist name does not rename its folder or move its songs. Use a song's menu to add it to a playlist.
+
+Song columns adapt to the available pane width, while playlist artwork, navigation, and playback controls adjust to smaller windows. Dark/light themes, density, custom accent colors, and reduced-motion preferences remain available in **Settings**.
+
+Playlist detail pages use one scrollbar for the banner, actions, and songs. Scroll over the songs to move the banner away and use the full page height. Long lists still render only nearby rows. The currently active playlist displays its playing/paused state and song title; its play button pauses or resumes the existing queue.
+
+Mouse back/forward buttons, **Alt+Left/Right**, and the top navigation arrows move through tabs, playlist details, albums, artists, and folder locations. Navigation waits while an edit dialog is open. The pop-up Mini Player option has been removed; playback controls remain in the main window.
 
 ## Room & Jam Mode
 
@@ -144,6 +156,23 @@ The browser-only frontend cannot call native library, room, dialog, or downloade
 ```powershell
 npm run build
 cargo test --manifest-path src-tauri/Cargo.toml
+```
+
+Downloader interface regression checks run in hidden headless Microsoft Edge with mocked native commands:
+
+```powershell
+npm run test:downloader
+```
+
+This check requires Node.js 22+ and Edge at its standard Windows installation path (or set `DOWNLOADER_TEST_BROWSER` to a Chromium browser executable). It covers completion event ordering, failed status refreshes, cancellation, saved preferences, and responsive layouts. Screenshots are written to `src-tauri/target/downloader-browser`. These checks do not contact Spotify or YouTube.
+
+After building the Windows release, close any running Loavy instance and run `npm run test:desktop`. This launches the actual release executable with your existing app profile, verifies startup and native downloader status checks, and saves a screenshot and logs in `src-tauri/target/startup-check`. It closes only the test process when finished. This catches native startup failures that browser mocks cannot reproduce, including oversized downloader futures overflowing the Windows UI-thread stack.
+
+To exercise the native downloader in all four formats with generated audio served over localhost, use an isolated tools/data folder. This opt-in test may download the pinned managed tools from GitHub:
+
+```powershell
+$env:LOAVY_DOWNLOADER_TEST_DATA = Join-Path (Get-Location) 'src-tauri/target/downloader-native'
+cargo test --manifest-path src-tauri/Cargo.toml native_downloader_converts_local_audio_and_saves_each_format -- --ignored
 ```
 
 ### Build Installers

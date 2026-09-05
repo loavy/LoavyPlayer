@@ -1,10 +1,9 @@
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     ffi::OsStr,
-    fs,
-    io::ErrorKind,
+    fs::{self, File, OpenOptions},
+    io::{self, BufReader, ErrorKind, Read, Write},
     path::{Component, Path, PathBuf},
-    process::Command,
 };
 
 use anyhow::{anyhow, bail, Context, Result};
@@ -14,18 +13,23 @@ use crate::{
     db::Database,
     models::{
         FolderDeleteResult, FolderInspection, FolderRenameResult, LibraryFolderEntry,
-        LibraryFolderListing, MusicFolder, Track, TrackDeleteResult,
+        LibraryFolderListing, LibraryTrackCopyConflictAction, LibraryTrackCopyResult, MusicFolder,
+        PlaylistFolderCreateResult, Track, TrackDeleteResult,
     },
 };
 
-#[derive(Debug)]
+use super::scanner::{index_audio_file, is_audio_file};
+
+const PLAYLISTS_CONTAINER_NAME: &str = "PLAYLISTS";
+
+#[derive(Debug, Clone)]
 struct ResolvedRoot {
     folder: MusicFolder,
     logical: PathBuf,
     canonical: PathBuf,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct ResolvedFolder {
     root: ResolvedRoot,
     relative_path: String,
@@ -113,6 +117,220 @@ pub fn create_library_folder(
         path: display_path(&destination),
         direct_track_count: 0,
         indexed_track_count: 0,
+    })
+}
+
+pub fn list_library_folders_recursive(db: &Database) -> Result<Vec<LibraryFolderEntry>> {
+    let tracks = db.list_tracks(None)?;
+    let mut entries = Vec::new();
+
+    for configured in db
+        .list_music_folders()?
+        .into_iter()
+        .filter(|folder| folder.enabled)
+    {
+        let Ok(root) = resolve_root(db, configured.id) else {
+            continue;
+        };
+        let (direct_counts, descendant_counts) = folder_track_counts(&tracks, &root.logical);
+        for (relative_path, path) in enumerate_normal_folders(&root)? {
+            let key = relative_path_key(&relative_path);
+            entries.push(LibraryFolderEntry {
+                root_id: root.folder.id,
+                relative_path,
+                name: folder_display_name(&path),
+                path: display_path(&path),
+                direct_track_count: direct_counts.get(&key).copied().unwrap_or_default(),
+                indexed_track_count: descendant_counts.get(&key).copied().unwrap_or_default(),
+            });
+        }
+    }
+
+    entries.sort_by(|left, right| {
+        left.path
+            .to_lowercase()
+            .cmp(&right.path.to_lowercase())
+            .then_with(|| left.path.cmp(&right.path))
+    });
+    Ok(entries)
+}
+
+pub fn copy_track_to_library_folder(
+    db: &Database,
+    app_data_dir: &Path,
+    track_id: i64,
+    root_id: i64,
+    relative_path: &str,
+    conflict_action: LibraryTrackCopyConflictAction,
+) -> Result<LibraryTrackCopyResult> {
+    let source_track = db.track_by_id(track_id)?;
+    let source = validate_local_track_path(db, &source_track)?;
+    let source_name = source
+        .file_name()
+        .and_then(OsStr::to_str)
+        .context("The indexed track filename is not valid Unicode.")?;
+    let folder = resolve_existing_folder(db, root_id, relative_path, true)?;
+
+    if let Some(existing) = find_identical_file(&source, &folder.logical)? {
+        let track = index_existing_file(db, app_data_dir, &existing)?;
+        return Ok(LibraryTrackCopyResult::AlreadyPresent {
+            folder: library_folder_entry(db, &folder)?,
+            track,
+        });
+    }
+
+    let requested_destination = folder.logical.join(source_name);
+    let mut keep_both_index = 2usize;
+    let mut destination = requested_destination.clone();
+
+    if path_is_present(&destination)? {
+        if conflict_action == LibraryTrackCopyConflictAction::Report {
+            let (suggested_file_name, _) =
+                next_keep_both_destination(&folder.logical, source_name, keep_both_index)?;
+            return Ok(LibraryTrackCopyResult::Conflict {
+                folder: library_folder_entry(db, &folder)?,
+                existing_path: display_path(&requested_destination),
+                suggested_file_name,
+            });
+        }
+        let (file_name, next) =
+            next_keep_both_destination(&folder.logical, source_name, keep_both_index)?;
+        keep_both_index = next;
+        destination = folder.logical.join(file_name);
+    }
+
+    loop {
+        match copy_file_exclusive(&source, &destination) {
+            Ok(()) => break,
+            Err(error) if error.kind() == ErrorKind::AlreadyExists => {
+                if is_normal_file(&destination)? && files_identical(&source, &destination)? {
+                    let track = index_existing_file(db, app_data_dir, &destination)?;
+                    return Ok(LibraryTrackCopyResult::AlreadyPresent {
+                        folder: library_folder_entry(db, &folder)?,
+                        track,
+                    });
+                }
+                if conflict_action == LibraryTrackCopyConflictAction::Report {
+                    let (suggested_file_name, _) =
+                        next_keep_both_destination(&folder.logical, source_name, 2)?;
+                    return Ok(LibraryTrackCopyResult::Conflict {
+                        folder: library_folder_entry(db, &folder)?,
+                        existing_path: display_path(&requested_destination),
+                        suggested_file_name,
+                    });
+                }
+                let (file_name, next) =
+                    next_keep_both_destination(&folder.logical, source_name, keep_both_index)?;
+                keep_both_index = next;
+                destination = folder.logical.join(file_name);
+            }
+            Err(error) => {
+                return Err(error).with_context(|| {
+                    format!(
+                        "Could not copy {} into {}.",
+                        source.display(),
+                        folder.logical.display()
+                    )
+                })
+            }
+        }
+    }
+
+    match files_identical(&source, &destination) {
+        Ok(true) => {}
+        Ok(false) => {
+            let _ = fs::remove_file(&destination);
+            bail!("The copied audio file did not match the source, so it was removed.");
+        }
+        Err(error) => {
+            return match fs::remove_file(&destination) {
+                Ok(()) => Err(error.context(
+                    "The copied audio file could not be verified, so it was removed.",
+                )),
+                Err(cleanup_error) => Err(anyhow!(
+                    "The copied audio file could not be verified ({error}), and it could not be removed ({cleanup_error}). Run a library scan to reconcile it."
+                )),
+            }
+        }
+    }
+
+    let track = match index_audio_file(db, app_data_dir, &destination) {
+        Ok(track) => track,
+        Err(error) => {
+            return match fs::remove_file(&destination) {
+                Ok(()) => Err(error.context(
+                    "The song was copied but could not be indexed, so the copy was removed.",
+                )),
+                Err(cleanup_error) => Err(anyhow!(
+                    "The song was copied but could not be indexed ({error}), and the incomplete library copy could not be removed ({cleanup_error}). Run a library scan to reconcile it."
+                )),
+            }
+        }
+    };
+
+    Ok(LibraryTrackCopyResult::Copied {
+        folder: library_folder_entry(db, &folder)?,
+        track,
+    })
+}
+
+pub fn create_preferred_playlist_folder(
+    db: &Database,
+    name: &str,
+) -> Result<PlaylistFolderCreateResult> {
+    let (folder, created) = prepare_preferred_playlist_folder(db, name)?;
+    let entry = library_folder_entry(db, &folder)?;
+    if created {
+        Ok(PlaylistFolderCreateResult::Created {
+            folder: entry,
+            copy: None,
+        })
+    } else {
+        Ok(PlaylistFolderCreateResult::AlreadyExists { folder: entry })
+    }
+}
+
+pub fn create_preferred_playlist_folder_with_track(
+    db: &Database,
+    app_data_dir: &Path,
+    name: &str,
+    track_id: i64,
+) -> Result<PlaylistFolderCreateResult> {
+    let source_track = db.track_by_id(track_id)?;
+    validate_local_track_path(db, &source_track)?;
+    let (folder, created) = prepare_preferred_playlist_folder(db, name)?;
+    if !created {
+        return Ok(PlaylistFolderCreateResult::AlreadyExists {
+            folder: library_folder_entry(db, &folder)?,
+        });
+    }
+
+    let copy = match copy_track_to_library_folder(
+        db,
+        app_data_dir,
+        track_id,
+        folder.root.folder.id,
+        &folder.relative_path,
+        LibraryTrackCopyConflictAction::Report,
+    ) {
+        Ok(copy) => copy,
+        Err(error) => {
+            let removed = fs::remove_dir(&folder.logical).is_ok();
+            return if removed {
+                Err(error.context(
+                    "The playlist folder was created, but the song could not be added. The empty folder was removed.",
+                ))
+            } else {
+                Err(error.context(
+                    "The playlist folder was created, but the song could not be added. The folder was left in place.",
+                ))
+            };
+        }
+    };
+
+    Ok(PlaylistFolderCreateResult::Created {
+        folder: library_folder_entry(db, &folder)?,
+        copy: Some(copy),
     })
 }
 
@@ -274,13 +492,13 @@ pub fn delete_library_folder_to_trash(
 
 pub fn reveal_library_folder(db: &Database, root_id: i64, relative_path: &str) -> Result<()> {
     let folder = resolve_existing_folder(db, root_id, relative_path, true)?;
-    reveal_path(&folder.logical, false)
+    crate::explorer::reveal_existing_path(&folder.logical)
 }
 
 pub fn reveal_track(db: &Database, track_id: i64) -> Result<()> {
     let track = db.track_by_id(track_id)?;
     let path = validate_local_track_path(db, &track)?;
-    reveal_path(&path, true)
+    crate::explorer::reveal_existing_path(&path)
 }
 
 pub fn delete_track_to_trash(
@@ -323,6 +541,414 @@ pub fn delete_track_to_trash(
         already_missing,
         cover_removed,
     })
+}
+
+fn enumerate_normal_folders(root: &ResolvedRoot) -> Result<Vec<(String, PathBuf)>> {
+    let mut folders = vec![(String::new(), root.logical.clone())];
+    let walker = WalkDir::new(&root.logical)
+        .min_depth(1)
+        .follow_links(false)
+        .into_iter()
+        .filter_entry(|entry| {
+            if entry.depth() == 0 {
+                return true;
+            }
+            fs::symlink_metadata(entry.path())
+                .map(|metadata| !is_reparse_or_symlink(&metadata))
+                .unwrap_or(false)
+        });
+
+    for entry in walker.filter_map(std::result::Result::ok) {
+        if !entry.file_type().is_dir() {
+            continue;
+        }
+        let canonical = match entry.path().canonicalize() {
+            Ok(path) if path.starts_with(&root.canonical) => path,
+            _ => continue,
+        };
+        let Some(relative) = strip_prefix_platform(&canonical, &root.canonical) else {
+            continue;
+        };
+        folders.push((
+            relative_path_from_path(&relative),
+            entry.path().to_path_buf(),
+        ));
+    }
+    Ok(folders)
+}
+
+fn folder_track_counts(
+    tracks: &[Track],
+    root: &Path,
+) -> (HashMap<String, usize>, HashMap<String, usize>) {
+    let mut direct = HashMap::new();
+    let mut descendants = HashMap::new();
+
+    for track in tracks {
+        let Some(parent) = Path::new(&track.path).parent() else {
+            continue;
+        };
+        let Some(relative) = strip_prefix_platform(parent, root) else {
+            continue;
+        };
+        let relative = relative_path_from_path(&relative);
+        *direct.entry(relative_path_key(&relative)).or_insert(0) += 1;
+
+        let mut ancestor = relative;
+        loop {
+            *descendants.entry(relative_path_key(&ancestor)).or_insert(0) += 1;
+            if ancestor.is_empty() {
+                break;
+            }
+            ancestor = parent_relative(&ancestor);
+        }
+    }
+
+    (direct, descendants)
+}
+
+fn relative_path_from_path(path: &Path) -> String {
+    path.components()
+        .filter_map(|component| match component {
+            Component::Normal(value) => Some(value.to_string_lossy().to_string()),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
+#[cfg(target_os = "windows")]
+fn relative_path_key(value: &str) -> String {
+    value.to_lowercase()
+}
+
+#[cfg(not(target_os = "windows"))]
+fn relative_path_key(value: &str) -> String {
+    value.to_string()
+}
+
+fn folder_display_name(path: &Path) -> String {
+    path.file_name()
+        .and_then(OsStr::to_str)
+        .map(str::to_string)
+        .unwrap_or_else(|| display_path(path))
+}
+
+fn library_folder_entry(db: &Database, folder: &ResolvedFolder) -> Result<LibraryFolderEntry> {
+    let tracks = db.list_tracks(None)?;
+    Ok(LibraryFolderEntry {
+        root_id: folder.root.folder.id,
+        relative_path: folder.relative_path.clone(),
+        name: folder_display_name(&folder.logical),
+        path: display_path(&folder.logical),
+        direct_track_count: count_tracks(&tracks, &folder.logical, false),
+        indexed_track_count: count_tracks(&tracks, &folder.logical, true),
+    })
+}
+
+fn prepare_preferred_playlist_folder(db: &Database, name: &str) -> Result<(ResolvedFolder, bool)> {
+    validate_windows_name(name)?;
+    let parent = preferred_playlist_parent(db)?;
+
+    if let Some(existing) = find_child_case_insensitive(&parent.logical, name)? {
+        return Ok((resolve_playlist_child(parent, existing)?, false));
+    }
+
+    let destination = parent.logical.join(name);
+    match fs::create_dir(&destination) {
+        Ok(()) => {}
+        Err(error) if error.kind() == ErrorKind::AlreadyExists => {
+            let existing = find_child_case_insensitive(&parent.logical, name)?
+                .context("The playlist folder appeared concurrently but could not be found.")?;
+            return Ok((resolve_playlist_child(parent, existing)?, false));
+        }
+        Err(error) => {
+            return Err(error).with_context(|| {
+                format!(
+                    "Could not create playlist folder {}.",
+                    destination.display()
+                )
+            })
+        }
+    }
+    let canonical = match destination.canonicalize() {
+        Ok(path) => path,
+        Err(error) => {
+            let _ = fs::remove_dir(&destination);
+            return Err(error).context("Could not validate the newly created playlist folder.");
+        }
+    };
+    if !canonical.starts_with(&parent.root.canonical) {
+        let _ = fs::remove_dir(&destination);
+        bail!("The new playlist folder escaped the configured music root.");
+    }
+
+    Ok((
+        ResolvedFolder {
+            root: parent.root,
+            relative_path: join_relative(&parent.relative_path, name),
+            logical: destination,
+            canonical,
+        },
+        true,
+    ))
+}
+
+fn resolve_playlist_child(parent: ResolvedFolder, existing: PathBuf) -> Result<ResolvedFolder> {
+    let metadata = fs::symlink_metadata(&existing)
+        .context("Could not inspect the existing playlist folder.")?;
+    if !metadata.is_dir() || is_reparse_or_symlink(&metadata) {
+        bail!("A file or unsafe folder with that playlist name already exists.");
+    }
+    let canonical = existing
+        .canonicalize()
+        .context("Could not validate the existing playlist folder.")?;
+    if !canonical.starts_with(&parent.root.canonical) {
+        bail!("The existing playlist folder escapes the configured music root.");
+    }
+    let actual_name = existing
+        .file_name()
+        .and_then(OsStr::to_str)
+        .context("The existing playlist folder name is not valid Unicode.")?;
+    Ok(ResolvedFolder {
+        root: parent.root,
+        relative_path: join_relative(&parent.relative_path, actual_name),
+        logical: existing,
+        canonical,
+    })
+}
+
+fn preferred_playlist_parent(db: &Database) -> Result<ResolvedFolder> {
+    let mut roots = Vec::new();
+    for configured in db
+        .list_music_folders()?
+        .into_iter()
+        .filter(|folder| folder.enabled)
+    {
+        if let Ok(root) = resolve_root(db, configured.id) {
+            roots.push(root);
+        }
+    }
+
+    for root in &roots {
+        if root
+            .logical
+            .file_name()
+            .and_then(OsStr::to_str)
+            .map(|name| windows_names_equal(name, PLAYLISTS_CONTAINER_NAME))
+            .unwrap_or(false)
+        {
+            return Ok(ResolvedFolder {
+                root: root.clone(),
+                relative_path: String::new(),
+                logical: root.logical.clone(),
+                canonical: root.canonical.clone(),
+            });
+        }
+
+        if let Some(container) =
+            find_child_case_insensitive(&root.logical, PLAYLISTS_CONTAINER_NAME)?
+        {
+            let metadata = fs::symlink_metadata(&container)?;
+            if !metadata.is_dir() || is_reparse_or_symlink(&metadata) {
+                continue;
+            }
+            let canonical = container
+                .canonicalize()
+                .context("Could not validate the PLAYLISTS folder.")?;
+            if !canonical.starts_with(&root.canonical) {
+                continue;
+            }
+            let actual_name = container
+                .file_name()
+                .and_then(OsStr::to_str)
+                .context("The PLAYLISTS folder name is not valid Unicode.")?;
+            return Ok(ResolvedFolder {
+                root: root.clone(),
+                relative_path: actual_name.to_string(),
+                logical: container,
+                canonical,
+            });
+        }
+    }
+
+    let root = roots
+        .into_iter()
+        .next()
+        .context("Add an available music folder in Settings before creating a playlist.")?;
+    Ok(ResolvedFolder {
+        relative_path: String::new(),
+        logical: root.logical.clone(),
+        canonical: root.canonical.clone(),
+        root,
+    })
+}
+
+fn find_child_case_insensitive(parent: &Path, name: &str) -> Result<Option<PathBuf>> {
+    for entry in fs::read_dir(parent)
+        .with_context(|| format!("Could not read folder {}.", parent.display()))?
+    {
+        let entry = entry?;
+        if windows_names_equal(&entry.file_name().to_string_lossy(), name) {
+            return Ok(Some(entry.path()));
+        }
+    }
+    Ok(None)
+}
+
+fn find_identical_file(source: &Path, folder: &Path) -> Result<Option<PathBuf>> {
+    let source_size = fs::metadata(source)?.len();
+    for entry in fs::read_dir(folder)
+        .with_context(|| format!("Could not read folder {}.", folder.display()))?
+    {
+        let entry = entry?;
+        let Ok(metadata) = fs::symlink_metadata(entry.path()) else {
+            continue;
+        };
+        if !metadata.is_file()
+            || is_reparse_or_symlink(&metadata)
+            || !is_audio_file(&entry.path())
+            || metadata.len() != source_size
+        {
+            continue;
+        }
+        if matches!(files_identical(source, &entry.path()), Ok(true)) {
+            return Ok(Some(entry.path()));
+        }
+    }
+    Ok(None)
+}
+
+fn index_existing_file(db: &Database, app_data_dir: &Path, path: &Path) -> Result<Track> {
+    if !is_normal_file(path)? {
+        bail!("The existing playlist song is not a normal local file.");
+    }
+    let path_string = display_path(path);
+    if let Some(track) = db.track_by_path(&path_string)? {
+        return Ok(track);
+    }
+    if let Some(track) = db
+        .list_tracks(None)?
+        .into_iter()
+        .find(|track| paths_equal_platform(Path::new(&track.path), path))
+    {
+        return Ok(track);
+    }
+    index_audio_file(db, app_data_dir, path)
+}
+
+fn is_normal_file(path: &Path) -> Result<bool> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) => Ok(metadata.is_file() && !is_reparse_or_symlink(&metadata)),
+        Err(error) if error.kind() == ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(error).context("Could not inspect the existing playlist song."),
+    }
+}
+
+fn path_is_present(path: &Path) -> Result<bool> {
+    match fs::symlink_metadata(path) {
+        Ok(_) => Ok(true),
+        Err(error) if error.kind() == ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(error).context("Could not inspect the playlist destination."),
+    }
+}
+
+fn next_keep_both_destination(
+    folder: &Path,
+    original_name: &str,
+    start: usize,
+) -> Result<(String, usize)> {
+    for index in start..100_000 {
+        let candidate = keep_both_file_name(original_name, index)?;
+        if !path_is_present(&folder.join(&candidate))? {
+            return Ok((candidate, index + 1));
+        }
+    }
+    bail!("Could not find an available filename for the playlist copy.")
+}
+
+fn keep_both_file_name(original_name: &str, index: usize) -> Result<String> {
+    let original = Path::new(original_name);
+    let stem = original
+        .file_stem()
+        .and_then(OsStr::to_str)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("Track");
+    let extension = original.extension().and_then(OsStr::to_str);
+    let suffix = format!(" ({index})");
+    let extension_suffix = extension
+        .map(|extension| format!(".{extension}"))
+        .unwrap_or_default();
+    let reserved = suffix.encode_utf16().count() + extension_suffix.encode_utf16().count();
+    if reserved >= 255 {
+        bail!("The audio file extension is too long to create a safe copy.");
+    }
+    let available_stem_units = 255 - reserved;
+    let mut safe_stem = String::new();
+    let mut used_units = 0usize;
+    for character in stem.chars() {
+        let units = character.len_utf16();
+        if used_units + units > available_stem_units {
+            break;
+        }
+        safe_stem.push(character);
+        used_units += units;
+    }
+    if safe_stem.is_empty() {
+        safe_stem.push_str("Track");
+    }
+    let candidate = format!("{safe_stem}{suffix}{extension_suffix}");
+    validate_windows_name(&candidate)?;
+    Ok(candidate)
+}
+
+fn copy_file_exclusive(source: &Path, destination: &Path) -> io::Result<()> {
+    let source_file = File::open(source)?;
+    let mut source_reader = BufReader::new(source_file);
+    let mut destination_file = match OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(destination)
+    {
+        Ok(file) => file,
+        Err(error) => return Err(error),
+    };
+
+    let result = (|| {
+        io::copy(&mut source_reader, &mut destination_file)?;
+        destination_file.flush()?;
+        destination_file.sync_all()?;
+        Ok(())
+    })();
+    if result.is_err() {
+        drop(destination_file);
+        let _ = fs::remove_file(destination);
+    }
+    result
+}
+
+fn files_identical(left: &Path, right: &Path) -> Result<bool> {
+    if paths_equal_platform(left, right) {
+        return Ok(true);
+    }
+    if fs::metadata(left)?.len() != fs::metadata(right)?.len() {
+        return Ok(false);
+    }
+
+    let mut left = BufReader::new(File::open(left)?);
+    let mut right = BufReader::new(File::open(right)?);
+    let mut left_buffer = [0u8; 64 * 1024];
+    let mut right_buffer = [0u8; 64 * 1024];
+    loop {
+        let left_read = left.read(&mut left_buffer)?;
+        let right_read = right.read(&mut right_buffer)?;
+        if left_read != right_read || left_buffer[..left_read] != right_buffer[..right_read] {
+            return Ok(false);
+        }
+        if left_read == 0 {
+            return Ok(true);
+        }
+    }
 }
 
 fn resolve_root(db: &Database, root_id: i64) -> Result<ResolvedRoot> {
@@ -529,11 +1155,23 @@ fn validate_windows_name(name: &str) -> Result<()> {
     {
         bail!("Folder name contains characters that Windows does not allow.");
     }
-    let base = name.split('.').next().unwrap_or(name).to_ascii_uppercase();
+    let base = name
+        .split('.')
+        .next()
+        .unwrap_or(name)
+        .trim_end_matches(' ')
+        .to_uppercase();
     let reserved = matches!(base.as_str(), "CON" | "PRN" | "AUX" | "NUL")
-        || (base.len() == 4
-            && (base.starts_with("COM") || base.starts_with("LPT"))
-            && matches!(base.as_bytes()[3], b'1'..=b'9'));
+        || base
+            .strip_prefix("COM")
+            .or_else(|| base.strip_prefix("LPT"))
+            .map(|suffix| {
+                matches!(
+                    suffix,
+                    "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "¹" | "²" | "³"
+                )
+            })
+            .unwrap_or(false);
     if reserved {
         bail!("That name is reserved by Windows.");
     }
@@ -624,11 +1262,14 @@ fn paths_equal_platform(left: &Path, right: &Path) -> bool {
             .all(|(left, right)| components_equal(left, right))
 }
 
+fn windows_names_equal(left: &str, right: &str) -> bool {
+    left.to_lowercase() == right.to_lowercase()
+}
+
 #[cfg(target_os = "windows")]
 fn components_equal(left: &Component<'_>, right: &Component<'_>) -> bool {
-    left.as_os_str()
-        .to_string_lossy()
-        .eq_ignore_ascii_case(&right.as_os_str().to_string_lossy())
+    left.as_os_str().to_string_lossy().to_lowercase()
+        == right.as_os_str().to_string_lossy().to_lowercase()
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -674,41 +1315,6 @@ fn cleanup_orphan_covers(db: &Database, app_data_dir: &Path, covers: Vec<Option<
     removed
 }
 
-#[cfg(target_os = "windows")]
-fn reveal_path(path: &Path, select_file: bool) -> Result<()> {
-    let mut command = Command::new("explorer");
-    if select_file {
-        command.arg(format!("/select,{}", path.display()));
-    } else {
-        command.arg(path);
-    }
-    command
-        .spawn()
-        .with_context(|| format!("Could not open File Explorer for {}.", path.display()))?;
-    Ok(())
-}
-
-#[cfg(target_os = "macos")]
-fn reveal_path(path: &Path, select_file: bool) -> Result<()> {
-    let mut command = Command::new("open");
-    if select_file {
-        command.arg("-R");
-    }
-    command.arg(path).spawn()?;
-    Ok(())
-}
-
-#[cfg(all(unix, not(target_os = "macos")))]
-fn reveal_path(path: &Path, select_file: bool) -> Result<()> {
-    let destination = if select_file {
-        path.parent().unwrap_or(path)
-    } else {
-        path
-    };
-    Command::new("xdg-open").arg(destination).spawn()?;
-    Ok(())
-}
-
 fn display_path(path: &Path) -> String {
     let value = path.to_string_lossy();
     if let Some(path) = value.strip_prefix(r"\\?\UNC\") {
@@ -729,18 +1335,80 @@ mod tests {
     };
 
     use super::{
-        normalize_relative_path, paths_equal_platform, rename_library_folder,
-        strip_prefix_platform, validate_windows_name,
+        copy_track_to_library_folder, create_preferred_playlist_folder,
+        create_preferred_playlist_folder_with_track, keep_both_file_name,
+        list_library_folders_recursive, normalize_relative_path, paths_equal_platform,
+        rename_library_folder, strip_prefix_platform, validate_windows_name,
     };
     use crate::{
         db::Database,
-        models::{Track, TrackLyricsUpdate},
+        library::scanner::index_audio_file,
+        models::{
+            LibraryTrackCopyConflictAction, LibraryTrackCopyResult, PlaylistFolderCreateResult,
+            Track, TrackLyricsUpdate,
+        },
     };
+
+    fn temporary_directory(name: &str) -> PathBuf {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!(
+            "loavy-filesystem-{name}-{}-{nonce}",
+            std::process::id()
+        ))
+    }
+
+    fn write_test_wav(path: &Path, seed: u8) {
+        let sample_count = 128u32;
+        let data_size = sample_count * 2;
+        let mut bytes = Vec::with_capacity((44 + data_size) as usize);
+        bytes.extend_from_slice(b"RIFF");
+        bytes.extend_from_slice(&(36 + data_size).to_le_bytes());
+        bytes.extend_from_slice(b"WAVEfmt ");
+        bytes.extend_from_slice(&16u32.to_le_bytes());
+        bytes.extend_from_slice(&1u16.to_le_bytes());
+        bytes.extend_from_slice(&1u16.to_le_bytes());
+        bytes.extend_from_slice(&8_000u32.to_le_bytes());
+        bytes.extend_from_slice(&16_000u32.to_le_bytes());
+        bytes.extend_from_slice(&2u16.to_le_bytes());
+        bytes.extend_from_slice(&16u16.to_le_bytes());
+        bytes.extend_from_slice(b"data");
+        bytes.extend_from_slice(&data_size.to_le_bytes());
+        for index in 0..sample_count {
+            let sample = ((index as i16).wrapping_mul(seed as i16 + 1)).to_le_bytes();
+            bytes.extend_from_slice(&sample);
+        }
+        fs::write(path, bytes).unwrap();
+    }
+
+    fn add_root(db: &Database, root: &Path) -> i64 {
+        let root = root.to_string_lossy().to_string();
+        db.add_music_folder(&root, 1).unwrap();
+        db.list_music_folders()
+            .unwrap()
+            .into_iter()
+            .find(|folder| folder.path == root)
+            .unwrap()
+            .id
+    }
 
     #[test]
     fn rejects_windows_reserved_and_unsafe_names() {
         for name in [
-            "", ".", "..", "CON", "con.txt", "LPT9", "bad:name", "bad?name", "trail.", "trail ",
+            "",
+            ".",
+            "..",
+            "CON",
+            "con.txt",
+            "CON .txt",
+            "LPT9",
+            "COM¹.txt",
+            "bad:name",
+            "bad?name",
+            "trail.",
+            "trail ",
         ] {
             assert!(validate_windows_name(name).is_err(), "accepted {name:?}");
         }
@@ -772,6 +1440,323 @@ mod tests {
         );
         assert!(strip_prefix_platform(Path::new(r"C:\Music2\Rock"), base).is_none());
         assert!(paths_equal_platform(base, Path::new(r"C:\Music")));
+    }
+
+    #[test]
+    fn recursively_lists_real_folders_with_indexed_descendant_counts() {
+        let directory = temporary_directory("recursive-listing");
+        let root = directory.join("Music");
+        let road = root.join("PLAYLISTS").join("Road trip");
+        let nested = road.join("Live");
+        let empty = root.join("Empty");
+        let app_data = directory.join("AppData");
+        fs::create_dir_all(&nested).unwrap();
+        fs::create_dir_all(&empty).unwrap();
+        fs::create_dir_all(app_data.join("covers")).unwrap();
+        let root_track = root.join("root.wav");
+        let road_track = road.join("road.wav");
+        let nested_track = nested.join("nested.wav");
+        write_test_wav(&root_track, 1);
+        write_test_wav(&road_track, 2);
+        write_test_wav(&nested_track, 3);
+
+        let db = Database::open(directory.join("test.sqlite3")).unwrap();
+        let root_id = add_root(&db, &root);
+        index_audio_file(&db, &app_data, &root_track).unwrap();
+        index_audio_file(&db, &app_data, &road_track).unwrap();
+        index_audio_file(&db, &app_data, &nested_track).unwrap();
+
+        let entries = list_library_folders_recursive(&db).unwrap();
+        let entry = |relative_path: &str| {
+            entries
+                .iter()
+                .find(|entry| entry.root_id == root_id && entry.relative_path == relative_path)
+                .unwrap()
+        };
+        assert_eq!(entry("").direct_track_count, 1);
+        assert_eq!(entry("").indexed_track_count, 3);
+        assert_eq!(entry("PLAYLISTS").direct_track_count, 0);
+        assert_eq!(entry("PLAYLISTS").indexed_track_count, 2);
+        assert_eq!(entry("PLAYLISTS/Road trip").direct_track_count, 1);
+        assert_eq!(entry("PLAYLISTS/Road trip").indexed_track_count, 2);
+        assert_eq!(entry("PLAYLISTS/Road trip/Live").indexed_track_count, 1);
+        assert_eq!(entry("Empty").indexed_track_count, 0);
+
+        drop(db);
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn copies_bytes_reports_conflicts_and_keeps_both_without_overwriting() {
+        let directory = temporary_directory("playlist-copy");
+        let root = directory.join("Music");
+        let source_folder = root.join("Source");
+        let target = root.join("PLAYLISTS").join("Favorites");
+        let conflict_target = root.join("PLAYLISTS").join("Conflicts");
+        let identical_target = root.join("PLAYLISTS").join("Already there");
+        let app_data = directory.join("AppData");
+        fs::create_dir_all(&source_folder).unwrap();
+        fs::create_dir_all(&target).unwrap();
+        fs::create_dir_all(&conflict_target).unwrap();
+        fs::create_dir_all(&identical_target).unwrap();
+        fs::create_dir_all(app_data.join("covers")).unwrap();
+        let source = source_folder.join("Canção (live).wav");
+        write_test_wav(&source, 7);
+
+        let db = Database::open(directory.join("test.sqlite3")).unwrap();
+        let root_id = add_root(&db, &root);
+        let source_track = index_audio_file(&db, &app_data, &source).unwrap();
+        let source_bytes = fs::read(&source).unwrap();
+
+        let copied = copy_track_to_library_folder(
+            &db,
+            &app_data,
+            source_track.id,
+            root_id,
+            "PLAYLISTS/Favorites",
+            LibraryTrackCopyConflictAction::Report,
+        )
+        .unwrap();
+        let copied_path = match copied {
+            LibraryTrackCopyResult::Copied { folder, track } => {
+                assert_eq!(folder.direct_track_count, 1);
+                PathBuf::from(track.path)
+            }
+            other => panic!("expected copied result, got {other:?}"),
+        };
+        assert_eq!(fs::read(&copied_path).unwrap(), source_bytes);
+        assert_eq!(fs::read(&source).unwrap(), source_bytes);
+
+        assert!(matches!(
+            copy_track_to_library_folder(
+                &db,
+                &app_data,
+                source_track.id,
+                root_id,
+                "PLAYLISTS/Favorites",
+                LibraryTrackCopyConflictAction::Report,
+            )
+            .unwrap(),
+            LibraryTrackCopyResult::AlreadyPresent { .. }
+        ));
+
+        let conflicting = conflict_target.join("Canção (live).wav");
+        write_test_wav(&conflicting, 19);
+        let conflicting_bytes = fs::read(&conflicting).unwrap();
+        let conflict = copy_track_to_library_folder(
+            &db,
+            &app_data,
+            source_track.id,
+            root_id,
+            "PLAYLISTS/Conflicts",
+            LibraryTrackCopyConflictAction::Report,
+        )
+        .unwrap();
+        match conflict {
+            LibraryTrackCopyResult::Conflict {
+                existing_path,
+                suggested_file_name,
+                ..
+            } => {
+                assert_eq!(PathBuf::from(existing_path), conflicting);
+                assert_eq!(suggested_file_name, "Canção (live) (2).wav");
+            }
+            other => panic!("expected conflict result, got {other:?}"),
+        }
+        assert_eq!(fs::read(&conflicting).unwrap(), conflicting_bytes);
+
+        let kept = copy_track_to_library_folder(
+            &db,
+            &app_data,
+            source_track.id,
+            root_id,
+            "PLAYLISTS/Conflicts",
+            LibraryTrackCopyConflictAction::KeepBoth,
+        )
+        .unwrap();
+        let kept_path = match kept {
+            LibraryTrackCopyResult::Copied { track, .. } => PathBuf::from(track.path),
+            other => panic!("expected kept copy, got {other:?}"),
+        };
+        assert_eq!(
+            kept_path.file_name().unwrap().to_string_lossy(),
+            "Canção (live) (2).wav"
+        );
+        assert_eq!(fs::read(&kept_path).unwrap(), source_bytes);
+        assert_eq!(fs::read(&conflicting).unwrap(), conflicting_bytes);
+
+        let differently_named_identical = identical_target.join("same bytes.wav");
+        fs::write(&differently_named_identical, &source_bytes).unwrap();
+        let already_present = copy_track_to_library_folder(
+            &db,
+            &app_data,
+            source_track.id,
+            root_id,
+            "PLAYLISTS/Already there",
+            LibraryTrackCopyConflictAction::Report,
+        )
+        .unwrap();
+        match already_present {
+            LibraryTrackCopyResult::AlreadyPresent { track, .. } => {
+                assert_eq!(PathBuf::from(track.path), differently_named_identical)
+            }
+            other => panic!("expected byte-identical no-op, got {other:?}"),
+        }
+        assert!(!identical_target.join("Canção (live).wav").exists());
+        assert!(copy_track_to_library_folder(
+            &db,
+            &app_data,
+            source_track.id,
+            root_id,
+            "../outside",
+            LibraryTrackCopyConflictAction::Report,
+        )
+        .is_err());
+
+        drop(db);
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn creates_in_existing_playlists_container_and_reports_existing_folder() {
+        let directory = temporary_directory("preferred-playlists");
+        let first_root = directory.join("A Music");
+        let second_root = directory.join("B Music");
+        let playlists = second_root.join("playlists");
+        let source_folder = first_root.join("Source");
+        let app_data = directory.join("AppData");
+        fs::create_dir_all(&source_folder).unwrap();
+        fs::create_dir_all(&playlists).unwrap();
+        fs::create_dir_all(app_data.join("covers")).unwrap();
+        let source = source_folder.join("origem.wav");
+        write_test_wav(&source, 11);
+
+        let db = Database::open(directory.join("test.sqlite3")).unwrap();
+        add_root(&db, &first_root);
+        let second_root_id = add_root(&db, &second_root);
+        let source_track = index_audio_file(&db, &app_data, &source).unwrap();
+
+        let created = create_preferred_playlist_folder_with_track(
+            &db,
+            &app_data,
+            "Viagem São Paulo",
+            source_track.id,
+        )
+        .unwrap();
+        match created {
+            PlaylistFolderCreateResult::Created { folder, copy } => {
+                assert_eq!(folder.root_id, second_root_id);
+                assert_eq!(folder.relative_path, "playlists/Viagem São Paulo");
+                assert_eq!(folder.direct_track_count, 1);
+                assert!(matches!(copy, Some(LibraryTrackCopyResult::Copied { .. })));
+            }
+            other => panic!("expected created folder, got {other:?}"),
+        }
+        assert!(playlists
+            .join("Viagem São Paulo")
+            .join("origem.wav")
+            .exists());
+
+        match create_preferred_playlist_folder(&db, "VIAGEM SÃO PAULO").unwrap() {
+            PlaylistFolderCreateResult::AlreadyExists { folder } => {
+                assert_eq!(folder.relative_path, "playlists/Viagem São Paulo");
+                assert_eq!(folder.indexed_track_count, 1);
+            }
+            other => panic!("expected existing folder, got {other:?}"),
+        }
+        for invalid in ["CON", "bad:name", "trail."] {
+            assert!(create_preferred_playlist_folder(&db, invalid).is_err());
+        }
+
+        drop(db);
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn preferred_playlist_creation_falls_back_to_a_configured_root() {
+        let directory = temporary_directory("playlist-root-fallback");
+        let root = directory.join("Music");
+        fs::create_dir_all(&root).unwrap();
+        let db = Database::open(directory.join("test.sqlite3")).unwrap();
+        let root_id = add_root(&db, &root);
+
+        match create_preferred_playlist_folder(&db, "Fresh mix").unwrap() {
+            PlaylistFolderCreateResult::Created { folder, copy } => {
+                assert_eq!(folder.root_id, root_id);
+                assert_eq!(folder.relative_path, "Fresh mix");
+                assert!(copy.is_none());
+            }
+            other => panic!("expected created folder, got {other:?}"),
+        }
+        assert!(root.join("Fresh mix").is_dir());
+        fs::write(root.join("Taken name"), b"not a folder").unwrap();
+        assert!(create_preferred_playlist_folder(&db, "Taken name").is_err());
+
+        drop(db);
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn failed_targeted_index_removes_a_new_empty_playlist_folder() {
+        let directory = temporary_directory("playlist-index-rollback");
+        let root = directory.join("Music");
+        let playlists = root.join("PLAYLISTS");
+        let source_folder = root.join("Source");
+        let app_data = directory.join("AppData");
+        fs::create_dir_all(&playlists).unwrap();
+        fs::create_dir_all(&source_folder).unwrap();
+        fs::create_dir_all(app_data.join("covers")).unwrap();
+        let source = source_folder.join("broken.mp3");
+        fs::write(&source, b"not valid audio").unwrap();
+
+        let db = Database::open(directory.join("test.sqlite3")).unwrap();
+        add_root(&db, &root);
+        db.upsert_track(&Track {
+            id: 0,
+            path: source.to_string_lossy().to_string(),
+            file_name: "broken.mp3".to_string(),
+            file_ext: "mp3".to_string(),
+            file_size: 15,
+            modified_at: 1,
+            title: Some("Broken".to_string()),
+            artist: None,
+            album: None,
+            album_artist: None,
+            genre: None,
+            year: None,
+            track_number: None,
+            duration_ms: None,
+            cover_path: None,
+            favorite: false,
+            date_added: 1,
+            last_played_at: None,
+            play_count: 0,
+        })
+        .unwrap();
+        let source_string = source.to_string_lossy().to_string();
+        let source_track = db.track_by_path(&source_string).unwrap().unwrap();
+
+        assert!(create_preferred_playlist_folder_with_track(
+            &db,
+            &app_data,
+            "Broken mix",
+            source_track.id,
+        )
+        .is_err());
+        assert!(!playlists.join("Broken mix").exists());
+        assert!(source.exists());
+
+        drop(db);
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn generated_keep_both_names_remain_windows_safe() {
+        let original = format!("{}.wav", "🎵".repeat(200));
+        let candidate = keep_both_file_name(&original, 2).unwrap();
+        assert!(candidate.encode_utf16().count() <= 255);
+        assert!(candidate.ends_with(" (2).wav"));
+        validate_windows_name(&candidate).unwrap();
     }
 
     #[test]

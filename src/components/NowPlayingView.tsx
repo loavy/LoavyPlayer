@@ -18,7 +18,7 @@ import {
   SkipForward,
   Volume2
 } from "lucide-react";
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { audioEngine } from "../lib/audioEngine";
 import { displayAlbum, displayArtist, displayTrackTitle, formatDuration } from "../lib/format";
 import { useLibraryActions } from "../lib/LibraryContext";
@@ -43,10 +43,13 @@ export function NowPlayingView({ onClose, onToggleFavorite, onOpenMenu }: Props)
   const [fullscreen, setFullscreen] = useState(Boolean(document.fullscreenElement));
   const [mode, setMode] = useState<"artwork" | "lyrics">(() => localStorage.getItem("loavy.nowPlayingMode") === "lyrics" ? "lyrics" : "artwork");
   const [showQueue, setShowQueue] = useState(false);
+  const [nestedDialogOpen, setNestedDialogOpen] = useState(false);
   onCloseRef.current = onClose;
   showQueueRef.current = showQueue;
+  const backgroundObscured = showQueue || nestedDialogOpen;
   const favorite = Boolean(audio.current?.favorite);
   const coverUrl = audio.current?.coverPath ? convertFileSrc(audio.current.coverPath) : undefined;
+  const trackTitle = audio.current ? displayTrackTitle(audio.current) : "";
   const repeatIcon = audio.repeat === "one" ? <Repeat1 size={20} /> : <Repeat size={20} />;
   const progress = audio.duration ? Math.min(100, (audio.position / audio.duration) * 100) : 0;
   const progressStyle = { "--range-progress": `${progress}%` } as CSSProperties;
@@ -89,6 +92,34 @@ export function NowPlayingView({ onClose, onToggleFavorite, onOpenMenu }: Props)
     };
   }, []);
 
+  useEffect(() => {
+    const update = () => {
+      const next = [...document.querySelectorAll<HTMLElement>('[role="dialog"][aria-modal="true"]')]
+        .some((dialog) => dialog !== viewRef.current && !dialog.classList.contains("queuePanel"));
+      const view = viewRef.current;
+      if (next || showQueueRef.current) view?.setAttribute("inert", "");
+      else view?.removeAttribute("inert");
+      setNestedDialogOpen((current) => current === next ? current : next);
+    };
+    update();
+    const observer = new MutationObserver(update);
+    observer.observe(document.body, {
+      attributes: true,
+      attributeFilter: ["aria-modal"],
+      childList: true,
+      subtree: true
+    });
+    return () => observer.disconnect();
+  }, []);
+
+  useLayoutEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    if (backgroundObscured) view.setAttribute("inert", "");
+    else view.removeAttribute("inert");
+    return () => view.removeAttribute("inert");
+  }, [backgroundObscured]);
+
   function selectMode(nextMode: "artwork" | "lyrics") {
     setMode(nextMode);
     localStorage.setItem("loavy.nowPlayingMode", nextMode);
@@ -114,33 +145,39 @@ export function NowPlayingView({ onClose, onToggleFavorite, onOpenMenu }: Props)
   }
 
   return (
-    <div className="nowPlayingView" ref={viewRef} role="dialog" aria-modal="true" aria-label="Now playing">
+    <div
+      className="nowPlayingView"
+      ref={viewRef}
+      role="dialog"
+      aria-modal={backgroundObscured ? undefined : true}
+      aria-label="Now playing"
+    >
       {coverUrl && <div className="nowPlayingBackdrop" style={{ backgroundImage: `url("${coverUrl}")` }} />}
       <div className="nowPlayingTint" />
 
-      <header className="nowPlayingHeader">
-        <button ref={closeRef} className="glassIconButton" onClick={onClose} title="Close now playing" aria-label="Close now playing">
+      <header className="nowPlayingHeader" aria-label="Now playing controls">
+        <button ref={closeRef} className="glassIconButton nowPlayingClose" onClick={onClose} title="Close now playing" aria-label="Close now playing">
           <ChevronDown size={23} />
         </button>
         <div className="nowPlayingModeSwitch" role="group" aria-label="Now playing presentation">
-          <button className={mode === "artwork" ? "active" : ""} onClick={() => selectMode("artwork")}><Image size={15} /> Artwork</button>
-          <button className={mode === "lyrics" ? "active" : ""} onClick={() => selectMode("lyrics")}><Quote size={15} /> Lyrics</button>
+          <button className={mode === "artwork" ? "active" : ""} aria-pressed={mode === "artwork"} onClick={() => selectMode("artwork")}><Image size={15} /> Artwork</button>
+          <button className={mode === "lyrics" ? "active" : ""} aria-pressed={mode === "lyrics"} onClick={() => selectMode("lyrics")}><Quote size={15} /> Lyrics</button>
         </div>
-        <button className="glassIconButton" onClick={() => void toggleFullscreen()} title={fullscreen ? "Exit fullscreen" : "Enter fullscreen"} aria-label={fullscreen ? "Exit fullscreen" : "Enter fullscreen"}>
+        <button className="glassIconButton nowPlayingFullscreen" onClick={() => void toggleFullscreen()} title={fullscreen ? "Exit fullscreen" : "Enter fullscreen"} aria-label={fullscreen ? "Exit fullscreen" : "Enter fullscreen"}>
           {fullscreen ? <Minimize size={20} /> : <Expand size={20} />}
         </button>
       </header>
 
       {!audio.current ? (
-        <main className="nowPlayingEmpty">
+        <section className="nowPlayingEmpty" aria-label="Now playing status">
           <span><Disc3 size={54} /></span>
           <h2>Nothing playing</h2>
           <p>Choose something from your library and it will appear here.</p>
           <button className="primaryAction" onClick={onClose}>Browse your music</button>
-        </main>
+        </section>
       ) : (
-        <main className={mode === "lyrics" ? "nowPlayingStage lyricsMode" : "nowPlayingStage artworkMode"}>
-          <section className="nowPlayingVisual">
+        <section className={mode === "lyrics" ? "nowPlayingStage lyricsMode" : "nowPlayingStage artworkMode"} aria-labelledby="now-playing-track-title">
+          <section className="nowPlayingVisual" aria-label={mode === "artwork" ? "Album artwork" : undefined}>
             {mode === "artwork" ? (
               <div className="nowPlayingArtwork">
                 <Cover path={audio.current.coverPath} title={audio.current.album || undefined} size="lg" />
@@ -149,11 +186,11 @@ export function NowPlayingView({ onClose, onToggleFavorite, onOpenMenu }: Props)
             ) : <LyricsPanel track={audio.current} />}
           </section>
 
-          <section className="nowPlayingDetails">
+          <section className="nowPlayingDetails" aria-label="Playback details">
             <div className="playingStatus"><span /> {audio.playing ? "Playing now" : "Paused"}</div>
             <div className="heroTitleRow">
-              <div>
-                <h2 title={displayTrackTitle(audio.current)}>{displayTrackTitle(audio.current)}</h2>
+              <div className="heroTitleCopy">
+                <h2 id="now-playing-track-title" className={`heroTrackTitle ${titleLengthClass(trackTitle)}`} title={trackTitle}>{trackTitle}</h2>
                 <button className="heroArtistLink" onClick={navigateToArtist} disabled={!audio.current.artist?.trim()}>
                   {displayArtist(audio.current.artist)}
                 </button>
@@ -188,12 +225,13 @@ export function NowPlayingView({ onClose, onToggleFavorite, onOpenMenu }: Props)
                 onBlur={() => { audioEngine.commitSeek(); }}
                 style={progressStyle}
                 disabled={audio.localControlBlocked}
+                aria-valuetext={`${formatDuration(audio.position)} of ${formatDuration(audio.duration)}`}
               />
               <div><span>{formatDuration(audio.position)}</span><span>{formatDuration(audio.duration)}</span></div>
             </div>
 
-            <div className="heroControls">
-              <button className={audio.shuffle ? "heroControl active" : "heroControl"} onClick={() => audioEngine.setShuffle(!audio.shuffle)} title="Shuffle" aria-label="Toggle shuffle" disabled={audio.localControlBlocked}>
+            <div className="heroControls" role="group" aria-label="Playback controls">
+              <button className={audio.shuffle ? "heroControl active" : "heroControl"} onClick={() => audioEngine.setShuffle(!audio.shuffle)} title="Shuffle" aria-label="Toggle shuffle" aria-pressed={audio.shuffle} disabled={audio.localControlBlocked}>
                 <Shuffle size={21} />
               </button>
               <button className="heroControl" onClick={() => void audioEngine.previous()} title="Previous" aria-label="Previous song" disabled={audio.localControlBlocked}><SkipBack size={29} /></button>
@@ -206,6 +244,7 @@ export function NowPlayingView({ onClose, onToggleFavorite, onOpenMenu }: Props)
                 onClick={() => audioEngine.setRepeat(audio.repeat === "off" ? "all" : audio.repeat === "all" ? "one" : "off")}
                 title="Repeat"
                 aria-label={`Repeat ${audio.repeat}`}
+                aria-pressed={audio.repeat !== "off"}
                 disabled={audio.localControlBlocked}
               >
                 {repeatIcon}
@@ -218,13 +257,20 @@ export function NowPlayingView({ onClose, onToggleFavorite, onOpenMenu }: Props)
               <label className="heroVolume">
                 <Volume2 size={18} />
                 <span className="srOnly">Volume</span>
-                <input aria-label="Volume" type="range" min={0} max={1} step={0.01} value={audio.volume} onChange={(event) => audioEngine.setVolume(Number(event.target.value))} style={volumeStyle} />
+                <input aria-label="Volume" aria-valuetext={`${Math.round(audio.volume * 100)}%`} type="range" min={0} max={1} step={0.01} value={audio.volume} onChange={(event) => audioEngine.setVolume(Number(event.target.value))} style={volumeStyle} />
               </label>
             </div>
           </section>
-        </main>
+        </section>
       )}
       {showQueue && <QueuePanel onClose={() => setShowQueue(false)} />}
     </div>
   );
+}
+
+function titleLengthClass(title: string) {
+  if (title.length <= 24) return "titleShort";
+  if (title.length <= 44) return "titleMedium";
+  if (title.length <= 72) return "titleLong";
+  return "titleExtraLong";
 }

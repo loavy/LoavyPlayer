@@ -1,7 +1,7 @@
 use std::{
     collections::hash_map::RandomState,
     hash::{BuildHasher, Hasher},
-    io::ErrorKind,
+    io::{ErrorKind, Read, Write},
     path::{Path, PathBuf},
     process::Stdio,
     sync::atomic::{AtomicBool, AtomicU64, Ordering},
@@ -9,32 +9,60 @@ use std::{
 };
 
 use anyhow::{bail, Context, Result};
-use sha2::{Digest, Sha256};
 use tokio::{
-    io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
+    io::{AsyncBufReadExt, AsyncReadExt, BufReader},
     process::Command,
 };
 
 use super::{
-    executable_on_path, hide_console_window, terminate_child, useful_error, DownloadFormat,
-    DownloadMode, DownloadOptions, DownloadProgress, DownloadResult, DownloadSource,
+    atomic_replace, download_verified_asset, file_sha256, find_executable_on_path,
+    hide_console_window, read_bounded, terminate_child, useful_error, DownloadFormat, DownloadMode,
+    DownloadOptions, DownloadProgress, DownloadResult, DownloadSource, PinnedAsset, ProcessFailure,
+    ToolHealth,
 };
 
-const YT_DLP_VERSION: &str = "2026.07.04";
+const YT_DLP_VERSION: &str = "2026.08.19";
 const YT_DLP_DOWNLOAD_URL: &str =
-    "https://github.com/yt-dlp/yt-dlp/releases/download/2026.07.04/yt-dlp.exe";
-const YT_DLP_SHA256: &str = "52fe3c26dcf71fbdc85b528589020bb0b8e383155cfa81b64dd447bbe35e24b8e";
+    "https://github.com/yt-dlp/yt-dlp/releases/download/2026.08.19/yt-dlp.exe";
+const YT_DLP_SHA256: &str = "66674953fe251b89f4d08c5f0e35e0728679bd67ab3d7d05c0562af101dd3e7a";
+const PREVIOUS_YT_DLP_VERSION: &str = "2026.07.04";
+const PREVIOUS_YT_DLP_SHA256: &str =
+    "52fe3c26dcf71fbdc85b528589020bb0b8e383155cfa81b64dd447bbe35e24b8e";
+const DENO_VERSION: &str = "2.9.5";
+const DENO_DOWNLOAD_URL: &str =
+    "https://github.com/denoland/deno/releases/download/v2.9.5/deno-x86_64-pc-windows-msvc.zip";
+const DENO_ZIP_SHA256: &str = "171efab55ac6b9881fd53ee4c20f8bf3bb1340ffc618483746909014db12216a";
+// SHA-256 of deno.exe extracted from the checksum-verified release archive above.
+const DENO_EXECUTABLE_SHA256: &str =
+    "98f8c2a2d470e4ccb04c935c86ff8050817d877762aec5eaee9e409ccb3b9fd";
 const MAX_TOOL_BYTES: u64 = 128 * 1024 * 1024;
+const MAX_DENO_ARCHIVE_BYTES: u64 = 96 * 1024 * 1024;
+const MAX_DENO_EXECUTABLE_BYTES: u64 = 192 * 1024 * 1024;
+const MAX_STDERR_BYTES: usize = 64 * 1024;
 const PROGRESS_PREFIX: &str = "LOAVY_PROGRESS|";
+const PHASE_PREFIX: &str = "LOAVY_PHASE|";
 const STAGING_OUTPUT_TEMPLATE: &str = "%(autonumber)06d.%(ext)s";
 const MAX_TARGET_COMPONENT_BYTES: usize = 120;
 const MAX_TARGET_COMPONENTS: usize = 32;
 const MAX_RENDERED_TARGET_BYTES: usize = 8 * 1024;
 static NEXT_STAGING_ID: AtomicU64 = AtomicU64::new(0);
 
-pub(super) struct ToolStatus {
-    pub installed: bool,
-    pub version: Option<String>,
+pub(super) struct DirectToolStatus {
+    pub yt_dlp: ToolHealth,
+    pub js_runtime: ToolHealth,
+}
+
+#[derive(Debug, Clone)]
+pub(super) struct JsRuntime {
+    pub name: &'static str,
+    pub version: String,
+    pub executable: PathBuf,
+}
+
+impl JsRuntime {
+    pub fn yt_dlp_argument(&self) -> String {
+        format!("{}:{}", self.name, self.executable.to_string_lossy())
+    }
 }
 
 #[derive(Debug)]
@@ -343,13 +371,10 @@ async fn finalize_staged_file(
     Ok(FinalizedFile::Moved(target))
 }
 
-pub(super) async fn status(app_data_dir: &Path) -> ToolStatus {
-    let executable = yt_dlp_path(app_data_dir);
-    let version = tool_version(&executable).await;
-    ToolStatus {
-        installed: version.is_some() && super::spotify::audio_processor_installed(app_data_dir),
-        version,
-    }
+pub(super) async fn status(app_data_dir: &Path) -> DirectToolStatus {
+    let (yt_dlp, js_runtime) =
+        tokio::join!(yt_dlp_health(app_data_dir), js_runtime_health(app_data_dir));
+    DirectToolStatus { yt_dlp, js_runtime }
 }
 
 pub(super) async fn download<F>(
@@ -368,7 +393,7 @@ where
         format,
         naming,
     } = options;
-    let executable = ensure_yt_dlp(app_data_dir, cancel, report_progress).await?;
+    let executable = ensure_yt_dlp(app_data_dir, cancel, report_progress, true).await?;
     let ffmpeg = super::spotify::ensure_audio_processor(
         app_data_dir,
         cancel,
@@ -376,6 +401,11 @@ where
         report_progress,
     )
     .await?;
+    let js_runtime = if is_youtube_url(&url) {
+        Some(ensure_js_runtime(app_data_dir, cancel, report_progress, true).await?)
+    } else {
+        detect_js_runtime(app_data_dir).await
+    };
     if cancel.load(Ordering::SeqCst) {
         bail!("Download cancelled.");
     }
@@ -386,7 +416,7 @@ where
     let mut staging = StagingDirectory::create(destination).await?;
 
     report_progress(DownloadProgress {
-        phase: "starting".to_string(),
+        phase: "reading".to_string(),
         percent: None,
         bytes_written: 0,
         total_bytes: None,
@@ -433,12 +463,21 @@ where
         .arg(source_format)
         .args([
             "--extract-audio",
+            "--embed-metadata",
             "--audio-format",
             format.as_str(),
             "--audio-quality",
             "0",
             "--progress-template",
             "download:LOAVY_PROGRESS|%(progress.downloaded_bytes)s|%(progress.total_bytes,progress.total_bytes_estimate)s|%(progress._percent_str)s|%(info.playlist_index)s|%(info.n_entries)s|%(info.title)s",
+        ])
+        .args([
+            "--progress-template",
+            "postprocess:LOAVY_PHASE|processing|%(info.playlist_index)s|%(info.n_entries)s|%(info.title)s",
+            "--print",
+            "before_dl:LOAVY_PHASE|reading|%(info.playlist_index)s|%(info.n_entries)s|%(info.title)s",
+            "--print",
+            "post_process:LOAVY_PHASE|embedding|%(info.playlist_index)s|%(info.n_entries)s|%(info.title)s",
             "--print",
         ])
         .arg(&file_record_template)
@@ -448,8 +487,8 @@ where
         .arg(&cache_dir)
         .args(["--output", STAGING_OUTPUT_TEMPLATE]);
 
-    if executable_on_path(&["node.exe", "node"]) {
-        command.args(["--js-runtimes", "node"]);
+    if let Some(runtime) = &js_runtime {
+        command.arg("--js-runtimes").arg(runtime.yt_dlp_argument());
     }
 
     match mode {
@@ -468,15 +507,11 @@ where
         .take()
         .context("Could not read yt-dlp output.")?;
     let mut stdout_lines = BufReader::new(stdout).lines();
-    let mut stderr = child
+    let stderr = child
         .stderr
         .take()
         .context("Could not read yt-dlp errors.")?;
-    let stderr_task = tokio::spawn(async move {
-        let mut output = String::new();
-        let _ = stderr.read_to_string(&mut output).await;
-        output
-    });
+    let stderr_task = tokio::spawn(read_bounded(stderr, MAX_STDERR_BYTES));
 
     let mut staged_files = Vec::new();
     loop {
@@ -492,6 +527,8 @@ where
                 match line.context("Could not read yt-dlp progress.")? {
                     Some(line) => {
                         if let Some(progress) = parse_progress_line(&line) {
+                            report_progress(progress);
+                        } else if let Some(progress) = parse_phase_line(&line) {
                             report_progress(progress);
                         } else if let Some((path, rendered_target)) =
                             parse_file_record(&line, &record_prefix)
@@ -543,6 +580,21 @@ where
             let _ = staging.cleanup().await;
             bail!("Download cancelled.");
         }
+        report_progress(DownloadProgress {
+            phase: "saving".to_string(),
+            percent: None,
+            bytes_written: 0,
+            total_bytes: None,
+            title: staged_file
+                .source
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("Saving audio")
+                .to_string(),
+            item_index: None,
+            item_count: None,
+            source: DownloadSource::Web,
+        });
         match finalize_staged_file(&staging, staged_file, format).await {
             Ok(FinalizedFile::Moved(path)) => files.push(path),
             Ok(FinalizedFile::AlreadyExists(path)) => {
@@ -571,7 +623,12 @@ where
         } else {
             useful_error(&stderr_output, "yt-dlp could not download this URL.")
         };
-        bail!("{detail}");
+        return Err(ProcessFailure {
+            summary: detail,
+            exit_code: status.code(),
+            stderr: stderr_output,
+        }
+        .into());
     }
     let files = files
         .into_iter()
@@ -595,149 +652,378 @@ async fn ensure_yt_dlp<F>(
     app_data_dir: &Path,
     cancel: &AtomicBool,
     report_progress: &mut F,
+    allow_trusted_fallback: bool,
 ) -> Result<PathBuf>
 where
     F: FnMut(DownloadProgress),
 {
     let executable = yt_dlp_path(app_data_dir);
-    if tool_version(&executable).await.as_deref() == Some(YT_DLP_VERSION) {
+    let trusted_existing = trusted_yt_dlp_build(&executable).await;
+    if trusted_existing.as_deref() == Some(YT_DLP_VERSION) {
         return Ok(executable);
     }
-    if executable.exists() {
-        tokio::fs::remove_file(&executable)
-            .await
-            .context("Could not replace the damaged yt-dlp executable.")?;
+    match install_yt_dlp(&executable, cancel, report_progress).await {
+        Ok(()) => Ok(executable),
+        Err(_error) if allow_trusted_fallback && trusted_existing.is_some() => Ok(executable),
+        Err(error) => Err(error),
     }
-
-    let tools_dir = executable
-        .parent()
-        .context("Could not determine the yt-dlp tools folder.")?;
-    tokio::fs::create_dir_all(tools_dir)
-        .await
-        .context("Could not create the yt-dlp tools folder.")?;
-
-    let partial = executable.with_extension("exe.download");
-    let _ = tokio::fs::remove_file(&partial).await;
-    let client = reqwest::Client::builder()
-        .user_agent(concat!("Loavy-Player/", env!("CARGO_PKG_VERSION")))
-        .connect_timeout(Duration::from_secs(20))
-        .timeout(Duration::from_secs(180))
-        .build()
-        .context("Could not prepare the yt-dlp installer.")?;
-    let request = client.get(YT_DLP_DOWNLOAD_URL).send();
-    tokio::pin!(request);
-    let mut response = loop {
-        tokio::select! {
-            response = &mut request => break response.context("Could not download yt-dlp.")?,
-            _ = tokio::time::sleep(Duration::from_millis(150)) => {
-                if cancel.load(Ordering::SeqCst) {
-                    bail!("Download cancelled.");
-                }
-            }
-        }
-    }
-    .error_for_status()
-    .context("The yt-dlp download was rejected.")?;
-    let total_bytes = response.content_length();
-    if total_bytes.is_some_and(|size| size > MAX_TOOL_BYTES) {
-        bail!("The yt-dlp download was unexpectedly large.");
-    }
-
-    let mut file = tokio::fs::File::create(&partial)
-        .await
-        .context("Could not create the yt-dlp executable.")?;
-    let mut hasher = Sha256::new();
-    let mut bytes_written = 0_u64;
-
-    loop {
-        let chunk = tokio::select! {
-            chunk = response.chunk() => chunk.context("The yt-dlp download was interrupted.")?,
-            _ = tokio::time::sleep(Duration::from_millis(150)) => {
-                if cancel.load(Ordering::SeqCst) {
-                    drop(file);
-                    let _ = tokio::fs::remove_file(&partial).await;
-                    bail!("Download cancelled.");
-                }
-                continue;
-            }
-        };
-        let Some(chunk) = chunk else { break };
-        bytes_written += chunk.len() as u64;
-        if bytes_written > MAX_TOOL_BYTES {
-            drop(file);
-            let _ = tokio::fs::remove_file(&partial).await;
-            bail!("The yt-dlp download exceeded the allowed size.");
-        }
-        hasher.update(&chunk);
-        file.write_all(&chunk)
-            .await
-            .context("Could not write the yt-dlp executable.")?;
-        report_progress(DownloadProgress {
-            phase: "installing".to_string(),
-            percent: total_bytes.map(|total| bytes_written as f64 / total as f64 * 100.0),
-            bytes_written,
-            total_bytes,
-            title: "Installing yt-dlp".to_string(),
-            item_index: None,
-            item_count: None,
-            source: DownloadSource::Web,
-        });
-    }
-
-    file.flush()
-        .await
-        .context("Could not finish installing yt-dlp.")?;
-    drop(file);
-    let actual_sha256 = format!("{:x}", hasher.finalize());
-    if !actual_sha256.eq_ignore_ascii_case(YT_DLP_SHA256) {
-        let _ = tokio::fs::remove_file(&partial).await;
-        bail!("The yt-dlp checksum did not match the pinned release.");
-    }
-    validate_windows_executable(&partial).await?;
-    tokio::fs::rename(&partial, &executable)
-        .await
-        .context("Could not finish installing yt-dlp.")?;
-
-    if tool_version(&executable).await.as_deref() != Some(YT_DLP_VERSION) {
-        let _ = tokio::fs::remove_file(&executable).await;
-        bail!("The downloaded yt-dlp executable did not start correctly.");
-    }
-    Ok(executable)
 }
 
-async fn tool_version(executable: &Path) -> Option<String> {
+async fn install_yt_dlp<F>(
+    executable: &Path,
+    cancel: &AtomicBool,
+    report_progress: &mut F,
+) -> Result<()>
+where
+    F: FnMut(DownloadProgress),
+{
+    let partial = executable.with_extension("exe.download");
+    let result = async {
+        download_verified_asset(
+            PinnedAsset {
+                url: YT_DLP_DOWNLOAD_URL,
+                sha256: YT_DLP_SHA256,
+                max_bytes: MAX_TOOL_BYTES,
+                partial: &partial,
+                title: "Preparing yt-dlp",
+                source: DownloadSource::Web,
+            },
+            cancel,
+            report_progress,
+        )
+        .await?;
+        validate_windows_executable(&partial, "yt-dlp").await?;
+        if tool_version(&partial).await.as_deref() != Some(YT_DLP_VERSION) {
+            bail!("The downloaded yt-dlp executable did not start with the expected version.");
+        }
+        atomic_replace(&partial, executable)
+            .await
+            .context("Could not atomically install yt-dlp.")?;
+        Ok(())
+    }
+    .await;
+    if result.is_err() {
+        let _ = tokio::fs::remove_file(&partial).await;
+    }
+    result
+}
+
+async fn trusted_yt_dlp_build(executable: &Path) -> Option<String> {
+    // Hash first: never launch an executable from the managed tools directory
+    // until it matches a release that Loavy explicitly trusts.
+    let hash = file_sha256(executable).await.ok()?;
+    let expected_version = if hash.eq_ignore_ascii_case(YT_DLP_SHA256) {
+        YT_DLP_VERSION
+    } else if hash.eq_ignore_ascii_case(PREVIOUS_YT_DLP_SHA256) {
+        PREVIOUS_YT_DLP_VERSION
+    } else {
+        return None;
+    };
+    let version = tool_version(executable).await?;
+    (version == expected_version).then_some(version)
+}
+
+async fn yt_dlp_health(app_data_dir: &Path) -> ToolHealth {
+    let executable = yt_dlp_path(app_data_dir);
+    if !executable.is_file() {
+        return ToolHealth::missing(Some(YT_DLP_VERSION));
+    }
+    match trusted_yt_dlp_build(&executable).await {
+        Some(version) if version == YT_DLP_VERSION => {
+            ToolHealth::ready(Some(version), Some(YT_DLP_VERSION))
+        }
+        Some(version) => ToolHealth::update_available(version, YT_DLP_VERSION),
+        None => ToolHealth::corrupt(
+            None,
+            Some(YT_DLP_VERSION),
+            "The executable version or checksum is not a trusted Loavy build.",
+        ),
+    }
+}
+
+pub(super) async fn repair_tools<F>(
+    app_data_dir: &Path,
+    cancel: &AtomicBool,
+    report_progress: &mut F,
+) -> Result<()>
+where
+    F: FnMut(DownloadProgress),
+{
+    ensure_yt_dlp(app_data_dir, cancel, report_progress, false).await?;
+    ensure_managed_deno(app_data_dir, cancel, report_progress).await?;
+    Ok(())
+}
+
+pub(super) async fn ensure_js_runtime<F>(
+    app_data_dir: &Path,
+    cancel: &AtomicBool,
+    report_progress: &mut F,
+    allow_external: bool,
+) -> Result<JsRuntime>
+where
+    F: FnMut(DownloadProgress),
+{
+    if allow_external {
+        if let Some(runtime) = detect_js_runtime(app_data_dir).await {
+            return Ok(runtime);
+        }
+    } else if let Some(runtime) = managed_deno_runtime(app_data_dir).await {
+        return Ok(runtime);
+    }
+    ensure_managed_deno(app_data_dir, cancel, report_progress).await
+}
+
+async fn ensure_managed_deno<F>(
+    app_data_dir: &Path,
+    cancel: &AtomicBool,
+    report_progress: &mut F,
+) -> Result<JsRuntime>
+where
+    F: FnMut(DownloadProgress),
+{
+    if let Some(runtime) = managed_deno_runtime(app_data_dir).await {
+        return Ok(runtime);
+    }
+
+    let executable = deno_path(app_data_dir);
+    let archive = executable.with_extension("zip.download");
+    let partial = executable.with_extension("exe.download");
+    let result = async {
+        download_verified_asset(
+            PinnedAsset {
+                url: DENO_DOWNLOAD_URL,
+                sha256: DENO_ZIP_SHA256,
+                max_bytes: MAX_DENO_ARCHIVE_BYTES,
+                partial: &archive,
+                title: "Preparing the JavaScript runtime",
+                source: DownloadSource::Web,
+            },
+            cancel,
+            report_progress,
+        )
+        .await?;
+
+        let archive_for_task = archive.clone();
+        let partial_for_task = partial.clone();
+        tokio::task::spawn_blocking(move || {
+            extract_deno_executable(&archive_for_task, &partial_for_task)
+        })
+        .await
+        .context("The JavaScript runtime extraction task did not finish.")??;
+        validate_windows_executable(&partial, "JavaScript runtime").await?;
+        let executable_hash = file_sha256(&partial).await?;
+        if !executable_hash.eq_ignore_ascii_case(DENO_EXECUTABLE_SHA256) {
+            bail!("The extracted JavaScript runtime checksum did not match the trusted release.");
+        }
+        let version = deno_version(&partial)
+            .await
+            .context("The downloaded JavaScript runtime did not start correctly.")?;
+        if version != DENO_VERSION {
+            bail!("The downloaded JavaScript runtime version could not be verified.");
+        }
+        atomic_replace(&partial, &executable)
+            .await
+            .context("Could not atomically install the JavaScript runtime.")?;
+        Ok(JsRuntime {
+            name: "deno",
+            version,
+            executable,
+        })
+    }
+    .await;
+    let _ = tokio::fs::remove_file(&archive).await;
+    if result.is_err() {
+        let _ = tokio::fs::remove_file(&partial).await;
+    }
+    result
+}
+
+fn extract_deno_executable(archive: &Path, destination: &Path) -> Result<()> {
+    let file =
+        std::fs::File::open(archive).context("Could not open the JavaScript runtime archive.")?;
+    let mut archive = zip::ZipArchive::new(file)
+        .context("The JavaScript runtime archive is not a valid ZIP file.")?;
+    let matching_entries = (0..archive.len())
+        .filter_map(|index| {
+            archive
+                .by_index_raw(index)
+                .ok()
+                .map(|entry| entry.name().replace('\\', "/"))
+        })
+        .filter(|name| name == "deno.exe")
+        .count();
+    if matching_entries != 1 {
+        bail!("The JavaScript runtime archive did not contain exactly one deno.exe file.");
+    }
+    let mut entry = archive
+        .by_name("deno.exe")
+        .context("The JavaScript runtime executable was missing from its archive.")?;
+    if entry.is_dir() || entry.size() == 0 || entry.size() > MAX_DENO_EXECUTABLE_BYTES {
+        bail!("The JavaScript runtime archive contained an invalid executable.");
+    }
+    if entry.enclosed_name().as_deref() != Some(Path::new("deno.exe")) {
+        bail!("The JavaScript runtime archive contained an unsafe path.");
+    }
+    let mut output = std::fs::File::create(destination)
+        .context("Could not create the JavaScript runtime executable.")?;
+    let copied = std::io::copy(
+        &mut entry.by_ref().take(MAX_DENO_EXECUTABLE_BYTES + 1),
+        &mut output,
+    )
+    .context("Could not extract the JavaScript runtime executable.")?;
+    if copied == 0 || copied > MAX_DENO_EXECUTABLE_BYTES {
+        bail!("The extracted JavaScript runtime was unexpectedly large.");
+    }
+    output
+        .flush()
+        .context("Could not finish extracting the JavaScript runtime.")?;
+    output
+        .sync_all()
+        .context("Could not commit the JavaScript runtime to disk.")?;
+    Ok(())
+}
+
+async fn managed_deno_runtime(app_data_dir: &Path) -> Option<JsRuntime> {
+    let executable = deno_path(app_data_dir);
+    if !file_sha256(&executable)
+        .await
+        .is_ok_and(|hash| hash.eq_ignore_ascii_case(DENO_EXECUTABLE_SHA256))
+    {
+        return None;
+    }
+    let version = deno_version(&executable).await?;
+    (version == DENO_VERSION).then_some(JsRuntime {
+        name: "deno",
+        version,
+        executable,
+    })
+}
+
+pub(super) async fn detect_js_runtime(app_data_dir: &Path) -> Option<JsRuntime> {
+    if let Some(runtime) = managed_deno_runtime(app_data_dir).await {
+        return Some(runtime);
+    }
+    if let Some(executable) = find_executable_on_path(&["deno.exe", "deno"]) {
+        if let Some(version) = deno_version(&executable).await {
+            if version_at_least(&version, 2, 3) {
+                return Some(JsRuntime {
+                    name: "deno",
+                    version,
+                    executable,
+                });
+            }
+        }
+    }
+    if let Some(executable) = find_executable_on_path(&["node.exe", "node"]) {
+        if let Some(version) = node_version(&executable).await {
+            if version_at_least(&version, 22, 0) {
+                return Some(JsRuntime {
+                    name: "node",
+                    version,
+                    executable,
+                });
+            }
+        }
+    }
+    None
+}
+
+async fn js_runtime_health(app_data_dir: &Path) -> ToolHealth {
+    if let Some(runtime) = detect_js_runtime(app_data_dir).await {
+        return ToolHealth::ready(Some(runtime.version), Some(DENO_VERSION))
+            .with_provider(runtime.name);
+    }
+    if deno_path(app_data_dir).is_file() {
+        ToolHealth::corrupt(
+            None,
+            Some(DENO_VERSION),
+            "The managed Deno executable failed its checksum or version verification.",
+        )
+        .with_provider("deno")
+    } else {
+        ToolHealth::missing(Some(DENO_VERSION)).with_provider("deno")
+    }
+}
+
+async fn deno_version(executable: &Path) -> Option<String> {
+    command_version(executable, &["--version"])
+        .await?
+        .lines()
+        .next()?
+        .trim()
+        .strip_prefix("deno ")
+        .map(str::to_string)
+}
+
+async fn node_version(executable: &Path) -> Option<String> {
+    command_version(executable, &["--version"])
+        .await?
+        .lines()
+        .next()?
+        .trim()
+        .strip_prefix('v')
+        .map(str::to_string)
+}
+
+async fn command_version(executable: &Path, arguments: &[&str]) -> Option<String> {
     if !executable.is_file() {
         return None;
     }
     let mut command = Command::new(executable);
+    command.kill_on_drop(true).stdin(Stdio::null());
     hide_console_window(&mut command);
-    tokio::time::timeout(Duration::from_secs(8), command.arg("--version").output())
+    tokio::time::timeout(Duration::from_secs(8), command.args(arguments).output())
         .await
         .ok()
         .and_then(Result::ok)
         .filter(|output| output.status.success())
         .and_then(|output| String::from_utf8(output.stdout).ok())
+        .filter(|version| !version.trim().is_empty())
+}
+
+fn version_at_least(version: &str, minimum_major: u64, minimum_minor: u64) -> bool {
+    let mut parts = version
+        .split('.')
+        .filter_map(|part| part.parse::<u64>().ok());
+    let major = parts.next().unwrap_or(0);
+    let minor = parts.next().unwrap_or(0);
+    (major, minor) >= (minimum_major, minimum_minor)
+}
+
+fn is_youtube_url(url: &reqwest::Url) -> bool {
+    url.host_str().is_some_and(|host| {
+        let host = host.trim_start_matches("www.").to_ascii_lowercase();
+        host == "youtube.com" || host.ends_with(".youtube.com") || host == "youtu.be"
+    })
+}
+
+async fn tool_version(executable: &Path) -> Option<String> {
+    command_version(executable, &["--version"])
+        .await
         .map(|version| version.trim().to_string())
         .filter(|version| !version.is_empty())
 }
 
-async fn validate_windows_executable(path: &Path) -> Result<()> {
+async fn validate_windows_executable(path: &Path, title: &str) -> Result<()> {
     let mut file = tokio::fs::File::open(path)
         .await
-        .context("Could not validate the yt-dlp executable.")?;
+        .with_context(|| format!("Could not validate {title}."))?;
     let mut magic = [0_u8; 2];
     file.read_exact(&mut magic)
         .await
-        .context("The yt-dlp download was incomplete.")?;
+        .with_context(|| format!("The {title} download was incomplete."))?;
     if magic != *b"MZ" {
-        let _ = tokio::fs::remove_file(path).await;
-        bail!("The yt-dlp download was not a valid Windows executable.");
+        bail!("The {title} download was not a valid Windows executable.");
     }
     Ok(())
 }
 
 fn yt_dlp_path(app_data_dir: &Path) -> PathBuf {
     app_data_dir.join("tools").join("yt-dlp.exe")
+}
+
+fn deno_path(app_data_dir: &Path) -> PathBuf {
+    app_data_dir.join("tools").join("deno").join("deno.exe")
 }
 
 fn parse_progress_line(line: &str) -> Option<DownloadProgress> {
@@ -755,6 +1041,31 @@ fn parse_progress_line(line: &str) -> Option<DownloadProgress> {
         title: unavailable_to_default(fields[5], "Downloading"),
         item_index: parse_u64(fields[3]),
         item_count: parse_u64(fields[4]),
+        source: DownloadSource::Web,
+    })
+}
+
+fn parse_phase_line(line: &str) -> Option<DownloadProgress> {
+    let payload = line.strip_prefix(PHASE_PREFIX)?;
+    let fields = payload.splitn(4, '|').collect::<Vec<_>>();
+    if fields.len() != 4 {
+        return None;
+    }
+    let phase = match fields[0].trim() {
+        "reading" => "reading",
+        "processing" => "processing",
+        "embedding" => "embedding",
+        "saving" => "saving",
+        _ => return None,
+    };
+    Some(DownloadProgress {
+        phase: phase.to_string(),
+        percent: None,
+        bytes_written: 0,
+        total_bytes: None,
+        title: unavailable_to_default(fields[3], "Processing audio"),
+        item_index: parse_u64(fields[1]),
+        item_count: parse_u64(fields[2]),
         source: DownloadSource::Web,
     })
 }
@@ -797,11 +1108,12 @@ fn parse_yt_dlp_errors(stderr: &str) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
-    use std::{path::PathBuf, time::SystemTime};
+    use std::{io::Write as _, path::PathBuf, time::SystemTime};
 
     use super::{
-        finalize_staged_file, parse_file_record, parse_progress_line, parse_yt_dlp_errors,
-        safe_relative_target, sanitize_target_component, DownloadFormat, FinalizedFile, StagedFile,
+        extract_deno_executable, finalize_staged_file, is_youtube_url, parse_file_record,
+        parse_phase_line, parse_progress_line, parse_yt_dlp_errors, safe_relative_target,
+        sanitize_target_component, version_at_least, DownloadFormat, FinalizedFile, StagedFile,
         StagingDirectory, MAX_TARGET_COMPONENT_BYTES,
     };
 
@@ -830,6 +1142,68 @@ mod tests {
         assert_eq!(progress.item_index, Some(2));
         assert_eq!(progress.item_count, Some(12));
         assert_eq!(progress.title, "Example song");
+    }
+
+    #[test]
+    fn parses_indeterminate_postprocessing_phases() {
+        let processing =
+            parse_phase_line("LOAVY_PHASE|processing|2|12|Example song").expect("phase");
+        assert_eq!(processing.phase, "processing");
+        assert_eq!(processing.percent, None);
+        assert_eq!(processing.item_index, Some(2));
+        assert_eq!(processing.item_count, Some(12));
+
+        assert!(parse_phase_line("LOAVY_PHASE|unknown|2|12|Example song").is_none());
+    }
+
+    #[test]
+    fn recognizes_youtube_hosts_and_runtime_version_floors() {
+        for url in [
+            "https://youtube.com/watch?v=example",
+            "https://music.youtube.com/watch?v=example",
+            "https://youtu.be/example",
+        ] {
+            assert!(is_youtube_url(&reqwest::Url::parse(url).unwrap()));
+        }
+        assert!(!is_youtube_url(
+            &reqwest::Url::parse("https://notyoutube.com/watch?v=example").unwrap()
+        ));
+        assert!(version_at_least("2.9.5", 2, 3));
+        assert!(!version_at_least("2.2.9", 2, 3));
+        assert!(version_at_least("22.0.0", 22, 0));
+        assert!(!version_at_least("21.9.0", 22, 0));
+    }
+
+    #[test]
+    fn deno_archive_extraction_accepts_only_the_exact_safe_entry() {
+        let root = temporary_test_directory("deno-zip");
+        let valid_archive = root.join("valid.zip");
+        let valid_output = root.join("deno.exe");
+        {
+            let file = std::fs::File::create(&valid_archive).unwrap();
+            let mut zip = zip::ZipWriter::new(file);
+            zip.start_file("deno.exe", zip::write::SimpleFileOptions::default())
+                .unwrap();
+            zip.write_all(b"MZtest executable").unwrap();
+            zip.finish().unwrap();
+        }
+        extract_deno_executable(&valid_archive, &valid_output).unwrap();
+        assert_eq!(std::fs::read(&valid_output).unwrap(), b"MZtest executable");
+
+        let unsafe_archive = root.join("unsafe.zip");
+        let unsafe_output = root.join("unsafe.exe");
+        {
+            let file = std::fs::File::create(&unsafe_archive).unwrap();
+            let mut zip = zip::ZipWriter::new(file);
+            zip.start_file("../deno.exe", zip::write::SimpleFileOptions::default())
+                .unwrap();
+            zip.write_all(b"MZunsafe").unwrap();
+            zip.finish().unwrap();
+        }
+        assert!(extract_deno_executable(&unsafe_archive, &unsafe_output).is_err());
+        assert!(!unsafe_output.exists());
+
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

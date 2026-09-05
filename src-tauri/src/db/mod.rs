@@ -309,6 +309,17 @@ impl Database {
             .context("Track was not found.")
     }
 
+    pub fn track_by_path(&self, path: &str) -> Result<Option<Track>> {
+        self.conn
+            .query_row(
+                "SELECT * FROM tracks WHERE path = ?1",
+                params![path],
+                row_to_track,
+            )
+            .optional()
+            .context("get track by path")
+    }
+
     pub fn remove_missing_tracks(&self) -> Result<usize> {
         let mut stmt = self.conn.prepare("SELECT path FROM tracks")?;
         let paths = stmt

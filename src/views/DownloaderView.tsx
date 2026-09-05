@@ -1,6 +1,7 @@
 import { listen } from "@tauri-apps/api/event";
 import {
   CheckCircle2,
+  ClipboardPaste,
   Disc3,
   Download,
   FolderOpen,
@@ -18,10 +19,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import type {
   DownloadFormat,
+  DownloadFailure,
   DownloadMode,
   DownloadProgress,
   DownloadResult,
   DownloaderStatus,
+  DownloaderToolHealth,
   DownloadSource,
   MediaDownloadRequest
 } from "../types";
@@ -32,6 +35,7 @@ type TemplateField = "filename" | "folder";
 type Props = {
   onDownloadMedia: (request: MediaDownloadRequest) => Promise<DownloadResult>;
   onGetStatus: () => Promise<DownloaderStatus>;
+  onRepairTools: () => Promise<DownloaderStatus>;
   onCancel: () => Promise<void>;
   onSelectFolder: () => Promise<string | null>;
   onRevealDownload: (path: string) => Promise<void>;
@@ -53,6 +57,14 @@ const DEFAULT_FOLDER_TEMPLATE = "{album_artist}/{album}";
 const FILENAME_TEMPLATE_STORAGE_KEY = "loavy.downloader.filenameTemplate";
 const FOLDER_TEMPLATE_STORAGE_KEY = "loavy.downloader.folderTemplate";
 const APPLY_FOLDER_TO_SINGLE_STORAGE_KEY = "loavy.downloader.applyFolderToSingle";
+const DESTINATION_STORAGE_KEY = "loavy.downloader.destination";
+const FORMAT_STORAGE_KEY = "loavy.downloader.format";
+const AUDIO_FORMATS: Array<{ value: DownloadFormat; label: string; description: string }> = [
+  { value: "m4a", label: "M4A", description: "Recommended" },
+  { value: "mp3", label: "MP3", description: "Widely compatible" },
+  { value: "opus", label: "Opus", description: "Smaller files" },
+  { value: "flac", label: "FLAC", description: "Converted audio" }
+];
 const TEMPLATE_TOKENS = [
   "{title}",
   "{artist}",
@@ -73,6 +85,7 @@ const TEMPLATE_TOKENS = [
 export function DownloaderView({
   onDownloadMedia,
   onGetStatus,
+  onRepairTools,
   onCancel,
   onSelectFolder,
   onRevealDownload
@@ -80,14 +93,18 @@ export function DownloaderView({
   const [section, setSection] = useState<DownloaderSection>("download");
   const [source, setSource] = useState<DownloadSource>("spotify");
   const [mode, setMode] = useState<DownloadMode>("single");
-  const [format, setFormat] = useState<DownloadFormat>("m4a");
+  const [format, setFormat] = useState<DownloadFormat>(() => {
+    const stored = readStoredString(FORMAT_STORAGE_KEY, "m4a");
+    return AUDIO_FORMATS.find((option) => option.value === stored)?.value ?? "m4a";
+  });
   const [urls, setUrls] = useState<Record<DownloadSource, string>>({ spotify: "", web: "" });
-  const [destination, setDestination] = useState("");
+  const [destination, setDestination] = useState(() => readStoredString(DESTINATION_STORAGE_KEY, ""));
   const [progress, setProgress] = useState<DownloadProgress | null>(null);
   const [status, setStatus] = useState<DownloaderStatus | null>(null);
   const [result, setResult] = useState<DownloadResult | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<DownloadFailure | null>(null);
   const [downloading, setDownloading] = useState(false);
+  const [repairing, setRepairing] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [filenameTemplate, setFilenameTemplate] = useState(() => readStoredString(
     FILENAME_TEMPLATE_STORAGE_KEY,
@@ -103,12 +120,25 @@ export function DownloaderView({
   ));
   const [activeTemplateField, setActiveTemplateField] = useState<TemplateField>("filename");
   const lifecycleRevision = useRef(0);
+  const repairingRef = useRef(false);
+  const operationRef = useRef(false);
+  const downloadingRef = useRef(false);
+  const lastRequestRef = useRef<MediaDownloadRequest | null>(null);
   const filenameTemplateRef = useRef<HTMLInputElement>(null);
   const folderTemplateRef = useRef<HTMLInputElement>(null);
 
   const url = urls[source];
   const detectedSpotifyMode = source === "spotify" ? spotifyModeFromUrl(url) : null;
   const availableModes = source === "spotify" ? spotifyModes : webModes;
+  const busy = downloading || repairing;
+
+  useEffect(() => {
+    storeDownloaderSetting(DESTINATION_STORAGE_KEY, destination);
+  }, [destination]);
+
+  useEffect(() => {
+    storeDownloaderSetting(FORMAT_STORAGE_KEY, format);
+  }, [format]);
 
   useEffect(() => {
     storeDownloaderSetting(FILENAME_TEMPLATE_STORAGE_KEY, filenameTemplate);
@@ -123,11 +153,14 @@ export function DownloaderView({
   }, [applyFolderToSingle]);
 
   useEffect(() => {
+    let disposed = false;
     const statusRevision = lifecycleRevision.current;
     void onGetStatus()
       .then((nextStatus) => {
+        if (disposed) return;
         setStatus(nextStatus);
         if (lifecycleRevision.current === statusRevision) {
+          downloadingRef.current = nextStatus.running;
           setDownloading(nextStatus.running);
         }
       })
@@ -136,11 +169,19 @@ export function DownloaderView({
       });
 
     const unlistenProgress = listen<DownloadProgress>("download://progress", (event) => {
+      if (disposed) return;
       lifecycleRevision.current += 1;
       setProgress(event.payload);
-      setDownloading(true);
+      if (!repairingRef.current) {
+        downloadingRef.current = true;
+        setDownloading(true);
+      }
     });
     const unlistenCompleted = listen<DownloadResult>("download://completed", (event) => {
+      // The invoke promise owns jobs started here. Handling its terminal event
+      // as well would unlock the form before the promise has settled.
+      if (disposed || operationRef.current) return;
+      downloadingRef.current = false;
       lifecycleRevision.current += 1;
       setResult(event.payload);
       setSource(event.payload.source);
@@ -152,17 +193,23 @@ export function DownloaderView({
       setCancelling(false);
       void onGetStatus().then(setStatus).catch(() => undefined);
     });
-    const unlistenFailed = listen<string>("download://failed", (event) => {
+    const unlistenFailed = listen<unknown>("download://failed", (event) => {
+      if (disposed || operationRef.current) return;
+      downloadingRef.current = false;
       lifecycleRevision.current += 1;
-      setError(event.payload);
+      setError(normalizeDownloadFailure(event.payload));
       setProgress(null);
       setDownloading(false);
       setCancelling(false);
       void onGetStatus().then(setStatus).catch(() => undefined);
     });
+    // Observe rejections immediately, including in browser-only previews.
+    const listeners = Promise.allSettled([unlistenProgress, unlistenCompleted, unlistenFailed]);
     return () => {
-      void Promise.all([unlistenProgress, unlistenCompleted, unlistenFailed])
-        .then((removeListeners) => removeListeners.forEach((removeListener) => removeListener()));
+      disposed = true;
+      void listeners.then((results) => results.forEach((entry) => {
+        if (entry.status === "fulfilled") entry.value();
+      }));
     };
   }, [onGetStatus]);
 
@@ -176,10 +223,10 @@ export function DownloaderView({
 
   async function handleDownload(event: FormEvent) {
     event.preventDefault();
-    if (section !== "download") return;
+    if (section !== "download" || downloading || repairing) return;
     const trimmedUrl = url.trim();
     if (!trimmedUrl) {
-      setError(source === "spotify" ? "Paste a Spotify track, album, or playlist URL." : `Enter a ${mode === "playlist" ? "playlist" : "media"} URL.`);
+      setError(localFailure(source === "spotify" ? "Paste a Spotify track, album, or playlist URL." : `Enter a ${mode === "playlist" ? "playlist" : "media"} URL.`));
       return;
     }
 
@@ -187,16 +234,38 @@ export function DownloaderView({
     if (source === "spotify") {
       const inferredMode = spotifyModeFromUrl(trimmedUrl);
       if (!inferredMode) {
-        setError("Use an https://open.spotify.com track, album, or playlist URL.");
+        setError(localFailure("Use an https://open.spotify.com track, album, or playlist URL."));
         return;
       }
       requestMode = inferredMode;
       setMode(inferredMode);
     } else if (!isHttpUrl(trimmedUrl)) {
-      setError("Enter a valid http:// or https:// media URL.");
+      setError(localFailure("Enter a valid http:// or https:// media URL."));
       return;
     }
 
+    await runDownload({
+      source,
+      url: trimmedUrl,
+      destinationDir: destination.trim() || null,
+      mode: requestMode,
+      format,
+      filenameTemplate,
+      folderTemplate,
+      applyFolderToSingle
+    });
+  }
+
+  async function runDownload(request: MediaDownloadRequest) {
+    if (operationRef.current || downloadingRef.current) return;
+    operationRef.current = true;
+    downloadingRef.current = true;
+    setSection("download");
+    setSource(request.source);
+    setMode(request.mode);
+    setFormat(request.format);
+    setUrls((current) => ({ ...current, [request.source]: request.url }));
+    lastRequestRef.current = { ...request };
     lifecycleRevision.current += 1;
     setDownloading(true);
     setCancelling(false);
@@ -204,31 +273,72 @@ export function DownloaderView({
     setResult(null);
     setError(null);
     try {
-      const nextResult = await onDownloadMedia({
-        source,
-        url: trimmedUrl,
-        destinationDir: destination.trim() || null,
-        mode: requestMode,
-        format,
-        filenameTemplate,
-        folderTemplate,
-        applyFolderToSingle
-      });
+      const nextResult = await onDownloadMedia(request);
       setResult(nextResult);
-      setStatus(await onGetStatus());
       setProgress(null);
     } catch (downloadError) {
-      setError(downloadError instanceof Error ? downloadError.message : String(downloadError));
+      setError(normalizeDownloadFailure(downloadError));
       setProgress(null);
     } finally {
+      operationRef.current = false;
+      downloadingRef.current = false;
+      lifecycleRevision.current += 1;
       setDownloading(false);
       setCancelling(false);
+      // Tool health is auxiliary; a failed refresh must not erase saved files.
+      void onGetStatus().then(setStatus).catch(() => undefined);
+    }
+  }
+
+  async function repairTools() {
+    if (operationRef.current || downloadingRef.current) return;
+    operationRef.current = true;
+    lifecycleRevision.current += 1;
+    repairingRef.current = true;
+    setRepairing(true);
+    setSection("download");
+    setProgress(null);
+    setResult(null);
+    setError(null);
+    try {
+      setStatus(await onRepairTools());
+    } catch (repairError) {
+      setError(localFailure(`Could not repair the downloader tools: ${errorMessage(repairError)}`));
+    } finally {
+      operationRef.current = false;
+      lifecycleRevision.current += 1;
+      repairingRef.current = false;
+      setRepairing(false);
+      setCancelling(false);
+      setProgress(null);
+      void onGetStatus().then(setStatus).catch(() => undefined);
     }
   }
 
   async function chooseFolder() {
-    const folder = await onSelectFolder();
-    if (folder) setDestination(folder);
+    try {
+      const folder = await onSelectFolder();
+      if (folder) setDestination(folder);
+    } catch (folderError) {
+      setError(localFailure(`Could not open the folder picker: ${errorMessage(folderError)}`));
+    }
+  }
+
+  async function revealDownload(path: string) {
+    try {
+      await onRevealDownload(path);
+    } catch (revealError) {
+      setError(localFailure(`Could not show the saved files: ${errorMessage(revealError)}`));
+    }
+  }
+
+  async function pasteUrl() {
+    try {
+      const text = (await navigator.clipboard.readText()).trim();
+      if (text) changeUrl(text);
+    } catch {
+      setError(localFailure("Clipboard access is unavailable. Paste your link into the URL field."));
+    }
   }
 
   async function cancelDownload() {
@@ -236,13 +346,13 @@ export function DownloaderView({
     try {
       await onCancel();
     } catch (cancelError) {
-      setError(cancelError instanceof Error ? cancelError.message : String(cancelError));
+      setError(localFailure(errorMessage(cancelError)));
       setCancelling(false);
     }
   }
 
   function changeSource(nextSource: DownloadSource) {
-    if (downloading || source === nextSource) return;
+    if (busy || source === nextSource) return;
     setSource(nextSource);
     if (nextSource === "spotify") {
       const storedMode = spotifyModeFromUrl(urls.spotify);
@@ -256,15 +366,19 @@ export function DownloaderView({
   }
 
   function changeUrl(nextUrl: string) {
-    setUrls((current) => ({ ...current, [source]: nextUrl }));
+    const inferredMode = spotifyModeFromUrl(nextUrl);
+    const nextSource = inferredMode ? "spotify" : isHttpUrl(nextUrl) ? "web" : source;
+    setSource(nextSource);
+    setUrls((current) => ({ ...current, [nextSource]: nextUrl }));
     setError(null);
-    if (source === "spotify") {
-      const inferredMode = spotifyModeFromUrl(nextUrl);
-      if (inferredMode) setMode(inferredMode);
-    }
+    setResult(null);
+    lastRequestRef.current = null;
+    if (inferredMode) setMode(inferredMode);
+    else if (nextSource === "web" && mode === "album") setMode("single");
   }
 
   function reset() {
+    lastRequestRef.current = null;
     setUrls((current) => ({ ...current, [source]: "" }));
     setResult(null);
     setError(null);
@@ -301,7 +415,9 @@ export function DownloaderView({
   }
 
   const progressSource = progress?.source ?? source;
-  const itemLabel = progress?.itemIndex
+  const itemLabel = repairing
+    ? "Repairing managed tools"
+    : progress?.itemIndex
     ? `Track ${progress.itemIndex}${progress.itemCount ? ` of ${progress.itemCount}` : ""}`
     : progress
       ? phaseLabel(progress.phase, progressSource)
@@ -314,27 +430,38 @@ export function DownloaderView({
   const actionLabel = downloadActionLabel(source, detectedSpotifyMode ?? mode);
   const filenamePreview = `${renderTemplatePreview(filenameTemplate) || "Untitled"}.${format}`;
   const folderPreview = renderTemplatePreview(folderTemplate, true);
+  const useFolder = folderPreview && !(source === "spotify" && mode === "playlist")
+    && (mode !== "single" || applyFolderToSingle);
+  const outputPreview = `${useFolder ? `${folderPreview}/` : ""}${filenamePreview}`;
 
   return (
     <section className="downloaderView" aria-labelledby="downloader-title">
       <div className="downloaderIntro">
-        <div className="downloaderMark"><Music2 size={26} /></div>
+        <div className="downloaderMark"><Download size={26} /></div>
         <div>
-          <span>Loavy Downloader 5.8.1</span>
-          <h2 id="downloader-title">Bring more music into your library.</h2>
-          <p>Save Spotify tracks and releases, or download audio from a supported direct link.</p>
-        </div>
-        <div className="downloaderStatuses" aria-label="Downloader tool status">
-          <div className={status?.spotdlInstalled ? "downloaderStatus ready" : "downloaderStatus"}>
-            <Disc3 size={14} />
-            Spotify: {status?.spotdlInstalled ? `spotDL ${status.spotdlVersion || "ready"}` : "sets up on first use"}
-          </div>
-          <div className={status?.installed ? "downloaderStatus ready" : "downloaderStatus"}>
-            <Wrench size={14} />
-            Direct: {status?.installed ? `yt-dlp ${status.version || "ready"}` : "sets up on first use"}
-          </div>
+          <span>Your next listen</span>
+          <h2 id="downloader-title">A link. A song. Yours to keep.</h2>
+          <p>Download audio, choose your format, and give it a home in your collection.</p>
         </div>
       </div>
+      <details className="downloaderTools">
+        <summary><Wrench size={15} /> Download tools <span>Installed automatically when needed</span></summary>
+        <div className="downloaderStatuses" aria-label="Downloader tool status">
+          <ToolStatusPill label="yt-dlp" health={status?.ytDlp} />
+          <ToolStatusPill label="FFmpeg" health={status?.ffmpeg} />
+          <ToolStatusPill label={status?.jsRuntime.provider || "Deno"} health={status?.jsRuntime} />
+          <ToolStatusPill label="spotDL" health={status?.spotdl} />
+          <button
+            type="button"
+            className="downloaderRepairButton"
+            onClick={() => void repairTools()}
+            disabled={downloading || repairing}
+          >
+            {repairing ? <LoaderCircle size={14} className="spin" /> : <Wrench size={14} />}
+            {repairing ? "Repairing tools" : "Repair tools"}
+          </button>
+        </div>
+      </details>
 
       <form className="downloadSurface" onSubmit={handleDownload}>
         <div className="downloadSectionTabs" role="tablist" aria-label="Downloader settings">
@@ -357,6 +484,7 @@ export function DownloaderView({
             aria-controls="downloader-naming-panel"
             className={section === "naming" ? "active" : ""}
             onClick={() => setSection("naming")}
+            disabled={busy}
           >
             <ListMusic size={17} /> Naming
           </button>
@@ -378,9 +506,10 @@ export function DownloaderView({
             aria-controls="download-source-panel"
             className={source === "spotify" ? "active" : ""}
             onClick={() => changeSource("spotify")}
-            disabled={downloading}
+            disabled={busy}
           >
-            <Disc3 size={18} /> Spotify
+            <Disc3 size={23} /><span><strong>Spotify</strong><small>Tracks, albums & playlists</small></span>
+            {source === "spotify" && <CheckCircle2 size={17} className="sourceSelected" />}
           </button>
           <button
             id="web-source-tab"
@@ -390,9 +519,10 @@ export function DownloaderView({
             aria-controls="download-source-panel"
             className={source === "web" ? "active" : ""}
             onClick={() => changeSource("web")}
-            disabled={downloading}
+            disabled={busy}
           >
-            <Globe2 size={18} /> Direct link
+            <Globe2 size={23} /><span><strong>Direct link</strong><small>YouTube & supported sites</small></span>
+            {source === "web" && <CheckCircle2 size={17} className="sourceSelected" />}
           </button>
         </div>
 
@@ -422,7 +552,7 @@ export function DownloaderView({
             })}
           </div>
 
-          <label className="downloadField">
+          <label className="downloadField downloadUrlField">
             <span>
               <Link2 size={15} />
               {source === "spotify" ? "Spotify URL" : mode === "playlist" ? "Playlist URL" : "Media URL"}
@@ -430,7 +560,7 @@ export function DownloaderView({
                 <small className="downloadDetected">Detected: {modeName(detectedSpotifyMode)}</small>
               )}
             </span>
-            <input
+            <div className="downloadUrlControl"><input
               type="url"
               inputMode="url"
               autoComplete="off"
@@ -442,20 +572,18 @@ export function DownloaderView({
                   ? "https://www.youtube.com/playlist?list=..."
                   : "https://www.youtube.com/watch?v=..."}
               aria-describedby={source === "spotify" ? "spotify-download-note" : undefined}
-              disabled={downloading}
+              disabled={busy}
               required={section === "download"}
-            />
+              spellCheck={false}
+            /><button type="button" className="downloadPasteButton" onClick={() => void pasteUrl()} disabled={busy} title="Paste link from clipboard"><ClipboardPaste size={16} /> Paste</button></div>
           </label>
 
           {source === "spotify" && (
             <div id="spotify-download-note" className="downloadSourceNote">
               <Info size={18} />
               <div>
-                <strong>How Spotify downloads work</strong>
-                <p>Spotify supplies the metadata. spotDL matches it to audio hosted elsewhere—normally YouTube—so a FLAC conversion is not true lossless audio.</p>
-                <p className="downloadSetupNote">
-                  {status?.spotdlInstalled ? "Spotify tools are ready." : "First-use setup:"} {status?.spotdlInstalled ? "A fresh setup is" : "Loavy downloads"} about 125 MB for managed spotDL and FFmpeg.
-                </p>
+                <strong>Spotify metadata, matched audio</strong>
+                <p>Tracks are matched to public audio on YouTube. Quality depends on the match; Spotify audio streams are not downloaded.</p>
               </div>
             </div>
           )}
@@ -469,13 +597,13 @@ export function DownloaderView({
                 value={destination}
                 onChange={(event) => setDestination(event.target.value)}
                 placeholder="Downloads/Loavy Player"
-                disabled={downloading}
+                disabled={busy}
               />
               <button
                 type="button"
                 className="iconButton borderedIconButton"
                 onClick={chooseFolder}
-                disabled={downloading}
+                disabled={busy}
                 title="Choose folder"
                 aria-label="Choose download folder"
               >
@@ -484,22 +612,25 @@ export function DownloaderView({
             </div>
           </label>
 
-          <label className="downloadField">
-            <span><Disc3 size={15} /> Audio format</span>
-            <select value={format} onChange={(event) => setFormat(event.target.value as DownloadFormat)} disabled={downloading}>
-              <option value="m4a">M4A · Recommended</option>
-              <option value="mp3">MP3 · Compatible</option>
-              <option value="opus">Opus · Efficient</option>
-              <option value="flac">FLAC · Converted</option>
-            </select>
-          </label>
         </div>
 
-        {format === "flac" && source !== "spotify" && (
+        <fieldset className="downloadFormats" disabled={busy}>
+          <legend>Choose your audio format</legend>
+          <div>{AUDIO_FORMATS.map((option) => (
+            <label key={option.value} className={format === option.value ? "selected" : ""}>
+              <input type="radio" name="audio-format" value={option.value} checked={format === option.value} onChange={() => setFormat(option.value)} />
+              <strong>{option.label}</strong><small>{option.description}</small>
+            </label>
+          ))}</div>
+        </fieldset>
+
+        <div className="downloadOutputPreview"><Music2 size={17} /><div><span>Example file</span><output>{outputPreview}</output></div><button type="button" onClick={() => setSection("naming")} disabled={busy}>Edit naming</button></div>
+
+        {format === "flac" && (
           <p className="downloadFieldHint">FLAC cannot add quality that is missing from the original source.</p>
         )}
 
-        {downloading && (
+        {(downloading || repairing) && (
           <div className="downloadProgress" aria-live="polite" role="status">
             <div className={percent === null ? "progressTrack indeterminate" : "progressTrack"}>
               <span style={percent === null ? undefined : { width: `${percent}%` }} />
@@ -518,21 +649,47 @@ export function DownloaderView({
           </div>
         )}
 
-        {error && <div className="downloadNotice error" role="alert">{error}</div>}
+        {error && (
+          <div className="downloadNotice error downloadFailureNotice" role="alert">
+            <Info size={18} aria-hidden="true" />
+            <div>
+              <strong>{error.message}</strong>
+              <span>{failureHint(error)}</span>
+              <div className="downloadFailureActions">
+                {lastRequestRef.current && error.category !== "cancelled" && (
+                  <button
+                    type="button"
+                    className="secondaryAction"
+                    onClick={() => void runDownload({ ...lastRequestRef.current! })}
+                    disabled={downloading || repairing}
+                  >
+                    <RotateCcw size={15} /> Retry the same request
+                  </button>
+                )}
+              </div>
+              {error.diagnostic && (
+                <details className="downloadFailureDetails">
+                  <summary>Show technical details</summary>
+                  <pre>{formatDiagnostic(error)}</pre>
+                </details>
+              )}
+            </div>
+          </div>
+        )}
 
         {result && (
           <div className="downloadResult" aria-live="polite">
             <div className="downloadResultHeader">
               <CheckCircle2 size={20} />
               <div>
-                <strong>{result.downloadedCount} {result.downloadedCount === 1 ? "song" : "songs"} ready</strong>
+                <strong>{result.downloadedCount > 0 ? `${result.downloadedCount} ${result.downloadedCount === 1 ? "song" : "songs"} ready to listen` : "No new files saved"}</strong>
                 <span>{result.destination}</span>
                 <small className="downloadResultMeta">{sourceName(result.source)} · {result.format.toUpperCase()}</small>
               </div>
               <button
                 type="button"
                 className="secondaryAction"
-                onClick={() => void onRevealDownload(result.files[0] || result.destination)}
+                onClick={() => void revealDownload(result.files[0] || result.destination)}
               >
                 <FolderOpen size={16} /> Show files
               </button>
@@ -542,20 +699,16 @@ export function DownloaderView({
                 <Info size={16} />
                 <div>
                   <strong>
-                    {result.failedCount > 0
-                      ? `${result.failedCount} ${result.failedCount === 1 ? "track" : "tracks"} could not be downloaded.`
-                      : "Completed with a warning."}
+                    Some items need your attention
                   </strong>
-                  <span>
-                    {result.warnings[0] || "The other files were saved successfully."}
-                    {result.warnings.length > 1 ? ` (+${result.warnings.length - 1} more)` : ""}
-                  </span>
+                  <span>{result.warnings[0] || "The other files were saved successfully."}</span>
+                  {result.warnings.length > 1 && <details><summary>Show all {result.warnings.length} notices</summary><ul>{result.warnings.slice(1).map((warning, index) => <li key={index}>{warning}</li>)}</ul></details>}
                 </div>
               </div>
             )}
             {result.files.length > 0 && (
               <div className="downloadedFiles">
-                {result.files.slice(0, 5).map((file) => <span key={file}>{fileName(file)}</span>)}
+                {result.files.slice(0, 5).map((file) => <button type="button" key={file} onClick={() => void revealDownload(file)} title={file}><Music2 size={14} />{fileName(file)}<FolderOpen size={14} /></button>)}
                 {result.files.length > 5 && <span>+ {result.files.length - 5} more</span>}
               </div>
             )}
@@ -563,21 +716,22 @@ export function DownloaderView({
         )}
 
         <div className="downloadActions">
-          <button className="primaryAction" type="submit" disabled={downloading || !url.trim()}>
+          <button className="primaryAction" type="submit" disabled={busy || !url.trim()}>
             {downloading ? <LoaderCircle size={18} className="spin" /> : <Download size={18} />}
-            {downloading ? "Downloading" : actionLabel}
+            {repairing ? "Tools are being repaired" : downloading ? "Downloading" : actionLabel}
           </button>
-          {downloading && (
+          {(downloading || repairing) && (
             <button className="secondaryAction dangerAction" type="button" onClick={() => void cancelDownload()} disabled={cancelling}>
-              <Square size={15} /> {cancelling ? "Stopping" : "Cancel"}
+              <Square size={15} /> {cancelling ? "Stopping" : repairing ? "Cancel repair" : "Cancel"}
             </button>
           )}
-          {!downloading && (result || error) && (
+          {!downloading && !repairing && (result || error) && (
             <button className="secondaryAction" type="button" onClick={reset}>
               <RotateCcw size={16} /> New download
             </button>
           )}
         </div>
+        <p className="downloadLibraryHint">To see saved music in your library, choose a configured music folder and scan it in Settings.</p>
         </div>
 
         <div
@@ -603,7 +757,7 @@ export function DownloaderView({
                   type="button"
                   className="namingResetButton"
                   onClick={resetFilenameTemplate}
-                  disabled={downloading}
+                  disabled={busy}
                   title="Reset filename template"
                   aria-label="Reset filename template to artist and title"
                 >
@@ -617,7 +771,7 @@ export function DownloaderView({
                   value={filenameTemplate}
                   onChange={(event) => setFilenameTemplate(event.target.value)}
                   onFocus={() => setActiveTemplateField("filename")}
-                  disabled={downloading}
+                  disabled={busy}
                   autoComplete="off"
                   spellCheck={false}
                   maxLength={512}
@@ -640,7 +794,7 @@ export function DownloaderView({
                   type="button"
                   className="namingResetButton"
                   onClick={resetFolderTemplate}
-                  disabled={downloading}
+                  disabled={busy}
                   title="Reset folder template"
                   aria-label="Reset folder template to album artist and album"
                 >
@@ -654,7 +808,7 @@ export function DownloaderView({
                   value={folderTemplate}
                   onChange={(event) => setFolderTemplate(event.target.value)}
                   onFocus={() => setActiveTemplateField("folder")}
-                  disabled={downloading}
+                  disabled={busy}
                   autoComplete="off"
                   spellCheck={false}
                   maxLength={512}
@@ -664,14 +818,14 @@ export function DownloaderView({
               <label id="folder-template-help" className="namingFolderToggle">
                 <span>
                   <strong>Use folders for single tracks</strong>
-                  <small>Otherwise, folder structure applies only to albums and playlists.</small>
+                  <small>Applies to albums and direct-link playlists by default. Spotify playlists stay together in the destination.</small>
                 </span>
                 <input
                   type="checkbox"
                   role="switch"
                   checked={applyFolderToSingle}
                   onChange={(event) => setApplyFolderToSingle(event.target.checked)}
-                  disabled={downloading}
+                  disabled={busy}
                 />
               </label>
               <div id="folder-template-preview" className="namingPreview" aria-live="polite">
@@ -693,7 +847,7 @@ export function DownloaderView({
                   type="button"
                   className="namingTokenChip"
                   onClick={() => insertTemplateToken(token)}
-                  disabled={downloading}
+                  disabled={busy}
                   aria-label={`Insert ${token} into ${activeTemplateField} template`}
                 >
                   {token}
@@ -704,6 +858,28 @@ export function DownloaderView({
         </div>
       </form>
     </section>
+  );
+}
+
+function ToolStatusPill({ label, health }: { label: string; health?: DownloaderToolHealth }) {
+  const usable = health?.state === "ready" || health?.state === "updateAvailable";
+  const stateLabel = !health
+    ? "checking"
+    : health.state === "ready"
+      ? health.version || "ready"
+      : health.state === "updateAvailable"
+        ? `${health.version || "installed"} · update ready`
+        : health.state === "corrupt"
+          ? "needs repair"
+          : "not installed";
+  return (
+    <div
+      className={usable ? "downloaderStatus ready" : health ? `downloaderStatus ${health.state}` : "downloaderStatus"}
+      title={health?.detail || undefined}
+    >
+      {usable ? <CheckCircle2 size={14} /> : <Wrench size={14} />}
+      <span>{label}: {stateLabel}</span>
+    </div>
   );
 }
 
@@ -734,24 +910,84 @@ function isHttpUrl(value: string) {
 
 function phaseLabel(phase: DownloadProgress["phase"], source: DownloadSource) {
   switch (phase) {
-    case "installing": return "One-time setup";
-    case "resolving": return source === "spotify" ? "Matching audio" : "Resolving link";
-    case "starting": return "Starting downloader";
+    case "preparing": return "Verifying managed tools";
+    case "reading": return source === "spotify" ? "Reading Spotify release" : "Reading media information";
     case "downloading": return "Downloading audio";
-    case "converting": return "Converting audio";
-    case "tagging": return "Writing metadata";
+    case "processing": return "Processing audio";
+    case "embedding": return "Embedding metadata";
+    case "saving": return "Saving verified files";
   }
 }
 
 function phaseFallback(phase: DownloadProgress["phase"] | undefined, source: DownloadSource, format: DownloadFormat) {
   switch (phase) {
-    case "installing": return source === "spotify" ? "Installing spotDL and FFmpeg..." : "Installing yt-dlp...";
-    case "resolving": return source === "spotify" ? "Finding the best audio match..." : "Reading media information...";
+    case "preparing": return "Downloading or verifying the managed downloader tools...";
+    case "reading": return source === "spotify" ? "Reading Spotify metadata..." : "Reading media information...";
     case "downloading": return "Downloading the best available audio...";
-    case "converting": return `Converting to ${format.toUpperCase()}...`;
-    case "tagging": return "Adding title, artist, album, and artwork...";
+    case "processing": return `Processing ${format.toUpperCase()} audio...`;
+    case "embedding": return "Adding title, artist, album, and artwork...";
+    case "saving": return "Saving the finished audio file...";
     default: return source === "spotify" ? "Starting spotDL..." : "Starting yt-dlp...";
   }
+}
+
+function localFailure(message: string): DownloadFailure {
+  return { message, category: "validation", retryable: false, diagnostic: null };
+}
+
+function normalizeDownloadFailure(error: unknown): DownloadFailure {
+  if (error instanceof Error) return normalizeDownloadFailure(error.message);
+  if (typeof error === "string") {
+    try {
+      return normalizeDownloadFailure(JSON.parse(error));
+    } catch {
+      return localFailure(error);
+    }
+  }
+  if (error && typeof error === "object" && "message" in error) {
+    const candidate = error as Partial<DownloadFailure>;
+    return {
+      message: typeof candidate.message === "string" ? candidate.message : "The download failed.",
+      category: typeof candidate.category === "string" ? candidate.category : "unknown",
+      retryable: candidate.retryable === true,
+      diagnostic: candidate.diagnostic && typeof candidate.diagnostic === "object"
+        ? candidate.diagnostic
+        : null
+    };
+  }
+  return localFailure(String(error));
+}
+
+function failureHint(error: DownloadFailure) {
+  switch (error.category) {
+    case "jsRuntime": return "Repair the tools, then retry the exact same request.";
+    case "network": return "Check your connection and retry when the source is reachable.";
+    case "unavailable": return "The source may be private, removed, restricted, or unavailable in your region.";
+    case "disk": return "Check the destination folder, free space, and write permissions.";
+    case "cancelled": return "No additional action is needed.";
+    default: return error.retryable ? "You can retry the exact same request below." : "Review the technical details if you need to troubleshoot further.";
+  }
+}
+
+function formatDiagnostic(error: DownloadFailure) {
+  const diagnostic = error.diagnostic;
+  if (!diagnostic) return "No technical details were reported.";
+  return [
+    `Loavy: ${diagnostic.loavyVersion}`,
+    `Source: ${diagnostic.source}`,
+    `Format: ${diagnostic.requestedFormat}`,
+    `yt-dlp: ${diagnostic.ytDlpVersion || "unavailable"}`,
+    `FFmpeg: ${diagnostic.ffmpegVersion || "unavailable"}`,
+    `JavaScript runtime: ${diagnostic.jsRuntime || "unavailable"}`,
+    `Exit code: ${diagnostic.exitCode ?? "unavailable"}`,
+    "",
+    diagnostic.reason,
+    diagnostic.relevantStderr ? `\nRelevant downloader output:\n${diagnostic.relevantStderr}` : ""
+  ].filter((line) => line !== "").join("\n");
+}
+
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function downloadActionLabel(source: DownloadSource, mode: DownloadMode) {
@@ -804,7 +1040,10 @@ const TEMPLATE_PREVIEW_VALUES: Record<string, string> = {
 };
 
 function renderTemplatePreview(template: string, folder = false) {
-  const rendered = template.replace(/\{([a-z_]+)\}/g, (token, key: string) => TEMPLATE_PREVIEW_VALUES[key] ?? token).trim();
+  const rendered = template.replace(/\{([a-z_]+)\}/g, (token, key: string) => {
+    const value = TEMPLATE_PREVIEW_VALUES[key];
+    return value === undefined ? token : value.replace(/[<>:"/\\|?*]/g, "_");
+  }).trim();
   if (!folder) return rendered;
   return rendered.replace(/\\/g, "/").replace(/\/{2,}/g, "/").replace(/^\/+|\/+$/g, "");
 }

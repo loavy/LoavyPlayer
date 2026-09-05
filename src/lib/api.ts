@@ -11,15 +11,17 @@ import type {
   FolderRenameResult,
   LibraryFolderEntry,
   LibraryFolderListing,
+  LibraryTrackCopyConflictAction,
+  LibraryTrackCopyResult,
   MusicFolder,
   MediaDownloadRequest,
+  PlaylistFolderCreateResult,
   RoomCreateRequest,
   RoomClientStatus,
   RoomJoinRequest,
   RoomJoinResult,
   RoomPlaybackState,
   RoomStatus,
-  Playlist,
   ScanSummary,
   ScanTaskState,
   Track,
@@ -58,22 +60,26 @@ export const api = {
     invoke<Track | null>("find_room_playback_track", { playback }),
   listAlbums: () => invoke<Album[]>("list_albums"),
   listArtists: () => invoke<Artist[]>("list_artists"),
-  listPlaylists: () => invoke<Playlist[]>("list_playlists"),
-  createPlaylist: (name: string) => invoke<Playlist>("create_playlist", { name }),
-  renamePlaylist: (playlistId: number, name: string) =>
-    invoke<Playlist>("rename_playlist", { playlistId, name }),
-  deletePlaylist: (playlistId: number) =>
-    invoke<void>("delete_playlist", { playlistId }),
-  addTrackToPlaylist: (playlistId: number, trackId: number) =>
-    invoke<void>("add_track_to_playlist", { playlistId, trackId }),
-  removeTrackFromPlaylist: (playlistId: number, trackId: number) =>
-    invoke<void>("remove_track_from_playlist", { playlistId, trackId }),
-  reorderPlaylistTracks: (playlistId: number, trackIds: number[]) =>
-    invoke<void>("reorder_playlist_tracks", { playlistId, trackIds }),
-  listPlaylistTracks: (playlistId: number) =>
-    invoke<Track[]>("list_playlist_tracks", { playlistId }),
   listLibraryFolder: (rootId: number, relativePath: string) =>
     invoke<LibraryFolderListing>("list_library_folder", { rootId, relativePath }),
+  listPlaylistFolders: () =>
+    invoke<LibraryFolderEntry[]>("list_playlist_folders"),
+  importPlaylistImage: () => invoke<string | null>("import_playlist_image"),
+  copyTrackToLibraryFolder: (
+    trackId: number,
+    rootId: number,
+    relativePath: string,
+    conflictAction: LibraryTrackCopyConflictAction = "report"
+  ) => invoke<LibraryTrackCopyResult>("copy_track_to_library_folder", {
+    trackId,
+    rootId,
+    relativePath,
+    conflictAction
+  }),
+  createPlaylistFolder: (name: string) =>
+    invoke<PlaylistFolderCreateResult>("create_playlist_folder", { name }),
+  createPlaylistFolderWithTrack: (name: string, trackId: number) =>
+    invoke<PlaylistFolderCreateResult>("create_playlist_folder_with_track", { name, trackId }),
   createLibraryFolder: (rootId: number, parentRelativePath: string, name: string) =>
     invoke<LibraryFolderEntry>("create_library_folder", { rootId, parentRelativePath, name }),
   renameLibraryFolder: (rootId: number, relativePath: string, name: string) =>
@@ -88,6 +94,7 @@ export const api = {
   downloadMedia: (request: MediaDownloadRequest) =>
     invoke<DownloadResult>("download_media", { request }),
   getDownloaderStatus: () => invoke<DownloaderStatus>("get_downloader_status"),
+  repairDownloaderTools: () => invoke<DownloaderStatus>("repair_downloader_tools"),
   cancelMediaDownload: () => invoke<void>("cancel_media_download"),
   selectDownloadFolder: () => invoke<string | null>("select_download_folder"),
   getDefaultGuestSongFolder: () => invoke<string | null>("get_default_guest_song_folder"),
