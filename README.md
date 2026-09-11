@@ -79,6 +79,18 @@ Playlist detail pages use one scrollbar for the banner, actions, and songs. Scro
 
 Mouse back/forward buttons, **Alt+Left/Right**, and the top navigation arrows move through tabs, playlist details, albums, artists, and folder locations. Navigation waits while an edit dialog is open. The pop-up Mini Player option has been removed; playback controls remain in the main window.
 
+## Lyrics
+
+Open the now-playing view and select **Lyrics**. Loavy first loads your saved lyrics, then searches [LRCLIB](https://lrclib.net/docs) online if none are saved. Automatic matches require the same title and artist and a duration within two seconds, and prefer synchronized lyrics. Matches are saved for offline use. Your song files and audio are never uploaded; only title/artist metadata or your search query is sent to LRCLIB.
+
+Use **Find** to search by title and artist, preview alternatives, and choose another version. Timed versions support clicking a line to seek. Scroll freely to pause automatic following, then select **Follow song** to return to the current line. The active line stays centered when the window is resized. Plain text remains readable without inventing timing. In host-controlled Jams, seeking is disabled for guests.
+
+Use the **download icon** to save `.lrc` (timed) or `.txt` (plain) lyrics through the Windows save dialog, import your own `.lrc`/`.txt` file, remove saved lyrics, or turn automatic online search off. **Offline mode** in Settings disables online lyric requests too. Removing lyrics suppresses automatic lookup for that song; you can still choose another version with **Find**.
+
+**Edit** lets you change the text or add timing. Put the cursor on a line and select **Stamp current time** while listening; the cursor advances to the next line. The **− / + 0.25s** buttons shift all timestamps earlier or later. Imported LRC offset tags are respected. Select **Save** to apply changes; unfinished drafts survive closing the editor, changing songs, and restarting. Edits remain on your device and are never published to LRCLIB.
+
+Provider coverage varies; some songs have only plain lyrics or no match. Network failures offer manual search/import instead of blocking playback. Lyrics for unmatched host streams are currently unavailable; local song matches can use their saved lyrics.
+
 ## Room & Jam Mode
 
 Room & Jam Mode creates a private, host-managed listening session. Loavy synchronizes play, pause, seeking, and song changes without a central Loavy server.
@@ -86,19 +98,22 @@ Room & Jam Mode creates a private, host-managed listening session. Loavy synchro
 ### Start a room
 
 1. Connect everyone to the same Wi-Fi/LAN or the same VPN.
-2. Open **Room**, choose a room name and a password of at least four characters.
+2. Open **Room**, select **Start a Jam**, and choose a name and a password of at least four characters. Port and guest-limit options are under **Connection settings**.
 3. Enable **Guests can change songs** if guests should be allowed to control playback.
 4. When guest control is enabled, received songs default to the host's **Music** folder; choose another folder if preferred.
-5. Select **Start room** and allow Loavy through Windows Firewall on private networks.
+5. Select **Start Jam** and allow Loavy through Windows Firewall on private networks.
+6. Select **Copy invite** for the Wi-Fi or VPN adapter your friends can reach. Share the password separately; it is not included in the invite.
 
 The status panel lists every usable network adapter. Friends on the same Wi-Fi should use the Wi-Fi/LAN address. Friends connecting remotely through Tailscale, ZeroTier, Radmin VPN, Hamachi, WireGuard, or a similar service must use the address belonging to that VPN adapter. A public internet IP is not the VPN address and will not normally work.
 
 ### Join a room
 
 1. Wait until the host has started the room.
-2. Select **Search** under **Rooms nearby**.
-3. Select the discovered room, enter its password and your display name, then choose **Join room**.
-4. If discovery is unavailable, enter the host's VPN address and room port manually. Use **Check only** to test the details first.
+2. Open **Room**, select **Join friends**, then paste the shared invite or select **Search** under **Rooms nearby**.
+3. Select a discovered room if needed, enter its password and your display name, then choose **Join Jam**.
+4. You can also enter `host:port` or the host's address and port separately. Use **Check only** to test the details first. Invites beginning with `loavy://jam?` are pasted into Loavy; they do not require an OS link handler.
+
+The live Jam card shows the current song. Hosts can see connected guests, remove a guest, or **End Jam** to disconnect everyone. Guests can **Leave Jam** to regain local playback control. Session monitoring continues when you visit other tabs. Host playback changes are sent promptly, with periodic synchronization to correct drift. Silent authentication connections time out instead of leaving the form waiting indefinitely.
 
 Nearby discovery uses UDP broadcast/multicast. Some routed mesh VPNs block that traffic even though direct connections work, so manual entry remains available.
 
@@ -162,9 +177,12 @@ Downloader interface regression checks run in hidden headless Microsoft Edge wit
 
 ```powershell
 npm run test:downloader
+npm run test:jam
 ```
 
 This check requires Node.js 22+ and Edge at its standard Windows installation path (or set `DOWNLOADER_TEST_BROWSER` to a Chromium browser executable). It covers completion event ordering, failed status refreshes, cancellation, saved preferences, and responsive layouts. Screenshots are written to `src-tauri/target/downloader-browser`. These checks do not contact Spotify or YouTube.
+
+The Jam/lyrics browser check covers automatic online lookup, offline mode, search previews, export requests, timing edits, draft recovery, seeking, manual scrolling, stale requests, invite handling, host permissions, and responsive layouts. It uses mocked native commands; screenshots are in `src-tauri/target/jam-lyrics-browser`. Rust tests also check provider errors and song matching, silent/closed authentication connections, and host shutdown notifications. Run `cargo test --manifest-path src-tauri/Cargo.toml live_lrclib_search_returns_usable_lyrics -- --ignored` for the optional live provider check. A real two-computer LAN/VPN session is still needed to validate network-specific behavior.
 
 After building the Windows release, close any running Loavy instance and run `npm run test:desktop`. This launches the actual release executable with your existing app profile, verifies startup and native downloader status checks, and saves a screenshot and logs in `src-tauri/target/startup-check`. It closes only the test process when finished. This catches native startup failures that browser mocks cannot reproduce, including oversized downloader futures overflowing the Windows UI-thread stack.
 

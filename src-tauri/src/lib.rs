@@ -5,6 +5,7 @@ mod downloader;
 mod explorer;
 mod fetchers;
 mod library;
+mod lyrics;
 mod models;
 mod playlist_art;
 mod room;
@@ -81,6 +82,9 @@ pub fn run() {
             commands::save_track_lyrics,
             commands::delete_track_lyrics,
             commands::import_track_lyrics,
+            lyrics::lookup_online_lyrics,
+            lyrics::search_online_lyrics,
+            lyrics::export_track_lyrics,
             commands::mark_track_played,
             commands::set_setting,
             commands::get_setting,

@@ -253,6 +253,17 @@ export type TrackLyricsUpdate = {
   source?: string | null;
 };
 
+export type LyricsMatch = {
+  id: number;
+  trackName: string | null;
+  artistName: string | null;
+  albumName: string | null;
+  duration: number | null;
+  instrumental: boolean;
+  plainLyrics: string | null;
+  syncedLyrics: string | null;
+};
+
 export type TrackPlaybackStats = {
   trackId: number;
   lastPlayedAt: number;

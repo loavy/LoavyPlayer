@@ -122,8 +122,38 @@ try {
         }
         Write-Output 'Native playlist checks passed: real library cards, detail view, editor, and 960/640-pixel window sizes.'
     }
+    $jam = Wait-StartupElement 'Room'
+    $jam.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
+    $null = Wait-StartupElement 'Same song. Same moment.'
+    $join = Wait-StartupElement 'Join friends'
+    # aria-pressed buttons expose TogglePattern in WebView2.
+    $join.GetCurrentPattern([System.Windows.Automation.TogglePattern]::Pattern).Toggle()
+    $null = Wait-StartupElement 'Join your friends'
+    Save-DesktopCapture 'desktop-jam-640.png'
+    $null = [LoavyStartupWindow]::MoveWindow($startupApp.MainWindowHandle, 20, 20, 1100, 760, $true)
+    Save-DesktopCapture 'desktop-jam-1100.png'
+    Write-Output 'Native Jam checks passed: host/join forms and responsive release WebView.'
+    $nowPlaying = Wait-StartupElement 'Open now playing'
+    if ($nowPlaying.Current.IsEnabled) {
+        $nowPlaying.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
+        $lyricsMode = Wait-StartupElement 'Lyrics'
+        $lyricsMode.GetCurrentPattern([System.Windows.Automation.TogglePattern]::Pattern).Toggle()
+        $find = Wait-StartupElement 'Find'
+        Save-DesktopCapture 'desktop-lyrics-1100.png'
+        $find.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
+        $null = Wait-StartupElement 'Song title and artist'
+        Save-DesktopCapture 'desktop-lyrics-search.png'
+        $backToLyrics = Wait-StartupElement 'Back to lyrics'
+        $backToLyrics.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
+        $null = [LoavyStartupWindow]::MoveWindow($startupApp.MainWindowHandle, 20, 20, 640, 520, $true)
+        $null = Wait-StartupElement 'Download and lyric options'
+        Save-DesktopCapture 'desktop-lyrics-640.png'
+        $closeNowPlaying = Wait-StartupElement 'Close now playing'
+        $closeNowPlaying.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
+        Write-Output 'Native lyrics checks passed: viewer, online search form, and 1100/640-pixel layouts.'
+    }
     $startupApp.Refresh()
-    if ($startupApp.HasExited -or -not $startupApp.Responding) { throw 'The app stopped responding during playlist checks.' }
+    if ($startupApp.HasExited -or -not $startupApp.Responding) { throw 'The app stopped responding during playlist/Jam checks.' }
     Write-Output 'Release startup passed: native window, Songs, Downloader and Playlists navigation remained responsive with the existing profile.'
 } finally {
     $startupApp.Refresh()

@@ -44,6 +44,8 @@ browser.__TAURI_INTERNALS__ = {
     if (command === "list_music_folders") return [{ id: 1, path: "C:\\Music", enabled: true, createdAt: 0 }];
     if (["list_albums", "list_artists", "list_fetchers"].includes(command)) return [];
     if (command === "get_scan_state") return { running: false, cancelRequested: false };
+    if (command === "get_room_status") return { running: false, connectedUsers: 0, networkAddresses: [], users: [] };
+    if (command === "get_room_client_status") return { connected: false, allowGuestControl: false };
     if (command === "get_downloader_status") { const health = { state: "ready", version: "test", expectedVersion: "test", detail: null }; return { running: false, ytDlp: health, ffmpeg: health, jsRuntime: health, spotdl: health }; }
     if (command === "mark_track_played") { emit("library://changed", { kind: "track-played", trackIds: [args.trackId], rootId: null }); return { trackId: args.trackId, lastPlayedAt: Date.now(), playCount: 1 }; }
     if (command === "list_library_folder") return { rootId: 1, relativePath: args.relativePath, path: args.relativePath ? `C:\\Music\\${args.relativePath}` : "C:\\Music", folders: args.relativePath ? [] : folders };

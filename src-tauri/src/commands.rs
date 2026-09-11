@@ -456,8 +456,8 @@ pub async fn save_track_lyrics(
 #[tauri::command]
 pub async fn delete_track_lyrics(state: State<'_, AppState>, track_id: i64) -> CommandResult<()> {
     let db = state.db.lock().map_err(|err| err.to_string())?;
-    db.delete_track_lyrics(track_id)
-        .map_err(|err| err.to_string())
+    db.delete_track_lyrics(track_id).map_err(|err| err.to_string())?;
+    db.set_setting(&format!("lyricsSuppressed:{track_id}"), "true").map_err(|err| err.to_string())
 }
 
 #[tauri::command]
@@ -875,7 +875,7 @@ fn is_lrc_timestamp(tag: &str) -> bool {
             .unwrap_or(false)
 }
 
-fn plain_text_from_lrc(value: &str) -> String {
+pub(crate) fn plain_text_from_lrc(value: &str) -> String {
     value
         .lines()
         .filter_map(|line| {

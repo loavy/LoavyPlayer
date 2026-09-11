@@ -67,12 +67,8 @@ function receivedGuestTrack(playback: RoomPlaybackState, path: string): Track {
 }
 
 function trackMatchesPlayback(track: Track, playback: RoomPlaybackState) {
-  const playbackTrackId = playback.trackId || null;
-  const sameRoomTrackId = playbackTrackId !== null && (
-    track.id === playbackTrackId
-    || (track.id < 0 && Math.abs(track.id) === Math.abs(playbackTrackId))
-  );
-  return sameRoomTrackId || (
+  // Database IDs belong to a computer, so an equal ID alone is not a song match.
+  return (
     displayTrackTitle(track) === playback.title &&
     displayArtist(track.artist) === playback.artist &&
     displayAlbum(track.album) === playback.album
@@ -240,26 +236,38 @@ function App() {
 
   useEffect(() => {
     let disposed = false;
+    let syncRevision = 0;
+    let disconnectReason: string | null = null;
 
     async function syncToRoomPlayback(playback: RoomPlaybackState, receivedTrack?: Track) {
       if (disposed) return;
+      const revision = ++syncRevision;
       try {
         const current = audioEngine.snapshot().current;
         let track = receivedTrack
           || (current && trackMatchesPlayback(current, playback) ? current : null)
           || await api.findRoomPlaybackTrack(playback);
+        if (disposed || revision !== syncRevision) return;
         if (!track) {
-          const client = roomClientStatusRef.current;
+          let client = roomClientStatusRef.current;
+          if (!client.host || !client.port) {
+            const status = await api.getRoomClientStatus();
+            if (disposed || revision !== syncRevision) return;
+            client = { connected: status.connected, allowGuestControl: status.allowGuestControl, host: status.host || null, port: status.port || null };
+            roomClientStatusRef.current = client;
+            audioEngine.setLocalControlBlocked(client.connected && !client.allowGuestControl);
+          }
           if (!playback.streamPath || !client.host || !client.port) {
             setError(`Room sync could not find "${playback.title || "the current track"}" in your local library, and the host did not provide a stream.`);
             return;
           }
-          track = streamTrackFromPlayback(playback, `http://${client.host}:${client.port}${playback.streamPath}`);
+          const host = client.host.includes(":") ? `[${client.host}]` : client.host;
+          track = streamTrackFromPlayback(playback, `http://${host}:${client.port}${playback.streamPath}`);
         }
         setError(null);
         await audioEngine.syncToRoomPlayback(track, playback);
       } catch (err) {
-        setError(String(err));
+        if (!disposed && revision === syncRevision) setError(String(err));
       }
     }
 
@@ -277,7 +285,8 @@ function App() {
       }),
       listen<string>("room://kicked", (event) => {
         if (!disposed) {
-          setError(event.payload || "The host removed you from the room.");
+          disconnectReason = event.payload || "The host removed you from the Jam.";
+          setError(disconnectReason);
         }
       }),
       listen<string>("room://error", (event) => {
@@ -287,7 +296,9 @@ function App() {
       }),
       listen("room://disconnected", () => {
         if (!disposed) {
-          setError("Room connection was lost. Rejoin the room to sync playback again.");
+          syncRevision++;
+          setError(disconnectReason || "Jam connection was lost. Rejoin to sync playback again.");
+          disconnectReason = null;
           roomClientStatusRef.current = { connected: false, allowGuestControl: false, host: null, port: null };
           audioEngine.setLocalControlBlocked(false);
         }
@@ -305,12 +316,17 @@ function App() {
     let disposed = false;
     let timer = 0;
     let lastSignature = "";
+    let broadcasting = false;
+    let pendingBroadcast = false;
     async function broadcast() {
+      if (disposed) return;
+      if (broadcasting) { pendingBroadcast = true; return; }
+      window.clearTimeout(timer);
+      broadcasting = true;
       const snapshot = audioEngine.snapshot();
       if (snapshot.current) {
-        const signature = `${snapshot.current.id}:${snapshot.playing ? 1 : 0}:${Math.floor(snapshot.position / 1_000)}`;
+        const signature = `${snapshot.current.path}:${snapshot.playing ? 1 : 0}:${Math.round(snapshot.position)}`;
         if (signature !== lastSignature) {
-          lastSignature = signature;
           try {
             await api.broadcastRoomPlaybackState({
               trackId: snapshot.current.id,
@@ -323,17 +339,26 @@ function App() {
               playing: snapshot.playing,
               hostTimestampMs: Date.now()
             });
+            lastSignature = signature;
           } catch {
             // Room sync is best-effort; the Room panel shows explicit server errors.
           }
         }
       }
-      if (!disposed) timer = window.setTimeout(() => void broadcast(), 2_000);
+      broadcasting = false;
+      if (!disposed) timer = window.setTimeout(() => void broadcast(), pendingBroadcast ? 0 : 2_000);
+      pendingBroadcast = false;
     }
+    function onPlaybackChange() {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => void broadcast(), 40);
+    }
+    window.addEventListener("loavy:local-playback-changed", onPlaybackChange);
     void broadcast();
     return () => {
       disposed = true;
       window.clearTimeout(timer);
+      window.removeEventListener("loavy:local-playback-changed", onPlaybackChange);
     };
   }, [roomHostRunning]);
 
@@ -692,7 +717,7 @@ function App() {
         />
       );
     }
-    if (activeView === "room") return <RoomView onError={setError} />;
+    if (activeView === "room") return null;
     if (activeView === "playlists") return <UserPlaylistsView tracks={tracks} onOpenFolders={() => setActiveView("folders")} />;
     if (activeView === "folders") return <FoldersView folders={folders} tracks={tracks} onOpenSettings={() => setActiveView("settings")} />;
     if (activeView === "folderQueue") return <FolderQueueView tracks={tracks} />;
@@ -760,6 +785,7 @@ function App() {
         </header>
         {error && <div className="errorBanner" role="alert"><span>{error}</span><button onClick={() => setError(null)} aria-label="Dismiss error"><X size={16} /></button></div>}
         <div className="contentArea">
+          <div className="persistentViewHost" hidden={activeView !== "room"}><RoomView onError={setError} /></div>
           <div className="persistentViewHost" hidden={activeView !== "downloader"}>
             <DownloaderView
               onDownloadMedia={api.downloadMedia}

@@ -27,6 +27,7 @@ import type {
   Track,
   TrackDeleteResult,
   TrackLyrics,
+  LyricsMatch,
   TrackLyricsUpdate,
   TrackPlaybackStats
 } from "../types";
@@ -50,6 +51,9 @@ export const api = {
     invoke<TrackDeleteResult>("delete_track_to_trash", { trackId }),
   getTrackLyrics: (trackId: number) =>
     invoke<TrackLyrics | null>("get_track_lyrics", { trackId }),
+  lookupOnlineLyrics: (trackId: number) => invoke<TrackLyrics | null>("lookup_online_lyrics", { trackId }),
+  searchOnlineLyrics: (query: string) => invoke<LyricsMatch[]>("search_online_lyrics", { query }),
+  exportTrackLyrics: (trackId: number, format: "lrc" | "txt") => invoke<string | null>("export_track_lyrics", { trackId, format }),
   saveTrackLyrics: (request: TrackLyricsUpdate) =>
     invoke<TrackLyrics>("save_track_lyrics", { request }),
   deleteTrackLyrics: (trackId: number) =>

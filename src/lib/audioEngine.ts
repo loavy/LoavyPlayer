@@ -398,20 +398,20 @@ class AudioEngine {
   }
 
   async syncToRoomPlayback(track: Track, playback: RoomPlaybackState): Promise<boolean> {
-    this.playlistKey = null;
     const targetPosition = Math.max(0, finiteNumber(playback.positionMs, 0));
-    const sameCurrentTrack = this.current?.id === track.id;
+    const sameCurrentTrack = this.current?.id === track.id && this.current?.path === track.path;
 
     if (!sameCurrentTrack) {
       // Preserve the prior local session before a transient Room source replaces it.
       this.flushSession();
+      this.playlistKey = null;
       this.explicitNextCount = 0;
       this.loadTrackPaused(track, [track], 0, targetPosition, true);
     }
 
     const mediaPosition = Number.isFinite(this.audio.currentTime) ? this.audio.currentTime * 1000 : this.position;
     const driftMs = Math.abs(mediaPosition - targetPosition);
-    if (!sameCurrentTrack || driftMs > 1_800) {
+    if (!sameCurrentTrack || driftMs > (playback.playing ? 1_000 : 150)) {
       this.setPendingSeek(targetPosition);
     }
 
@@ -421,13 +421,15 @@ class AudioEngine {
     this.startedForSource = true;
 
     let success = true;
+    const generation = this.loadGeneration;
     if (playback.playing) {
-      success = await this.startCurrentPlayback(this.loadGeneration, false, false);
+      if (this.audio.paused) success = await this.startCurrentPlayback(generation, false, false);
     } else {
       this.audio.pause();
       this.playing = false;
     }
 
+    if (generation !== this.loadGeneration) return false;
     this.playing = playback.playing && success;
     this.emit();
     // No local-playback event here: Room synchronization must not echo to the host.

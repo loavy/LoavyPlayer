@@ -205,7 +205,9 @@ impl RoomManager {
     }
 
     pub async fn start(&self, app: AppHandle, request: RoomCreateRequest) -> Result<RoomStatus> {
-        self.stop()?;
+        if self.status()?.running {
+            return Err(anyhow!("End your current Jam before starting another one."));
+        }
 
         let name = sanitize_room_name(&request.name)?;
         if request.password.trim().len() < 4 {
@@ -297,6 +299,7 @@ impl RoomManager {
         {
             runtime.handle.abort();
             runtime.discovery_handle.abort();
+            disconnect_room_clients(&runtime.state)?;
         }
         Ok(())
     }
@@ -390,7 +393,11 @@ impl RoomClientManager {
     }
 
     pub async fn join(&self, app: AppHandle, request: RoomJoinRequest) -> Result<RoomJoinResult> {
-        self.leave()?;
+        if self.status()?.connected {
+            return Err(anyhow!(
+                "Leave your current Jam before joining another one."
+            ));
+        }
 
         let stream = connect_room_stream(&request.host, request.port).await?;
         let (reader, mut writer) = stream.into_split();
@@ -402,9 +409,7 @@ impl RoomClientManager {
         };
         write_message(&mut writer, &join).await?;
 
-        let Some(line) = lines.next_line().await? else {
-            return Err(anyhow!("Room closed before authentication."));
-        };
+        let line = read_auth_response(&mut lines, Duration::from_secs(8)).await?;
         let response: RoomWireMessage = serde_json::from_str(&line)?;
         let (playback, allow_guest_control) = match response {
             RoomWireMessage::AuthSuccess {
@@ -1581,9 +1586,7 @@ pub async fn join_probe(request: RoomJoinRequest) -> Result<RoomJoinResult> {
     };
     write_message(&mut writer, &join).await?;
 
-    let Some(line) = lines.next_line().await? else {
-        return Err(anyhow!("Room closed before authentication."));
-    };
+    let line = read_auth_response(&mut lines, Duration::from_secs(8)).await?;
     let response: RoomWireMessage = serde_json::from_str(&line)?;
     match response {
         RoomWireMessage::AuthSuccess { playback, .. } => Ok(RoomJoinResult {
@@ -1605,6 +1608,31 @@ async fn connect_room_stream(host: &str, port: u16) -> Result<TcpStream> {
         .await
         .map_err(|_| anyhow!(connection_help(host, port)))?
         .map_err(|err| anyhow!("{}\n\n{err}", connection_help(host, port)))
+}
+
+async fn read_auth_response<R: tokio::io::AsyncBufRead + Unpin>(
+    lines: &mut tokio::io::Lines<R>,
+    deadline: Duration,
+) -> Result<String> {
+    timeout(deadline, lines.next_line())
+        .await
+        .map_err(|_| {
+            anyhow!("The host connected but did not answer. Check the Jam port and try again.")
+        })?
+        .map_err(|error| anyhow!("Could not read the host's response: {error}"))?
+        .ok_or_else(|| anyhow!("Room closed before authentication."))
+}
+
+fn disconnect_room_clients(state: &Arc<Mutex<RoomSharedState>>) -> Result<()> {
+    let mut state = state
+        .lock()
+        .map_err(|_| anyhow!("Room state lock failed"))?;
+    for client in state.clients.drain(..) {
+        let _ = client.tx.send(RoomWireMessage::RoomKicked {
+            reason: "The host ended the Jam.".to_string(),
+        });
+    }
+    Ok(())
 }
 
 fn connection_help(host: &str, port: u16) -> String {
@@ -1712,6 +1740,87 @@ fn display_filesystem_path(path: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn authentication_response_times_out_for_a_silent_host() {
+        let (client, _silent_host) = tokio::io::duplex(128);
+        let mut lines = BufReader::new(client).lines();
+        let error = read_auth_response(&mut lines, Duration::from_millis(20))
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("did not answer"));
+    }
+
+    #[tokio::test]
+    async fn authentication_response_handles_a_closed_host() {
+        let (client, host) = tokio::io::duplex(128);
+        drop(host);
+        let mut lines = BufReader::new(client).lines();
+        let error = read_auth_response(&mut lines, Duration::from_secs(1))
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("closed before authentication"));
+    }
+
+    #[tokio::test]
+    async fn authentication_response_accepts_a_complete_protocol_message() {
+        let (client, mut host) = tokio::io::duplex(1024);
+        let message = RoomWireMessage::AuthSuccess {
+            room_name: "Friends".into(),
+            playback: None,
+            allow_guest_queue: false,
+            allow_guest_control: true,
+        };
+        let wire = format!("{}\n", serde_json::to_string(&message).unwrap());
+        host.write_all(wire.as_bytes()).await.unwrap();
+        let mut lines = BufReader::new(client).lines();
+        let response = read_auth_response(&mut lines, Duration::from_secs(1))
+            .await
+            .unwrap();
+        assert!(matches!(
+            serde_json::from_str::<RoomWireMessage>(&response).unwrap(),
+            RoomWireMessage::AuthSuccess {
+                allow_guest_control: true,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn ending_a_jam_notifies_every_guest_and_clears_membership() {
+        let mut receivers = Vec::new();
+        let mut clients = Vec::new();
+        for id in 1..=3 {
+            let (tx, rx) = mpsc::unbounded_channel();
+            receivers.push(rx);
+            clients.push(RoomClient {
+                user: RoomUser {
+                    id,
+                    display_name: format!("Guest {id}"),
+                    remote_addr: "127.0.0.1:40000".into(),
+                    joined_at: 0,
+                },
+                tx,
+            });
+        }
+        let state = Arc::new(Mutex::new(RoomSharedState {
+            playback: None,
+            clients,
+            streams: HashMap::new(),
+            guest_tracks: HashMap::new(),
+        }));
+        disconnect_room_clients(&state).unwrap();
+        assert!(state.lock().unwrap().clients.is_empty());
+        for mut rx in receivers {
+            assert!(
+                matches!(rx.try_recv().unwrap(), RoomWireMessage::RoomKicked { reason } if reason == "The host ended the Jam.")
+            );
+            assert!(matches!(
+                rx.try_recv(),
+                Err(mpsc::error::TryRecvError::Disconnected)
+            ));
+        }
+    }
 
     #[test]
     fn guest_file_names_cannot_escape_the_destination() {

@@ -1,6 +1,6 @@
 [package]
 name = "loavy-player"
-version = "10.1.1"
+version = "10.3.0"
 description = "A customizable local-first desktop music player."
 authors = ["Loavy Player Contributors"]
 edition = "2021"

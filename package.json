@@ -1,6 +1,6 @@
 {
   "name": "loavy-player",
-  "version": "10.1.1",
+  "version": "10.3.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -8,6 +8,7 @@
     "build": "tsc && vite build",
     "test:downloader": "node tests/downloader-browser.mjs",
     "test:playlists": "node tests/playlist-browser.mjs",
+    "test:jam": "node tests/jam-lyrics-browser.mjs",
     "test:desktop": "node tests/desktop-startup.mjs",
     "preview": "vite preview",
     "tauri": "tauri",
