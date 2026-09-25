@@ -445,7 +445,7 @@ export function DownloaderView({
         </div>
       </div>
       <details className="downloaderTools">
-        <summary><Wrench size={15} /> Download tools <span>Installed automatically when needed</span></summary>
+        <summary><Wrench size={15} /> Download tools <span>Automatic setup on Windows; system tools on Linux</span></summary>
         <div className="downloaderStatuses" aria-label="Downloader tool status">
           <ToolStatusPill label="yt-dlp" health={status?.ytDlp} />
           <ToolStatusPill label="FFmpeg" health={status?.ffmpeg} />

@@ -1,0 +1,10 @@
+FROM registry.fedoraproject.org/fedora:43
+
+RUN dnf install -y \
+      cargo rust rustfmt nodejs npm gcc gcc-c++ make pkgconf-pkg-config \
+      webkit2gtk4.1-devel openssl-devel libappindicator-gtk3-devel \
+      librsvg2-devel libxdo-devel file rpm-build \
+    && dnf clean all
+
+WORKDIR /workspace
+CMD ["sh", "-c", "npm ci && npm run desktop:fedora -- --ci"]

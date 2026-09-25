@@ -6,7 +6,7 @@
 
 </div>
 
-Loavy Player is a local-first desktop music player for Windows, built with Tauri, Rust, React, and TypeScript. It scans music already on your computer, reads embedded metadata and artwork, and keeps the library in a local SQLite database.
+Loavy Player is a local-first desktop music player for Windows and Fedora Linux, built with Tauri, Rust, React, and TypeScript. It scans music already on your computer, reads embedded metadata and artwork, and keeps the library in a local SQLite database.
 
 ## What It Does
 
@@ -14,7 +14,7 @@ Loavy Player is a local-first desktop music player for Windows, built with Tauri
 - Browses songs, albums, artists, favorites, recent tracks, and folder playlists.
 - Reads embedded tags and cover art without uploading the library.
 - Provides a fullscreen Now Playing view and customizable player layout.
-- Can keep playback running in the Windows system tray after the main window is closed.
+- Can keep playback running in the system tray after the main window is closed.
 - Accepts Spotify track, album, and playlist links through a metadata-matching download flow.
 - Downloads supported direct media links with yt-dlp.
 - Hosts self-managed listening rooms for LAN, VPN, or port-forwarded connections.
@@ -32,6 +32,20 @@ After installation:
 4. Open **Songs**, **Albums**, **Artists**, or **Folders**.
 
 The first scan can take a little longer when a folder contains many files or large embedded covers. Later launches use the saved database and do not automatically rebuild the whole library.
+
+## Install On Fedora Linux
+
+Install the RPM from a terminal in the folder containing the downloaded package:
+
+```sh
+sudo dnf install ./Loavy*.rpm
+```
+
+Then launch **Loavy Player** from your applications menu. In **Settings**, add a music folder and select **Scan**. Remove the application with `sudo dnf remove loavy-player`; your personal library data stays in your user profile.
+
+The container build below targets Fedora 43 and newer on the build machine's architecture (normally x86_64). Playback uses WebKitGTK and the system's GStreamer codecs. Available formats depend on installed codecs; AAC/M4A may need additional codec packages. Background playback needs a desktop with system-tray support, such as KDE Plasma or GNOME with an AppIndicator extension.
+
+Linux downloader tools are optional and managed by you. Install `yt-dlp`, `ffmpeg`, and Node.js 22+ (or Deno 2.3+) on `PATH`; Spotify links also need `spotdl`. Restart Loavy after installing tools. On Linux, **Repair tools** checks these installations and reports missing tools; it does not download Windows executables or change system packages. Local library playback does not require these downloader tools.
 
 ## Downloader
 
@@ -53,13 +67,13 @@ Paste a public `open.spotify.com` track, album, or playlist URL in the **Spotify
 
 Spotify supplies identity and metadata only: Loavy does **not** download Spotify's audio stream. The quality is limited by the matched source. Selecting FLAC converts that source into a FLAC file; it cannot recreate lossless detail that was not present in the source.
 
-The first Spotify download installs pinned Windows releases of spotDL and FFmpeg in Loavy's app-data `tools` folder. Loavy also installs a managed Deno runtime if a supported JavaScript runtime is unavailable. Managed downloads are checksum-verified before use.
+On Windows, the first Spotify download installs pinned releases of spotDL and FFmpeg in Loavy's app-data `tools` folder. Loavy also installs a managed Deno runtime if a supported JavaScript runtime is unavailable. Managed downloads are checksum-verified before use. On Linux, the downloader uses system tools as described above.
 
 ### Direct links
 
-Paste a supported public media URL in the **Direct link** tab and choose whether it is a single item or playlist. Loavy uses yt-dlp for extraction and FFmpeg for the selected output format. The first direct download installs those managed tools in the app-data `tools` folder. See the [yt-dlp supported sites list](https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md) for extractor coverage.
+Paste a supported public media URL in the **Direct link** tab and choose whether it is a single item or playlist. Loavy uses yt-dlp for extraction and FFmpeg for the selected output format. On Windows, the first direct download installs those managed tools in the app-data `tools` folder. See the [yt-dlp supported sites list](https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md) for extractor coverage.
 
-For YouTube downloads, Loavy uses its managed Deno runtime, Deno 2.3+ on `PATH`, or Node.js 22+ on `PATH`. It installs managed Deno automatically when none is available. Other supported sites can download without a JavaScript runtime.
+For YouTube downloads, Loavy uses its managed Deno runtime, Deno 2.3+ on `PATH`, or Node.js 22+ on `PATH`. On Windows, it installs managed Deno automatically when none is available. Other supported sites can download without a JavaScript runtime.
 
 The downloader does not bypass subscriptions, DRM, private access, or regional restrictions. Only download media you own or have permission to save, and follow the source website's terms.
 
@@ -145,7 +159,7 @@ See the full [Loavy Player privacy policy](PRIVACY.md).
 
 ## Development
 
-### Requirements
+### Windows Requirements
 
 - Node.js 20 or newer.
 - Rust stable with the MSVC toolchain.
@@ -211,6 +225,34 @@ For a Microsoft Store-compatible NSIS build with the offline WebView2 installer:
 npm run desktop:store
 ```
 
+### Build A Fedora RPM
+
+Build on Linux. Tauri automatically merges `src-tauri/tauri.linux.conf.json`, which selects RPM packaging and Linux icons. Windows builds continue to use NSIS.
+
+With Podman installed, run these commands from the repository root:
+
+```sh
+podman build -t localhost/loavy-player-fedora -f packaging/fedora/Containerfile .
+podman run --rm --userns=keep-id \
+  -e CARGO_HOME=/workspace/src-tauri/target/cargo-home \
+  -e CARGO_BUILD_JOBS=2 \
+  -v "$PWD:/workspace:Z" localhost/loavy-player-fedora
+```
+
+The first build downloads the Fedora build environment and Rust dependencies. Later builds reuse the image and the dependency/build cache. The container installs development packages inside its image and writes the build outputs into this checkout.
+
+Alternatively, install the build dependencies directly on Fedora:
+
+```sh
+sudo dnf install cargo rust nodejs npm gcc gcc-c++ make pkgconf-pkg-config \
+  webkit2gtk4.1-devel openssl-devel libappindicator-gtk3-devel \
+  librsvg2-devel libxdo-devel file rpm-build
+npm ci
+npm run desktop:fedora
+```
+
+The installer is written to `src-tauri/target/release/bundle/rpm/`. Install it using `sudo dnf install ./src-tauri/target/release/bundle/rpm/*.rpm`. A native build targets the Fedora release used to compile it; use the Fedora 43 container when distributing to Fedora 43 and newer. See Tauri's [RPM packaging guide](https://v2.tauri.app/distribute/rpm/) and [Linux prerequisites](https://v2.tauri.app/start/prerequisites/) for platform requirements.
+
 ## Project Layout
 
 ```text
@@ -248,7 +290,7 @@ No. Spotify mode does not obtain Spotify or subscription-service audio. FLAC is 
 
 **An Opus or OGG track is indexed but does not play**
 
-Install Microsoft's [Web Media Extensions](https://apps.microsoft.com/detail/9n5tdp8vcmhs). The standard setup installer can open this listing through its optional Tools prompt.
+On Windows, install Microsoft's [Web Media Extensions](https://apps.microsoft.com/detail/9n5tdp8vcmhs). The standard setup installer can open this listing through its optional Tools prompt. On Fedora, check that the GStreamer codec packages are installed.
 
 **A playlist finishes with fewer songs than expected**
 
@@ -264,7 +306,7 @@ Upgrade to Node.js 20 or newer, reopen the terminal, and run `npm install` again
 
 **`cargo` is not recognized**
 
-Install Rust with [rustup](https://rustup.rs/), select the stable MSVC toolchain, and reopen the terminal.
+On Windows, install Rust with [rustup](https://rustup.rs/), select the stable MSVC toolchain, and reopen the terminal. On Fedora, install `cargo` and `rust` with DNF or use the container build above.
 
 ## Contributing
 

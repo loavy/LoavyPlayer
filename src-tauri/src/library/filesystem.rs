@@ -1433,13 +1433,20 @@ mod tests {
 
     #[test]
     fn path_prefix_checks_component_boundaries() {
+        #[cfg(target_os = "windows")]
         let base = Path::new(r"C:\Music");
+        #[cfg(not(target_os = "windows"))]
+        let base = Path::new("/Music");
         assert_eq!(
-            strip_prefix_platform(Path::new(r"C:\Music\Rock"), base),
+            strip_prefix_platform(&base.join("Rock"), base),
             Some(PathBuf::from("Rock"))
         );
-        assert!(strip_prefix_platform(Path::new(r"C:\Music2\Rock"), base).is_none());
-        assert!(paths_equal_platform(base, Path::new(r"C:\Music")));
+        assert!(strip_prefix_platform(&base.with_file_name("Music2").join("Rock"), base).is_none());
+        assert!(paths_equal_platform(base, base));
+        assert_eq!(
+            paths_equal_platform(base, &base.with_file_name("music")),
+            cfg!(target_os = "windows")
+        );
     }
 
     #[test]

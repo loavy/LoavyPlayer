@@ -657,6 +657,13 @@ async fn ensure_yt_dlp<F>(
 where
     F: FnMut(DownloadProgress),
 {
+    if !cfg!(target_os = "windows") {
+        let executable = super::system_tool("yt-dlp")?;
+        tool_version(&executable)
+            .await
+            .context("The system yt-dlp could not start. Reinstall it and restart Loavy.")?;
+        return Ok(executable);
+    }
     let executable = yt_dlp_path(app_data_dir);
     let trusted_existing = trusted_yt_dlp_build(&executable).await;
     if trusted_existing.as_deref() == Some(YT_DLP_VERSION) {
@@ -724,6 +731,13 @@ async fn trusted_yt_dlp_build(executable: &Path) -> Option<String> {
 }
 
 async fn yt_dlp_health(app_data_dir: &Path) -> ToolHealth {
+    if !cfg!(target_os = "windows") {
+        let version = match super::system_tool("yt-dlp") {
+            Ok(path) => tool_version(&path).await,
+            Err(_) => None,
+        };
+        return super::system_tool_health("yt-dlp", version);
+    }
     let executable = yt_dlp_path(app_data_dir);
     if !executable.is_file() {
         return ToolHealth::missing(Some(YT_DLP_VERSION));
@@ -781,6 +795,11 @@ async fn ensure_managed_deno<F>(
 where
     F: FnMut(DownloadProgress),
 {
+    if !cfg!(target_os = "windows") {
+        return detect_js_runtime(app_data_dir).await.context(
+            "Install Node.js 22+ or Deno 2.3+ on PATH, then restart Loavy. Automatic runtime installation is only available on Windows.",
+        );
+    }
     if let Some(runtime) = managed_deno_runtime(app_data_dir).await {
         return Ok(runtime);
     }
@@ -884,6 +903,9 @@ fn extract_deno_executable(archive: &Path, destination: &Path) -> Result<()> {
 }
 
 async fn managed_deno_runtime(app_data_dir: &Path) -> Option<JsRuntime> {
+    if !cfg!(target_os = "windows") {
+        return None;
+    }
     let executable = deno_path(app_data_dir);
     if !file_sha256(&executable)
         .await
@@ -930,8 +952,14 @@ pub(super) async fn detect_js_runtime(app_data_dir: &Path) -> Option<JsRuntime> 
 
 async fn js_runtime_health(app_data_dir: &Path) -> ToolHealth {
     if let Some(runtime) = detect_js_runtime(app_data_dir).await {
-        return ToolHealth::ready(Some(runtime.version), Some(DENO_VERSION))
-            .with_provider(runtime.name);
+        return ToolHealth::ready(
+            Some(runtime.version),
+            cfg!(target_os = "windows").then_some(DENO_VERSION),
+        )
+        .with_provider(runtime.name);
+    }
+    if !cfg!(target_os = "windows") {
+        return super::system_tool_health("Node.js 22+ or Deno 2.3+", None);
     }
     if deno_path(app_data_dir).is_file() {
         ToolHealth::corrupt(

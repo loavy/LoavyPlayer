@@ -292,6 +292,21 @@ where
         .await
         .context("Could not create the Spotify tool data folder.")?;
 
+    if !cfg!(target_os = "windows") {
+        let spotdl = super::system_tool("spotdl")?;
+        tool_version(&spotdl, app_data_dir)
+            .await
+            .context("The system spotDL could not start. Reinstall it and restart Loavy.")?;
+        let ffmpeg = ensure_audio_processor(
+            app_data_dir,
+            cancel,
+            DownloadSource::Spotify,
+            report_progress,
+        )
+        .await?;
+        return Ok((spotdl, ffmpeg));
+    }
+
     let spotdl = spotdl_path(app_data_dir);
     if !spotdl_is_trusted(&spotdl, app_data_dir).await {
         let partial = spotdl.with_extension("exe.download");
@@ -348,6 +363,13 @@ pub(super) async fn ensure_audio_processor<F>(
 where
     F: FnMut(DownloadProgress),
 {
+    if !cfg!(target_os = "windows") {
+        let executable = super::system_tool("ffmpeg")?;
+        ffmpeg_version(&executable)
+            .await
+            .context("The system FFmpeg could not start. Reinstall it and restart Loavy.")?;
+        return Ok(executable);
+    }
     tokio::fs::create_dir_all(spotdl_root(app_data_dir))
         .await
         .context("Could not create the audio tools folder.")?;
@@ -415,6 +437,13 @@ async fn ffmpeg_is_trusted(executable: &Path) -> bool {
 }
 
 async fn spotdl_health(app_data_dir: &Path) -> ToolHealth {
+    if !cfg!(target_os = "windows") {
+        let version = match super::system_tool("spotdl") {
+            Ok(path) => tool_version(&path, app_data_dir).await,
+            Err(_) => None,
+        };
+        return super::system_tool_health("spotdl", version);
+    }
     let executable = spotdl_path(app_data_dir);
     if !executable.is_file() {
         return ToolHealth::missing(Some(SPOTDL_VERSION));
@@ -442,6 +471,13 @@ async fn spotdl_health(app_data_dir: &Path) -> ToolHealth {
 }
 
 async fn ffmpeg_health(app_data_dir: &Path) -> ToolHealth {
+    if !cfg!(target_os = "windows") {
+        let version = match super::system_tool("ffmpeg") {
+            Ok(path) => ffmpeg_version(&path).await,
+            Err(_) => None,
+        };
+        return super::system_tool_health("ffmpeg", version);
+    }
     let executable = ffmpeg_path(app_data_dir);
     if !executable.is_file() {
         return ToolHealth::missing(Some("4.4"));

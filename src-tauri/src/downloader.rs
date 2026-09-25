@@ -709,6 +709,24 @@ pub(crate) fn find_executable_on_path(names: &[&str]) -> Option<PathBuf> {
         .unwrap_or(None)
 }
 
+pub(super) fn system_tool(name: &str) -> Result<PathBuf> {
+    find_executable_on_path(&[name]).with_context(|| {
+        format!("Install {name} on your system and make it available on PATH, then restart Loavy. Automatic tool installation is only available on Windows.")
+    })
+}
+
+pub(super) fn system_tool_health(name: &str, version: Option<String>) -> ToolHealth {
+    if version.is_some() {
+        ToolHealth::ready(version, None).with_provider("system")
+    } else {
+        let mut health = ToolHealth::missing(None).with_provider("system");
+        health.detail = Some(format!(
+            "Install or repair {name} on your system and make it available on PATH, then restart Loavy."
+        ));
+        health
+    }
+}
+
 pub(crate) async fn terminate_child(child: &mut Child) {
     #[cfg(target_os = "windows")]
     if let Some(pid) = child.id() {
@@ -1242,6 +1260,19 @@ mod tests {
         MAX_NAMING_TEMPLATE_CHARS,
     };
     use tokio::io::AsyncWriteExt;
+
+    #[test]
+    fn missing_system_tool_explains_manual_setup() {
+        let error = super::system_tool("loavy-nonexistent-test-tool-8d0488")
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("PATH"));
+        assert!(error.contains("only available on Windows"));
+        let health = super::system_tool_health("yt-dlp", None);
+        assert!(!health.usable());
+        assert!(health.detail.unwrap().contains("yt-dlp"));
+        assert!(health.expected_version.is_none());
+    }
 
     #[test]
     fn downloader_futures_fit_the_windows_ui_thread_stack() {
