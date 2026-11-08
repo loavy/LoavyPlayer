@@ -8,16 +8,19 @@ export type AppRoute = {
   playlist: string | null;
   folder: FolderLocation | null;
 };
-const initial: AppRoute = { view: "songs", collection: null, playlist: null, folder: null };
+const initial: AppRoute = { view: "home", collection: null, playlist: null, folder: null };
 let entries: AppRoute[] = [initial];
 let index = 0;
 let snapshot = { route: initial, canBack: false, canForward: false };
 const listeners = new Set<() => void>();
+const beforeListeners = new Set<() => void>();
 function publish() {
+  beforeListeners.forEach(listener => listener());
   snapshot = { route: entries[index], canBack: index > 0, canForward: index < entries.length - 1 };
   listeners.forEach((listener) => listener());
 }
 export const navigation = {
+  beforeChange(listener: () => void) { beforeListeners.add(listener); return () => { beforeListeners.delete(listener); }; },
   current: () => snapshot.route,
   navigate(route: AppRoute, replace = false) {
     if (JSON.stringify(route) === JSON.stringify(entries[index])) return;

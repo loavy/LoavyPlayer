@@ -1,0 +1,467 @@
+/*
+ * Loavy 12.3 "Afterglow" theme. Loaded after every other stylesheet.
+ * Plum-ink night, honey light, and a dusk-to-honey progress line that warms as a song plays.
+ * Surfaces float as separate islands so the album-tinted atmosphere shows between them.
+ */
+
+/* ---------- Tokens ---------- */
+:root {
+  --bg: #0e0b13;
+  --shell: #14101a;
+  --panel: #1b1623;
+  --panel-2: #251e2e;
+  --panel-3: #352b40;
+  --text: #f6efe6;
+  --muted: #b3a9bc;
+  --faint: #857b8f;
+  --border: #f3e4ff14;
+  --border-strong: #f3e4ff26;
+  --shadow: #04020866;
+  --danger: #ff8f8f;
+  --warning: #ffd08a;
+  --accent-ink: color-mix(in srgb, var(--accent) 90%, white);
+  --accent-strong: color-mix(in srgb, var(--accent) 80%, white);
+  --on-accent: #22150a;
+  --dusk: #9d7bd8;
+  --gutter: 8px;
+  --island-radius: 18px;
+  --surface-radius: 14px;
+  --control-radius: 10px;
+  --island-bg: color-mix(in srgb, var(--shell) 86%, transparent);
+  --island-main: color-mix(in srgb, var(--panel) 62%, transparent);
+  --font-display: "Bahnschrift", "DIN Alternate", "DejaVu Sans Condensed", "Segoe UI Variable Display", sans-serif;
+  --font-body: "Segoe UI Variable Text", "Segoe UI", Inter, ui-sans-serif, system-ui, sans-serif;
+  --afterglow: linear-gradient(90deg, color-mix(in srgb, var(--dusk) 85%, var(--accent)) 0%, var(--accent) 100%);
+  font-family: var(--font-body);
+}
+:root[data-theme="light"] {
+  --bg: #ece6f0;
+  --shell: #f8f5f9;
+  --panel: #ffffff;
+  --panel-2: #efe9f2;
+  --panel-3: #ded4e5;
+  --text: #211928;
+  --muted: #5f5469;
+  --faint: #7b7085;
+  --border: #2b1d3714;
+  --border-strong: #2b1d3726;
+  --shadow: #2b1d3722;
+  --danger: #b2343b;
+  --warning: #8d5a07;
+  --accent-ink: color-mix(in srgb, var(--accent) 40%, #3b2208);
+  --dusk: #8a63cf;
+  --island-bg: color-mix(in srgb, var(--shell) 90%, transparent);
+  --island-main: color-mix(in srgb, var(--panel) 80%, transparent);
+}
+:root[data-contrast="high"] { --border: #ffffff3d; --border-strong: #ffffff66; --muted: #d8d0de; --faint: #bfb6c6; }
+:root[data-theme="light"][data-contrast="high"] { --border: #21192845; --border-strong: #21192870; --muted: #3e3546; --faint: #4c4255; }
+:root[data-corners="soft"] { --island-radius: 12px; --surface-radius: 9px; --control-radius: 8px; }
+:root[data-corners="square"] { --island-radius: 3px; --surface-radius: 2px; --control-radius: 2px; }
+:root[data-cards="flat"] { --surface-radius: 6px; }
+
+body { background: var(--bg); color: var(--text); }
+::selection { background: color-mix(in srgb, var(--accent) 35%, transparent); color: var(--text); }
+:root ::-webkit-scrollbar { width: 10px; height: 10px; }
+:root ::-webkit-scrollbar-thumb { border: 3px solid transparent; border-radius: 999px; background: color-mix(in srgb, var(--text) 16%, transparent) padding-box; }
+:root ::-webkit-scrollbar-thumb:hover { background-color: color-mix(in srgb, var(--text) 28%, transparent); }
+:root ::-webkit-scrollbar-track { background: transparent; }
+
+/* ---------- Shell & atmosphere ---------- */
+:root .desktopShell {
+  background:
+    radial-gradient(70% 55% at 12% 0%, color-mix(in srgb, var(--dusk) 13%, transparent), transparent 70%),
+    radial-gradient(60% 50% at 88% 100%, color-mix(in srgb, var(--accent) 10%, transparent), transparent 70%),
+    var(--bg);
+}
+:root[data-glass="on"] .desktopShell {
+  background:
+    radial-gradient(70% 55% at 12% 0%, color-mix(in srgb, var(--dusk) 12%, transparent), transparent 70%),
+    radial-gradient(60% 50% at 88% 100%, color-mix(in srgb, var(--accent) 9%, transparent), transparent 70%),
+    color-mix(in srgb, var(--bg) calc(var(--glass-opacity) * 100%), transparent);
+  border-color: var(--border);
+  border-radius: 10px;
+}
+:root .desktopShell .appAtmosphere { display: block; inset: -20%; opacity: .32; filter: blur(90px) saturate(1.3); background-image: radial-gradient(ellipse at 20% 15%, color-mix(in srgb, var(--dusk) 55%, transparent), transparent 50%), radial-gradient(ellipse at 80% 85%, color-mix(in srgb, var(--accent) 45%, transparent), transparent 52%); }
+:root .desktopShell .appAtmosphere.hasArtwork { opacity: .34; filter: blur(80px) saturate(1.4); }
+:root[data-background="subtle"] .desktopShell .appAtmosphere { opacity: .14; }
+:root[data-background="solid"] .desktopShell .appAtmosphere { display: none; }
+:root[data-theme="light"] .desktopShell .appAtmosphere { opacity: .2; }
+
+/* Islands */
+:root .desktopShell > .sidebar,
+:root .desktopShell > .mainPane,
+:root .desktopShell > .sideInspector,
+:root .desktopShell > .playerBar,
+:root[data-glass="on"] .desktopShell > .sidebar,
+:root[data-glass="on"] .desktopShell > .mainPane,
+:root[data-glass="on"] .desktopShell > .sideInspector,
+:root[data-glass="on"] .desktopShell > .playerBar {
+  position: relative;
+  z-index: 1;
+  border: 1px solid var(--border);
+  border-radius: var(--island-radius);
+  background: var(--island-bg);
+  background-image: linear-gradient(180deg, color-mix(in srgb, var(--text) 3%, transparent), transparent 140px);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text) 5%, transparent), 0 24px 48px -30px var(--shadow);
+  backdrop-filter: blur(30px) saturate(140%);
+}
+:root .desktopShell > .mainPane,
+:root[data-glass="on"] .desktopShell > .mainPane { background-color: var(--island-main); overflow: hidden; }
+:root .desktopShell > .sidebar { margin-left: var(--gutter); }
+:root .desktopShell > .mainPane { margin-inline: var(--gutter); }
+:root .desktopShell > .sideInspector { margin-right: var(--gutter); border-left: 1px solid var(--border); }
+:root .desktopShell > .playerBar { margin: var(--gutter); }
+
+/* ---------- Title bar ---------- */
+:root .desktopShell > .shellToolbar,
+:root[data-glass="on"] .desktopShell > .shellToolbar { background: transparent; border-bottom: 0; box-shadow: none; backdrop-filter: none; }
+.toolbarBrand { border-right: 0; padding-left: 22px; gap: 10px; }
+.toolbarBrand > svg { color: var(--accent); filter: drop-shadow(0 0 8px color-mix(in srgb, var(--accent) 55%, transparent)); }
+.toolbarBrand > span { font-family: var(--font-display); font-size: 21px; font-weight: 600; letter-spacing: -.01em; }
+.toolbarBrand > small { display: none; }
+.shellToolbar .topBarLocation { border-left: 0; padding-left: 6px; }
+.shellToolbar .titleGroup h1 { font-family: var(--font-display); font-size: 13px; font-weight: 500; color: var(--muted); }
+.shellToolbar .iconButton { border-radius: 9px; }
+.shellToolbar .iconButton.active { color: var(--accent-ink); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.shellToolbar .searchBox { border-radius: 999px; border-color: var(--border); background: color-mix(in srgb, var(--panel) 55%, transparent); padding: 6px 8px 6px 13px; }
+.shellToolbar .searchBox:focus-within { border-color: color-mix(in srgb, var(--accent) 50%, transparent); background: var(--panel); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 12%, transparent); }
+.shellToolbar .searchBox kbd { border-radius: 999px; padding-inline: 7px; }
+
+/* ---------- Sidebar ---------- */
+:root .desktopShell > .sidebar { padding: 12px 8px 8px; }
+.desktopShell .sidebar .navItem { border-radius: 11px; color: var(--muted); }
+.desktopShell .sidebar .navItem > svg { color: var(--faint); transition: color 150ms; }
+.desktopShell .sidebar .navItem:hover { background: color-mix(in srgb, var(--text) 6%, transparent); color: var(--text); }
+.desktopShell .sidebar .navItem:hover > svg { color: var(--text); }
+.desktopShell .sidebar .navItem.active {
+  color: var(--text);
+  font-weight: 600;
+  background: linear-gradient(95deg, color-mix(in srgb, var(--accent) 20%, transparent), color-mix(in srgb, var(--accent) 4%, transparent) 85%);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 16%, transparent);
+}
+.desktopShell .sidebar .navItem.active > svg, .desktopShell .sidebar .navItem.active svg { color: var(--accent-ink); }
+.desktopShell .sidebar .navItem.active::before { display: block; left: -8px; top: 22%; bottom: 22%; width: 4px; border-radius: 0 4px 4px 0; background: var(--accent); box-shadow: 0 0 14px 1px color-mix(in srgb, var(--accent) 70%, transparent); }
+.desktopShell .sidebar .navTreeChildren { border-color: color-mix(in srgb, var(--text) 9%, transparent); }
+.desktopShell .sidebar .navTreeChildren .navItem.active::before { left: -11px; }
+.navCount { font-family: var(--font-display); font-size: 10px; color: var(--faint); }
+.navItem.active .navCount { color: var(--accent-ink); opacity: .9; }
+.navJamHint { border-radius: 999px; padding: 2px 6px; letter-spacing: .04em; }
+.sidebarCollections .navGroupLabel { letter-spacing: .04em; text-transform: none; font-size: 11px; color: var(--faint); }
+.sidebarAlbum { border-radius: 11px; }
+.sidebarAlbum > .cover { border-radius: 7px; }
+.sidebarAlbum.active { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+
+/* ---------- Typography ---------- */
+.libraryHero h2, .collectionIntro h2, .homeHeading h2, .playlistHeroText h2, .spotifyPlaylistHero h3, .settingsHero h2, .statsHero h2, .downloaderHero h2,
+.desktopShell .libraryHero h2, .desktopShell .collectionIntro h2 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-stretch: 88%;
+  letter-spacing: -.01em;
+  line-height: 1.04;
+}
+.desktopShell .libraryHero h2, .desktopShell .collectionIntro h2, .homeHeading h2 { font-size: clamp(32px, 3.4vw, 46px); }
+.homeSectionHeading h3 { font-family: var(--font-display); font-weight: 600; font-size: 19px; letter-spacing: 0; }
+.libraryEyebrow, .desktopShell .libraryEyebrow { text-transform: none; letter-spacing: .01em; font-size: 12px; font-weight: 500; color: var(--accent-ink); }
+.libraryFacts, .desktopShell .libraryFacts { font-family: var(--font-display); color: var(--muted); font-size: 12px; }
+
+/* ---------- Buttons & fields ---------- */
+.primaryAction, .desktopShell .libraryActions .libraryPlay, .libraryActions .libraryPlay {
+  background: var(--accent);
+  color: var(--on-accent);
+  border: 0;
+  border-radius: 999px;
+  font-weight: 650;
+  box-shadow: 0 8px 24px -10px color-mix(in srgb, var(--accent) 80%, transparent), inset 0 1px 0 #ffffff55;
+  transition: transform 150ms ease, box-shadow 150ms ease, background 150ms ease;
+}
+.primaryAction:hover:not(:disabled), .libraryActions .libraryPlay:hover:not(:disabled) { background: var(--accent-strong); transform: translateY(-1px); box-shadow: 0 12px 28px -10px color-mix(in srgb, var(--accent) 90%, transparent), inset 0 1px 0 #ffffff66; }
+.primaryAction svg, .libraryActions .libraryPlay svg { color: var(--on-accent); }
+.secondaryAction, .desktopShell .libraryActions > button:not(.libraryPlay) { border-radius: 999px; border: 1px solid var(--border-strong); background: color-mix(in srgb, var(--text) 4%, transparent); color: var(--text); }
+.secondaryAction:hover:not(:disabled), .desktopShell .libraryActions > button:not(.libraryPlay):hover:not(:disabled) { background: color-mix(in srgb, var(--text) 9%, transparent); }
+.desktopShell .libraryActions > button { min-height: 36px; padding: 8px 16px; font-size: 12.5px; }
+.iconButton { border-radius: 9px; }
+.iconButton.active { color: var(--accent-ink); }
+input[type="text"], input[type="search"], input[type="url"], input:not([type]), select, textarea { border-radius: var(--control-radius); }
+input[type="range"] { accent-color: var(--accent); }
+:focus-visible { outline-color: var(--accent); }
+
+/* Segmented tabs read as a single rail with a lit chip. */
+.segmentedTabs { border-radius: 999px; border-color: var(--border); background: color-mix(in srgb, var(--bg) 45%, transparent); }
+.segmentedTabs > button { border-radius: 999px; }
+.segmentedTabs > button.active { color: var(--text); background: color-mix(in srgb, var(--accent) 16%, transparent); border-color: color-mix(in srgb, var(--accent) 28%, transparent); }
+.segmentedTabs > button.active > svg { color: var(--accent-ink); }
+.inspectorHeader > .segmentedTabs { border-radius: 999px; }
+.inspectorHeader > .segmentedTabs > button { border-radius: 999px; }
+.inspectorHeader > .segmentedTabs > button.active { background: color-mix(in srgb, var(--accent) 15%, transparent); border-color: color-mix(in srgb, var(--accent) 26%, transparent); }
+
+/* ---------- Song list ---------- */
+.virtualTable .tableHeader, .desktopShell .virtualTable .tableHeader, .librarySongPage .tableHeader { background: color-mix(in srgb, var(--panel) 70%, transparent); backdrop-filter: blur(20px); border-color: var(--border); color: var(--faint); }
+:root[data-glass="on"] .desktopShell .tableHeader, :root[data-glass="on"] .librarySongPage .tableHeader { background: color-mix(in srgb, var(--shell) 70%, transparent); }
+.desktopShell .virtualTable .trackRow, .virtualTable .trackRow { border-radius: 12px; border-bottom-color: transparent; }
+.desktopShell .virtualTable .trackRow:hover, :root[data-glass="on"] .desktopShell .trackRow:hover { background: color-mix(in srgb, var(--text) 5%, transparent); }
+.desktopShell .virtualTable .trackRow.current, :root[data-glass="on"] .desktopShell .trackRow.current, .virtualTable .trackRow.current {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 17%, transparent), color-mix(in srgb, var(--accent) 5%, transparent) 70%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.trackRow.current::before { background: var(--accent); width: 3px; border-radius: 3px; box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 70%, transparent); }
+.desktopShell .virtualTable .cover.sm { border-radius: 7px; }
+.trackRow .rowIndex, .trackRow [role="cell"]:last-child { font-family: var(--font-display); font-variant-numeric: tabular-nums; }
+
+/* ---------- Home ---------- */
+.homeShortcut, :root[data-glass="on"] .desktopShell .homeShortcut, :root[data-glass="on"] .homeShortcut {
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--panel-2) 80%, transparent), color-mix(in srgb, var(--panel) 50%, transparent));
+  transition: border-color 150ms, background 150ms;
+}
+.homeShortcut:hover { border-color: color-mix(in srgb, var(--accent) 30%, transparent); }
+.homeShortcut .shortcutIcon { border-radius: 12px; color: var(--accent-ink); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.homeShortcut.favorites .shortcutIcon { color: #ff9fb6; background: #ff7fa522; }
+.homeShortcut.recent .shortcutIcon { color: color-mix(in srgb, var(--dusk) 70%, white); background: color-mix(in srgb, var(--dusk) 18%, transparent); }
+.homeShortcut .shortcutPlay { border-radius: 999px; color: var(--on-accent); background: var(--accent); }
+.homeAlbumArt, .albumCardArtwork { border-radius: 14px; box-shadow: 0 18px 34px -22px #000c; }
+.homeAlbumArt img, .homeAlbumArt .cover, .albumCardArtwork img, .albumCardArtwork .cover { transition: transform 300ms cubic-bezier(.2,.7,.2,1); }
+.homeAlbumCard:hover .homeAlbumArt img, .homeAlbumCard:hover .homeAlbumArt .cover, .mediaCard:hover .albumCardArtwork img, .mediaCard:hover .albumCardArtwork .cover { transform: scale(1.04); }
+.homeAlbumCard strong, .mediaCard strong { font-weight: 600; }
+.desktopShell .mediaCard { border-radius: 16px; }
+.desktopShell .mediaCard:hover { background: color-mix(in srgb, var(--text) 4%, transparent); }
+
+/* ---------- Panels, settings and dialogs ---------- */
+.homeHeading .libraryEyebrow { display: none; }
+.embeddedQueue .queueSection > header { text-transform: none; font-size: 11.5px; font-weight: 600; letter-spacing: 0; color: var(--muted); }
+.navGroupLabel { text-transform: none; letter-spacing: .01em; font-size: 11.5px; }
+.settingsPanel, .desktopShell .settingsPanel, :root[data-glass="on"] .desktopShell .settingsPanel { border-radius: var(--surface-radius); border-color: var(--border); background: color-mix(in srgb, var(--panel) 62%, transparent); }
+.sideInspector { background: var(--island-bg); }
+.inspectorHeader { border-bottom-color: var(--border); }
+.embeddedQueue .queueTrack, .queueTrack { border-radius: 12px; }
+.embeddedQueue .queueTrack.current, .queueTrack.current { background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 16%, transparent), color-mix(in srgb, var(--accent) 4%, transparent)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 14%, transparent); }
+.toastNotice { border-radius: 14px; border-color: color-mix(in srgb, var(--accent) 22%, var(--border)); background: color-mix(in srgb, var(--panel-2) 92%, transparent); backdrop-filter: blur(24px); box-shadow: 0 24px 50px -20px #000c; }
+.toastNotice > svg { color: var(--accent-ink); }
+
+/* ---------- Player dock ---------- */
+:root .desktopShell > .playerBar,
+:root[data-glass="on"] .desktopShell > .playerBar {
+  min-height: 84px;
+  padding: 10px 18px 10px 12px;
+  border-radius: calc(var(--island-radius) + 4px);
+  background-color: color-mix(in srgb, var(--panel) 80%, transparent);
+  background-image:
+    radial-gradient(40% 140% at 50% 140%, color-mix(in srgb, var(--accent) 16%, transparent), transparent 70%),
+    linear-gradient(180deg, color-mix(in srgb, var(--text) 4%, transparent), transparent);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text) 7%, transparent), 0 26px 50px -24px #000d;
+}
+.playerBar::before { display: none; }
+.desktopShell .playerBar .playerCover .cover { width: 52px; height: 52px; border-radius: 12px; box-shadow: 0 10px 22px -12px #000; }
+.desktopShell .playerBar .playerTitleButton strong { font-family: var(--font-display); font-size: 14px; font-weight: 600; letter-spacing: 0; }
+.desktopShell .playerBar .playerArtistButton { font-size: 11.5px; color: var(--muted); }
+.playerBar .nowPlaying:hover { background: transparent; }
+.playerBar .playerTrackActions .iconButton, .playerBar .playerTrackActions .iconButton.active { background: transparent; border-color: transparent; box-shadow: none; }
+.playerBar .playerTrackActions .favoriteButton.active { color: #ff8fb0; }
+.playerBar .transportButtons .iconButton { color: var(--muted); border-radius: 999px; }
+.playerBar .transportButtons .iconButton:hover:not(:disabled) { color: var(--text); background: color-mix(in srgb, var(--text) 7%, transparent); }
+.playerBar .transportButtons .iconButton.active, .desktopShell .playerBar .iconButton.active { color: var(--accent-ink); }
+.playerBar .transportButtons .iconButton.active::after { content: ""; position: absolute; bottom: 2px; left: 50%; width: 4px; height: 4px; margin-left: -2px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 6px var(--accent); }
+.playerBar .transportButtons .iconButton { position: relative; }
+.desktopShell .playerBar .playButton, .playerBar .playButton {
+  width: 42px;
+  height: 42px;
+  border-radius: 999px;
+  color: var(--on-accent);
+  background: radial-gradient(circle at 35% 28%, color-mix(in srgb, var(--accent) 55%, white), var(--accent) 62%);
+  box-shadow: 0 0 0 5px color-mix(in srgb, var(--accent) 11%, transparent), 0 10px 26px -6px color-mix(in srgb, var(--accent) 75%, transparent), inset 0 1px 0 #ffffff70;
+  transition: transform 150ms ease, box-shadow 200ms ease;
+}
+.desktopShell .playerBar .playButton:hover:not(:disabled), .playerBar .playButton:hover:not(:disabled) { background: radial-gradient(circle at 35% 28%, color-mix(in srgb, var(--accent) 40%, white), var(--accent-strong) 62%); transform: scale(1.06); }
+.playerBar .playButton:disabled { color: var(--faint); background: var(--panel-3); box-shadow: none; }
+.playerBar .playButton svg { color: inherit; }
+.playerBar.isPlaying .playButton { animation: afterglowPulse 2.8s ease-in-out infinite; }
+@keyframes afterglowPulse {
+  0%, 100% { box-shadow: 0 0 0 5px color-mix(in srgb, var(--accent) 11%, transparent), 0 10px 26px -6px color-mix(in srgb, var(--accent) 75%, transparent), inset 0 1px 0 #ffffff70; }
+  50% { box-shadow: 0 0 0 8px color-mix(in srgb, var(--accent) 6%, transparent), 0 10px 34px -4px color-mix(in srgb, var(--accent) 95%, transparent), inset 0 1px 0 #ffffff70; }
+}
+:root[data-motion="reduced"] .playerBar.isPlaying .playButton { animation: none; }
+.desktopShell .playerBar .transportButtons { gap: 12px; }
+.desktopShell .playerBar .transport { gap: 4px; }
+.playerBar .seekRow span { font-family: var(--font-display); font-variant-numeric: tabular-nums; font-size: 11px; color: var(--faint); }
+
+/* The afterglow line: progress warms from dusk violet into honey. */
+.seekRow input[type="range"], .volume input[type="range"], .heroProgress input, .heroVolume input {
+  height: 4px;
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--dusk) 85%, var(--accent)) 0%, var(--accent) 100%) 0 0 / max(var(--range-progress, 0%), 1px) 100% no-repeat,
+    color-mix(in srgb, var(--text) 13%, transparent);
+  border-radius: 999px;
+}
+.volume input[type="range"], .heroVolume input { background:
+    linear-gradient(90deg, color-mix(in srgb, var(--accent) 70%, var(--text)), color-mix(in srgb, var(--accent) 70%, var(--text))) 0 0 / var(--range-progress, 0%) 100% no-repeat,
+    color-mix(in srgb, var(--text) 13%, transparent); }
+.seekRow input[type="range"]::-webkit-slider-thumb, .volume input[type="range"]::-webkit-slider-thumb, .heroProgress input::-webkit-slider-thumb, .heroVolume input::-webkit-slider-thumb {
+  width: 12px;
+  height: 12px;
+  border: 0;
+  border-radius: 50%;
+  background: #fff8ec;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 35%, transparent), 0 0 14px 2px color-mix(in srgb, var(--accent) 70%, transparent);
+  transition: transform 120ms ease;
+}
+.seekRow input[type="range"]:hover::-webkit-slider-thumb, .heroProgress input:hover::-webkit-slider-thumb { transform: scale(1.2); }
+.seekRow input[type="range"]:disabled::-webkit-slider-thumb { background: var(--panel-3); box-shadow: none; }
+.playerVisualizer { opacity: .5; }
+
+/* ---------- Now playing ---------- */
+.nowPlayingView { background: radial-gradient(circle at 22% 34%, color-mix(in srgb, var(--accent) 10%, #17111f), #0a070e 66%); --tab-text: #f6efe6; --tab-muted: #b8adc1; }
+.nowPlayingTint { background:
+    radial-gradient(circle at 25% 45%, color-mix(in srgb, var(--accent) 10%, transparent), transparent 40%),
+    radial-gradient(circle at 85% 10%, color-mix(in srgb, var(--dusk) 18%, transparent), transparent 45%),
+    linear-gradient(112deg, #0b081040, #0b0810c4 58%, #0b0810f0); }
+.nowPlayingBackdrop { opacity: .42; filter: blur(90px) saturate(1.4); }
+.nowPlayingArtwork .cover.lg { border-radius: clamp(18px, 2vw, 28px); box-shadow: 0 30px 60px -28px #000e, 0 0 0 1px #ffffff12; }
+.heroTitleRow h2.heroTrackTitle { font-family: var(--font-display); font-weight: 600; font-stretch: 88%; letter-spacing: -.01em; line-height: 1.02; }
+.heroArtistLink { color: #f6efe6b3; }
+.heroPlayButton {
+  color: var(--on-accent);
+  background: radial-gradient(circle at 35% 28%, color-mix(in srgb, var(--accent) 50%, white), var(--accent) 64%);
+  box-shadow: 0 0 0 8px color-mix(in srgb, var(--accent) 12%, transparent), 0 22px 56px -12px color-mix(in srgb, var(--accent) 80%, transparent), inset 0 1px 0 #ffffff80;
+}
+.heroPlayButton:hover { background: radial-gradient(circle at 35% 28%, color-mix(in srgb, var(--accent) 35%, white), var(--accent-strong) 64%); }
+.heroProgress input, .heroProgress input[type="range"] { height: 5px; }
+.heroControls .heroControl, .heroControl { border-radius: 999px; }
+.heroControl[aria-pressed="true"] { color: var(--accent-ink); }
+.glassTextButton { border-radius: 999px; }
+.glassTextButton > span { display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px; background: var(--accent); color: var(--on-accent); font-size: 11px; font-weight: 700; line-height: 1; }
+.nowPlayingHeader .nowPlayingModeSwitch { border-radius: 999px; background: #0b081066; border-color: #ffffff18; }
+.nowPlayingHeader .nowPlayingModeSwitch button { border-radius: 999px; }
+.nowPlayingHeader .nowPlayingModeSwitch button.active { background: color-mix(in srgb, var(--accent) 20%, transparent); border-color: color-mix(in srgb, var(--accent) 35%, transparent); }
+.glassIconButton { border-radius: 999px; }
+.playingStatus { color: var(--accent-ink); text-transform: none; letter-spacing: 0; font-size: 13px; }
+
+/* ---------- Lyrics ---------- */
+.lyricsPanel { --lyric-text: #fbf4ea; --lyric-muted: #b9aec3; --lyric-faint: #6f6579; --lyric-border: #ffffff14; --lyric-control: #ffffff08; }
+.sideInspector .lyricsPanel { --lyric-text: var(--text); --lyric-muted: var(--muted); --lyric-faint: var(--faint); --lyric-border: var(--border); --lyric-control: color-mix(in srgb, var(--panel) 60%, transparent); }
+.lyricsPanel .lyricsScroll p { font-family: var(--font-display); font-weight: 600; font-stretch: 92%; letter-spacing: -.005em; }
+.lyricsPanel .lyricsScroll.syncedLyrics p.active { color: var(--lyric-text); }
+.lyricsReadingControls select { background: var(--panel-2); color: var(--text); }
+
+/* ---------- Light theme adjustments ---------- */
+:root[data-theme="light"] .desktopShell > .playerBar { background-color: color-mix(in srgb, var(--panel) 88%, transparent); box-shadow: inset 0 1px 0 #ffffff, 0 24px 40px -26px #2b1d3766; }
+:root[data-theme="light"] .desktopShell > .sidebar,
+:root[data-theme="light"] .desktopShell > .mainPane,
+:root[data-theme="light"] .desktopShell > .sideInspector { box-shadow: inset 0 1px 0 #ffffffcc, 0 18px 36px -28px #2b1d3755; }
+:root[data-theme="light"] .desktopShell .sidebar .navItem.active { color: var(--text); }
+:root[data-theme="light"] .seekRow input[type="range"]::-webkit-slider-thumb { background: #fff; }
+
+/* ---------- Small windows ---------- */
+@media (max-width: 900px) {
+  :root { --gutter: 6px; --island-radius: 14px; }
+  .desktopShell .sidebar .navItem.active::before { left: -5px; }
+  .desktopShell .sidebar .navCount, .desktopShell .sidebar .navJamHint { display: none; }
+}
+@media (max-width: 480px) {
+  :root { --gutter: 4px; --island-radius: 12px; }
+  .desktopShell .sidebar .navItem.active::before { display: none; }
+}
+
+/* ---------- Accent presets (Settings) ---------- */
+.accentSwatches { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-height: 38px; }
+.accentSwatch { width: 26px; height: 26px; padding: 0; border: 0; border-radius: 50%; background: var(--swatch); cursor: pointer; box-shadow: inset 0 1px 0 #ffffff60, 0 0 0 1px #00000030; transition: transform 140ms ease, box-shadow 140ms ease; }
+.accentSwatch:hover { transform: scale(1.1); }
+.accentSwatch.active { box-shadow: 0 0 0 2px var(--panel), 0 0 0 4px var(--swatch), 0 0 14px 2px color-mix(in srgb, var(--swatch) 60%, transparent); }
+.accentSwatch:focus-visible { outline: 2px solid var(--text); outline-offset: 4px; }
+.accentCustom { position: relative; display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; overflow: hidden; background: conic-gradient(from 0deg, #f2876b, #f2b661, #8fd19e, #7cc8d6, #b49cf2, #f08aa6, #f2876b); cursor: pointer; box-shadow: 0 0 0 1px #00000030; }
+.accentCustom input[type="color"] { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; border: 0; padding: 0; }
+.accentCustom:focus-within { outline: 2px solid var(--text); outline-offset: 4px; }
+
+/* ---------- Home spotlight (12.4) ---------- */
+.homeView .homeHeading.homeSpotlight { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 20px 28px; }
+.homeView .homeSpotlight > .homeGreeting { flex: 1 1 300px; }
+.homeView .homeSpotlight > .homeContinue { flex: 1 1 340px; max-width: 460px; }
+.homeView .homeGreeting { min-width: 0; }
+.homeView .homeGreeting h2 { font-family: var(--font-display); font-weight: 600; font-stretch: 88%; letter-spacing: -.015em; line-height: 1; font-size: clamp(32px, 3.4vw, 48px); }
+.homeView .homeGreeting p { margin: 12px 0 18px; color: var(--muted); font-size: 14px; }
+.homeView .homeHeading:not(.homeSpotlight) .homeGreeting { display: flex; align-items: center; justify-content: space-between; width: 100%; gap: 16px; }
+.homeContinue { position: relative; isolation: isolate; overflow: hidden; display: grid; grid-template-columns: 84px minmax(0, 1fr) auto; align-items: center; gap: 16px; padding: 14px 16px 14px 14px; border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent); border-radius: 22px; background: #0c0910; color: #f6efe6; box-shadow: 0 24px 50px -30px #000, inset 0 1px 0 #ffffff12; }
+.homeContinueBackdrop { position: absolute; inset: -45%; z-index: -2; opacity: .6; filter: blur(42px) saturate(1.5); }
+.homeContinueBackdrop .cover { display: block; width: 100%; height: 100%; border-radius: 0; object-fit: cover; }
+.homeContinue::after { content: ""; position: absolute; inset: 0; z-index: -1; background: linear-gradient(90deg, #0c091066, #0c0910b8 70%); }
+.homeContinue > .cover { width: 84px; height: 84px; min-height: 0; border-radius: 13px; object-fit: cover; box-shadow: 0 14px 28px -12px #000; }
+.homeContinueText { display: grid; gap: 3px; min-width: 0; }
+.homeContinueText small { color: color-mix(in srgb, var(--accent) 75%, white); font-size: 12px; font-weight: 600; }
+.homeContinueText strong { overflow: hidden; color: #fff; font-family: var(--font-display); font-size: 18px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.homeContinueText span { overflow: hidden; color: #f6efe6a6; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.homeContinuePlay { display: grid; place-items: center; width: 52px; height: 52px; border: 0; border-radius: 50%; background: radial-gradient(circle at 35% 28%, color-mix(in srgb, var(--accent) 50%, white), var(--accent) 64%); color: var(--on-accent); box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent) 14%, transparent), 0 12px 30px -8px var(--accent); cursor: pointer; transition: transform 150ms ease; }
+.homeContinuePlay:hover:not(:disabled) { transform: scale(1.06); }
+.homeContinuePlay:disabled { opacity: .5; cursor: default; }
+.homeContinuePlay:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
+
+/* ---------- Polish (12.4) ---------- */
+.desktopShell .sidebar .navJamHint { border: 0; background: color-mix(in srgb, #ff5d6c 16%, transparent); color: #ff8f99; font-weight: 700; letter-spacing: .02em; }
+:root[data-theme="light"] .desktopShell .sidebar .navJamHint { color: #c8283a; }
+
+/* ---------- Glass (12.5) ----------
+ * Real frosted glass: surfaces follow the Surface opacity slider, the desktop shows
+ * through the gaps, and every panel gets a lit top edge and a soft sheen.
+ */
+:root[data-glass="on"] {
+  --glass-tint: color-mix(in srgb, var(--bg) calc(var(--glass-opacity) * 62%), transparent);
+  --glass-island: color-mix(in srgb, var(--shell) calc(var(--glass-opacity) * 88%), transparent);
+  --glass-main: color-mix(in srgb, var(--panel) calc(var(--glass-opacity) * 70%), transparent);
+  --glass-card: color-mix(in srgb, var(--text) 5%, transparent);
+  --glass-edge: #ffffff2b;
+  --glass-edge-soft: #ffffff10;
+  --glass-sheen: linear-gradient(155deg, #ffffff12 0%, #ffffff05 28%, transparent 46%);
+  --island-bg: var(--glass-island);
+  --island-main: var(--glass-main);
+}
+:root[data-glass="on"][data-theme="light"] {
+  --glass-tint: color-mix(in srgb, var(--bg) calc(var(--glass-opacity) * 55%), transparent);
+  --glass-island: color-mix(in srgb, #ffffff calc(var(--glass-opacity) * 80%), transparent);
+  --glass-main: color-mix(in srgb, #ffffff calc(var(--glass-opacity) * 72%), transparent);
+  --glass-card: color-mix(in srgb, #ffffff 45%, transparent);
+  --glass-edge: #ffffffd9;
+  --glass-edge-soft: #ffffff66;
+  --glass-sheen: linear-gradient(155deg, #ffffff66 0%, #ffffff1f 30%, transparent 50%);
+}
+:root[data-glass="on"] .desktopShell {
+  background:
+    radial-gradient(70% 55% at 12% 0%, color-mix(in srgb, var(--dusk) 10%, transparent), transparent 70%),
+    radial-gradient(60% 50% at 88% 100%, color-mix(in srgb, var(--accent) 8%, transparent), transparent 70%),
+    var(--glass-tint);
+  border-color: var(--glass-edge-soft);
+  box-shadow: inset 0 1px 0 var(--glass-edge-soft);
+}
+:root[data-glass="on"] .desktopShell .appAtmosphere { opacity: .42; filter: blur(90px) saturate(1.6); }
+:root[data-glass="on"] .desktopShell > .sidebar,
+:root[data-glass="on"] .desktopShell > .mainPane,
+:root[data-glass="on"] .desktopShell > .sideInspector,
+:root[data-glass="on"] .desktopShell > .playerBar {
+  border-color: var(--glass-edge-soft);
+  background-color: var(--glass-island);
+  background-image: var(--glass-sheen);
+  box-shadow: inset 0 1px 0 var(--glass-edge), inset 1px 0 0 var(--glass-edge-soft), 0 30px 60px -32px #000a;
+  backdrop-filter: blur(40px) saturate(180%);
+}
+:root[data-glass="on"] .desktopShell > .mainPane { background-color: var(--glass-main); }
+:root[data-glass="on"] .desktopShell > .playerBar {
+  background-image: radial-gradient(40% 140% at 50% 140%, color-mix(in srgb, var(--accent) 18%, transparent), transparent 70%), var(--glass-sheen);
+}
+:root[data-glass="on"] .desktopShell .sidebar .navItem.active { background: linear-gradient(95deg, color-mix(in srgb, var(--accent) 24%, transparent), color-mix(in srgb, var(--accent) 6%, transparent) 85%); box-shadow: inset 0 1px 0 #ffffff1a, inset 0 0 0 1px color-mix(in srgb, var(--accent) 20%, transparent); }
+
+/* Cards inside glass become frosted layers rather than solid blocks. */
+:root[data-glass="on"] .desktopShell :is(.homeShortcut, .settingsPanel, .jamCard, .dlSurface, .dlHistory ul, .spotifySetup, .spotifyDevicePanel, .namingTemplateCard, .roomAddressRow, .nearbyRoom, .jamPermissionCard, .spotifySearch, .jamModeSwitch > button) {
+  background-color: var(--glass-card);
+  border-color: var(--glass-edge-soft);
+  box-shadow: inset 0 1px 0 var(--glass-edge-soft);
+  backdrop-filter: blur(20px) saturate(150%);
+}
+:root[data-glass="on"] .desktopShell .jamModeSwitch > button.active { background-color: color-mix(in srgb, var(--accent) 16%, transparent); border-color: color-mix(in srgb, var(--accent) 50%, transparent); }
+:root[data-glass="on"] .desktopShell :is(.tableHeader, .librarySongPage .tableHeader) { background: color-mix(in srgb, var(--shell) calc(var(--glass-opacity) * 70%), transparent); backdrop-filter: blur(30px) saturate(160%); }
+:root[data-glass="on"] .desktopShell .shellToolbar .searchBox { background: var(--glass-card); border-color: var(--glass-edge-soft); box-shadow: inset 0 1px 0 var(--glass-edge-soft); }
+:root[data-glass="on"] :is(.dialogPanel, .contextMenu, .toastNotice) {
+  background-color: color-mix(in srgb, var(--shell) calc(min(.96, var(--glass-opacity) + .2) * 100%), transparent);
+  background-image: var(--glass-sheen);
+  border-color: var(--glass-edge-soft);
+  box-shadow: inset 0 1px 0 var(--glass-edge), 0 30px 70px -20px #000c;
+  backdrop-filter: blur(40px) saturate(180%);
+}
+:root[data-glass="on"] .desktopShell .homeAlbumArt, :root[data-glass="on"] .desktopShell .homeContinue { box-shadow: 0 0 0 1px var(--glass-edge-soft), 0 20px 40px -24px #000c; }

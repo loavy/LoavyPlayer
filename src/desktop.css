@@ -1,0 +1,358 @@
+/* Desktop chrome: one toolbar, a library tree, content, and a docked inspector. */
+.desktopShell { grid-template-columns: auto minmax(0, 1fr) 0; grid-template-rows: 48px minmax(0, 1fr) auto; overflow: hidden; background: var(--bg); }
+.desktopShell.inspectorOpen { grid-template-columns: auto minmax(0, 1fr) 284px; }
+.appAtmosphere { display: none; position: absolute; z-index: -1; inset: -25%; background-size: cover; background-position: center; filter: blur(100px) saturate(.6); opacity: .09; pointer-events: none; }
+:root[data-background="ambient"] .appAtmosphere { display: block; }
+.desktopShell > .shellToolbar { grid-column: 1 / -1; grid-row: 1; display: flex; flex-direction: row; align-items: center; justify-content: flex-start; flex-wrap: nowrap; min-height: 48px; height: 48px; padding: 0 12px 0 0; gap: 14px; border-bottom: 1px solid var(--border); background: var(--shell); }
+.toolbarBrand { width: 208px; height: 100%; display: flex; align-items: center; gap: 9px; flex: 0 0 auto; padding: 0 20px; border-right: 1px solid var(--border); }
+.toolbarBrand > svg { color: var(--accent); }
+.toolbarBrand > span { font-size: 18px; font-weight: 650; letter-spacing: -.045em; }
+.toolbarBrand > small { color: var(--faint); font-size: 8px; letter-spacing: .14em; margin-left: 2px; }
+.shellToolbar .titleGroup { gap: 6px; flex-shrink: 0; }
+.shellToolbar .titleGroup h1 { font-size: 12px; font-weight: 450; letter-spacing: 0; color: var(--muted); }
+.shellToolbar .topBarLocation { padding-left: 12px; margin-left: 4px; border-left: 1px solid var(--border-strong); }
+.shellToolbar .iconButton { width: 30px; height: 30px; border-radius: 5px; color: var(--muted); }
+.shellToolbar .iconButton:hover { background: var(--panel-2); color: var(--text); }
+.shellToolbar .iconButton.active { color: var(--accent-ink); background: color-mix(in srgb, var(--accent) 12%, var(--shell)); }
+.shellToolbar .topBarSearch { margin-left: auto; flex: 0 1 auto; min-width: 0; gap: 6px; }
+.shellToolbar .searchBox { display: flex; align-items: center; gap: 9px; width: 264px; min-width: 0; border: 1px solid var(--border); border-radius: 5px; padding: 6px 10px; background: transparent; }
+.shellToolbar .searchBox:focus-within { border-color: var(--border-strong); background: var(--panel); }
+.shellToolbar .searchBox input { min-width: 0; width: 100%; border: 0; outline: none; background: transparent; color: var(--text); font-size: 11px; }
+.shellToolbar .searchBox > svg { color: var(--faint); flex-shrink: 0; }
+.shellToolbar .quickScanButton { width: 30px; height: 30px; flex-basis: 30px; }
+.toolbarPanels { display: flex; align-items: center; gap: 5px; flex: 0 0 auto; }
+.desktopShell > .sidebar { grid-column: 1; grid-row: 2; width: 208px; padding: 14px 10px 8px; border-right: 1px solid var(--border); background: color-mix(in srgb, var(--shell) 96%, transparent); }
+.desktopShell > .sidebar > .brand { display: none; }
+.desktopShell .sidebar nav { display: flex; flex-direction: column; align-items: stretch; gap: 3px; padding-bottom: 12px; }
+.desktopShell .sidebar .navItem { min-height: 35px; padding: 8px 11px; font-size: 13px; font-weight: 400; gap: 11px; border-radius: 5px; flex-shrink: 0; }
+.desktopShell .sidebar .navGroup { margin: 6px 0 0; gap: 0; }
+.navTreeToggle > span { flex: 1; text-align: left; }
+.navTreeChildren { display: grid; margin: 2px 0 3px 19px; padding-left: 12px; border-left: 1px solid var(--border-strong); gap: 2px; }
+.navTreeChildren.collapsed { display: none; }
+.sidebar .navTreeChildren .navItem { min-height: 31px; padding-left: 10px; }
+.sidebar .navTreeChildren .navItem > svg { display: none; }
+.sidebarFooter .localLibraryNote { display: none; }
+.desktopShell .sidebarFooter { padding-top: 6px; }
+.sidebarCollections { margin-top: 24px; }
+.sidebarCollections .navGroupLabel { padding: 0 10px 9px; font-size: 9px; }
+.sidebarAlbum { display: flex; align-items: center; width: 100%; min-height: 55px; padding: 7px 9px; gap: 10px; text-align: left; border: 0; border-radius: 6px; background: transparent; color: var(--muted); cursor: pointer; }
+.sidebarAlbum:hover { background: var(--panel); color: var(--text); }
+.sidebarAlbum.active { background: color-mix(in srgb, var(--accent) 12%, var(--shell)); color: var(--text); }
+.sidebarAlbum > .cover { width: 36px; height: 36px; flex-shrink: 0; border-radius: 4px; }
+.sidebarAlbum > span { display: grid; min-width: 0; gap: 3px; flex: 1; }
+.sidebarAlbum strong { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 12px; font-weight: 450; }
+.sidebarAlbum small { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--faint); font-size: 10px; }
+.desktopShell > .sidebar.compact { width: 62px; padding-inline: 6px; }
+.desktopShell[data-sidebar="compact"] .toolbarBrand { width: 62px; justify-content: center; padding: 0; }
+.desktopShell[data-sidebar="compact"] .toolbarBrand > span, .desktopShell[data-sidebar="compact"] .toolbarBrand > small { display: none; }
+.sidebar.compact .navTreeToggle { display: none; }
+.sidebar.compact .navTreeChildren { margin: 0; padding: 0; border: 0; }
+.sidebar.compact .navTreeChildren .navItem > svg { display: block; }
+.sidebar.compact .sidebarAlbum > span, .sidebar.compact .sidebarAlbum > svg, .sidebar.compact .sidebarCollections .navGroupLabel { display: none; }
+.sidebar.compact .sidebarAlbum { padding: 6px; justify-content: center; }
+.sidebar.compact .sidebarAlbum > .cover { width: 30px; height: 30px; }
+.desktopShell > .mainPane { grid-column: 2; grid-row: 2; }
+.desktopShell .contentArea { padding: 0; }
+.desktopShell .persistentViewHost { padding: 20px; }
+.desktopShell .errorBanner { margin: 8px 12px 0; flex-shrink: 0; font-size: 12px; }
+.desktopShell .contentArea > .settingsStack, .desktopShell .contentArea > .folderBrowser, .desktopShell .contentArea > .folderQueueView { padding: 20px; }
+
+/* Compact, full-width collection pages. */
+.desktopShell .librarySongPage { scrollbar-gutter: auto; }
+.desktopShell .libraryHero { padding: 25px 26px 22px; min-height: 0; gap: 22px; border-bottom: 1px solid var(--border); }
+.desktopShell .libraryHero h2, .desktopShell .collectionIntro h2 { font-size: 30px; font-weight: 600; letter-spacing: -.035em; margin: 8px 0; line-height: 1.12; }
+.desktopShell .libraryEyebrow { font-size: 9px; letter-spacing: .07em; }
+.desktopShell .libraryDescription { font-size: 12px; line-height: 1.5; }
+.desktopShell .libraryFacts { margin-top: 7px; font-size: 11px; }
+.desktopShell .libraryActions { margin-top: 13px; gap: 8px; }
+.desktopShell .libraryActions > button { min-height: 33px; padding: 7px 13px; font-size: 12px; border-radius: 6px; }
+.desktopShell .libraryActions .libraryPlay { min-width: 88px; font-weight: 500; }
+.desktopShell .libraryActions .collectionPin { width: 34px; padding: 0; justify-content: center; }
+.collectionPin.active { color: var(--accent-ink); background: color-mix(in srgb, var(--accent) 12%, var(--shell)); }
+.desktopShell .collectionArtwork { width: 142px; }
+.desktopShell .collectionArtwork .cover.lg { border-radius: 10px; box-shadow: none; }
+.desktopShell .libraryListToolbar { padding: 7px 19px; min-height: 36px; border-top: 0; }
+.desktopShell .libraryListToolbar > span { color: var(--faint); font-size: 10px; font-weight: 400; }
+.desktopShell .libraryListToolbar select { font-size: 10px; background: transparent; }
+.desktopShell .virtualTable .tableHeader { font-size: 11px; letter-spacing: 0; text-transform: none; min-height: 33px; padding-block: 9px; }
+.desktopShell .virtualTable .songsGrid { padding-inline: 15px; gap: 14px; }
+.desktopShell .virtualTable .trackRow { padding-block: 0; }
+.desktopShell .virtualTable .titleCell { gap: 10px; }
+.desktopShell .virtualTable .titleCell strong { font-weight: 400; font-size: calc(13px * var(--font-scale)); }
+.desktopShell .virtualTable .titleCell .trackSubtitle { margin-top: 1px; }
+.desktopShell .virtualTable .titleCell .trackFormat { font-size: 8px; }
+.desktopShell .virtualTable .cover.sm { width: 32px; height: 32px; border-radius: 4px; }
+.desktopShell .virtualTable .metadataLink { font-size: calc(12px * var(--font-scale)); }
+.rowPlay { position: relative; }
+.rowIndex { display: block; width: 100%; text-align: center; font-size: 11px; font-variant-numeric: tabular-nums; color: var(--faint); }
+.rowPlayGlyph { display: none; align-items: center; justify-content: center; width: 100%; }
+.trackRow:hover .rowIndex, .trackRow:focus-within .rowIndex, .trackRow.current .rowIndex { display: none; }
+.trackRow:hover .rowPlayGlyph, .trackRow:focus-within .rowPlayGlyph, .trackRow.current .rowPlayGlyph { display: flex; }
+.trackHeadingNumber { display: inline-block; width: 24px; text-align: center; margin-right: 10px; }
+.desktopShell .virtualTable .rowMoreButton { opacity: 0; }
+.desktopShell .virtualTable .trackRow:hover .rowMoreButton, .desktopShell .virtualTable .trackRow:focus-within .rowMoreButton { opacity: 1; }
+.desktopShell .virtualTable .trackRow.current .titleCell strong, .desktopShell .virtualTable .trackRow.current .rowPlay { color: var(--accent-ink); }
+.desktopShell .albumSongTable .titleCell > .cover { display: none; }
+.desktopShell .albumSongTable .titleCell .trackSubtitle { display: none; }
+.desktopShell .albumSongTable .songsGrid { grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) 104px; }
+.desktopShell .albumSongTable .songsGrid > span:nth-child(3) { display: none; }
+@container song-list (max-width: 520px) {
+  .desktopShell .albumSongTable .songsGrid { grid-template-columns: minmax(0, 1fr) 94px; gap: 6px; padding-inline: 8px; }
+  .desktopShell .albumSongTable .songsGrid > span:nth-child(2) { display: none; }
+  .desktopShell .albumSongTable .titleCell .trackSubtitle { display: flex; }
+}
+.desktopShell .albumCollection, .desktopShell .artistCollection { padding: 24px 18px; }
+.desktopShell .collectionIntro { padding: 0 8px 21px; }
+.desktopShell .collectionIntro p { color: var(--faint); font-size: 11px; }
+.desktopShell .albumCollection .cardGrid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 18px 4px; }
+.desktopShell .mediaCard { padding: 8px; border-radius: 7px; }
+.desktopShell .mediaCard:hover { transform: none; }
+.desktopShell .albumCardArtwork .cover.lg { border-radius: 7px; }
+.desktopShell .artistCardGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(145px, 1fr)); gap: 18px 8px; }
+.desktopShell .artistCardGrid .artistRow { display: flex; flex-direction: column; gap: 12px; align-items: center; text-align: center; border: 0; padding: 14px 8px; }
+.desktopShell .artistCardGrid .artistAvatar { width: 112px; height: 112px; overflow: hidden; border-radius: 50%; background: var(--panel-2); }
+.desktopShell .artistCardGrid .artistAvatar .cover { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; min-height: 0; }
+.desktopShell .artistCardGrid h3 { font-size: 13px; font-weight: 450; }
+.desktopShell .artistCardGrid p { margin-top: 5px; font-size: 10px; }
+.desktopShell .artistCardGrid .rowChevron { display: none; }
+.cover.placeholder.lg { position: relative; overflow: hidden; background: linear-gradient(145deg, hsl(var(--cover-hue, 185) 24% 29%), hsl(calc(var(--cover-hue, 185) + 30) 22% 12%)); }
+.cover.placeholder.lg::after { content: ""; position: absolute; width: 145%; height: 145%; left: 30%; top: 16%; border: 1px solid #ffffff15; border-radius: 50%; box-shadow: 0 0 0 16px #ffffff04, 0 0 0 34px #ffffff04; pointer-events: none; }
+.cover.placeholder.lg > svg { color: #ffffff70; }
+
+/* Queue and lyrics share a normal, non-modal side pane. */
+.sideInspector { grid-column: 3; grid-row: 2; display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; border-left: 1px solid var(--border-strong); background: color-mix(in srgb, var(--shell) 94%, transparent); }
+.inspectorHeader { display: flex; align-items: center; justify-content: space-between; min-height: 43px; flex-shrink: 0; padding: 0 10px 0 13px; border-bottom: 1px solid var(--border); }
+.inspectorHeader > div { display: flex; gap: 14px; height: 43px; }
+.inspectorHeader > div button { display: flex; align-items: center; gap: 6px; border: 0; padding: 0; color: var(--faint); background: transparent; border-bottom: 2px solid transparent; font-size: 10px; cursor: pointer; }
+.inspectorHeader > div button.active { border-bottom-color: var(--accent); color: var(--text); }
+.inspectorHeader .iconButton { width: 26px; height: 26px; color: var(--faint); }
+.sideInspector .embeddedQueue { width: 100%; height: 100%; max-height: none; min-height: 0; flex: 1; box-shadow: none; border: 0; background: transparent; animation: none; backdrop-filter: none; }
+.embeddedQueue .queueHeader { display: none; }
+.embeddedQueue .queueContent { gap: 19px; padding: 13px 11px; }
+.embeddedQueue .queueSection > header { font-size: 9px; font-weight: 500; letter-spacing: .04em; color: var(--faint); }
+.embeddedQueue .queueTrack.current { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.embeddedQueue .queueTrack .cover { width: 36px; height: 36px; flex-shrink: 0; border-radius: 4px; }
+.embeddedQueue .queueTrack strong { font-size: 12px; font-weight: 450; }
+.embeddedQueue .queueTrack small { font-size: 10px; }
+.embeddedQueue .queueTrack.current > span { flex: 1; min-width: 0; }
+.embeddedQueue .queueTrack.current > svg { width: 15px; flex-shrink: 0; }
+.embeddedQueue .queueTrackMain { gap: 9px; }
+.embeddedQueue .queueTrackActions { display: none; }
+.embeddedQueue .queueTrack:hover .queueTrackActions, .embeddedQueue .queueTrack:focus-within .queueTrackActions { display: flex; flex-direction: column; }
+.embeddedQueue .queueTrackActions button { width: 19px; height: 18px; }
+.embeddedQueue .queueTrackActions svg { width: 12px; }
+.embeddedQueue .queueTrackMain > svg { display: none; }
+.queueHistoryTrack { display: flex; align-items: center; gap: 10px; padding: 5px; border: 0; border-radius: 4px; background: transparent; color: var(--muted); text-align: left; cursor: pointer; }
+.queueHistoryTrack:hover { background: var(--panel); }
+.queueHistoryTrack > .cover { width: 34px; height: 34px; flex-shrink: 0; }
+.queueHistoryTrack > span { display: grid; gap: 3px; min-width: 0; }
+.queueHistoryTrack strong { font-size: 12px; font-weight: 400; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.queueHistoryTrack small { font-size: 10px; color: var(--faint); }
+.inspectorEmpty { display: grid; justify-items: center; align-content: center; gap: 13px; flex: 1; color: var(--faint); padding: 24px; text-align: center; }
+.inspectorEmpty strong { font-size: 14px; color: var(--muted); font-weight: 450; }
+.inspectorEmpty p { font-size: 11px; }
+.sideInspector .lyricsPanel { flex: 1; min-height: 0; height: auto; width: 100%; border: 0; border-radius: 0; box-shadow: none; background: transparent; }
+.sideInspector .lyricsHeader { padding: 13px 12px; gap: 8px; flex-wrap: wrap; background: transparent; border-color: var(--border); }
+.sideInspector .lyricsHeading { font-size: 11px; color: var(--text); }
+.sideInspector .lyricsSource { font-size: 9px; color: var(--faint); }
+.sideInspector .lyricsActions { gap: 4px; }
+.sideInspector .glassTextButton, .sideInspector .glassIconButton { color: var(--muted); border-color: var(--border-strong); background: transparent; min-height: 26px; padding: 5px 8px; font-size: 10px; border-radius: 5px; }
+.sideInspector .glassTextButton svg { width: 12px; }
+.sideInspector .lyricsScroll { padding-inline: 17px; }
+.sideInspector .lyricsScroll p { font-size: 20px; line-height: 1.5; }
+.sideInspector .lyricsScroll p, .sideInspector .lyricsScroll.syncedLyrics p { color: var(--muted); }
+.sideInspector .lyricsScroll.syncedLyrics p.past { color: var(--faint); }
+.sideInspector .lyricsScroll.syncedLyrics p.active { color: var(--text); }
+.sideInspector .lyricsScroll .lyricLineButton:hover:not(:disabled) { color: var(--text); }
+.sideInspector .lyricsEmpty { color: var(--text); }
+.sideInspector .lyricsEmpty p { color: var(--muted); }
+.sideInspector .lyricsSearchView, .sideInspector .lyricsResult { color: var(--text); }
+.sideInspector .lyricsSearchTop > span, .sideInspector .lyricsSearchForm label, .sideInspector .lyricsSearchHint p, .sideInspector .lyricsPreview p, .sideInspector .lyricsPreview pre, .sideInspector .lyricsPreviewActions > span, .sideInspector .lyricsToolsBar label { color: var(--muted); }
+.sideInspector .lyricsSearchForm input, .sideInspector .lyricsEditor > textarea { color: var(--text); background: var(--panel); border-color: var(--border-strong); }
+.sideInspector .lyricsResult { border-color: var(--border); background: var(--panel); }
+.sideInspector .lyricsResult span:not(.lyricsBadge), .sideInspector .lyricsResult small { color: var(--muted); }
+.sideInspector .lyricsBadge { color: var(--accent-ink); border-color: var(--border-strong); background: var(--panel-2); }
+.sideInspector .lyricsInlineStatus { color: var(--muted); }
+.sideInspector .lyricsFollowBar { padding: 9px; border-color: var(--border); background: transparent; }
+.sideInspector .lyricsFollowBar > span { display: none; }
+
+/* Home stays focused on actual albums and listening history. */
+.homeView { height: 100%; overflow: auto; padding: 26px; scrollbar-gutter: stable; }
+.homeHeading { display: flex; justify-content: space-between; gap: 16px; align-items: center; margin-bottom: 25px; }
+.homeHeading h2 { font-size: 29px; font-weight: 600; letter-spacing: -.04em; margin-top: 6px; }
+.homeHeading .secondaryAction { padding: 7px 11px; font-size: 11px; }
+.homeShortcuts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-bottom: 30px; }
+.homeShortcut { display: flex; align-items: center; gap: 6px; min-width: 0; padding: 8px; background: var(--panel); border: 1px solid var(--border); border-radius: 7px; }
+.shortcutLink { display: flex; align-items: center; min-width: 0; gap: 10px; padding: 0; flex: 1; border: 0; color: var(--text); background: transparent; text-align: left; cursor: pointer; }
+.shortcutIcon { display: grid; place-items: center; flex-shrink: 0; width: 39px; height: 39px; border-radius: 5px; background: var(--panel-2); color: var(--accent-ink); }
+.favorites .shortcutIcon { background: #b991c61a; color: #b991c6; }
+.recent .shortcutIcon { background: #c8b0861a; color: #b6a58b; }
+.shortcutLink > span:last-child { display: grid; gap: 4px; min-width: 0; }
+.shortcutLink strong { font-size: 11px; font-weight: 450; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.shortcutLink small { font-size: 9px; color: var(--faint); }
+.shortcutPlay { display: grid; place-items: center; width: 26px; height: 30px; border: 0; color: var(--muted); background: transparent; cursor: pointer; }
+.shortcutPlay:hover { color: var(--text); }
+.homeSectionHeading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 17px; }
+.homeSectionHeading h3 { font-size: 17px; font-weight: 550; letter-spacing: -.02em; }
+.homeSectionHeading > button { display: flex; align-items: center; gap: 5px; border: 0; padding: 4px 0; background: transparent; color: var(--faint); font-size: 10px; cursor: pointer; }
+.homeAlbumGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(135px, 1fr)); gap: 20px 15px; margin-bottom: 32px; }
+.homeAlbumCard { min-width: 0; display: flex; flex-direction: column; align-items: stretch; text-align: left; border: 0; padding: 0; border-radius: 7px; background: transparent; color: var(--text); cursor: pointer; }
+.homeAlbumArt { position: relative; overflow: hidden; border-radius: 7px; aspect-ratio: 1; margin-bottom: 11px; }
+.homeAlbumArt .cover.lg { width: 100%; height: 100%; min-height: 0; aspect-ratio: 1; border-radius: inherit; }
+.homeAlbumArt > span { position: absolute; display: grid; place-items: center; bottom: 10px; right: 10px; width: 32px; height: 32px; background: var(--accent); color: #102125; border-radius: 50%; opacity: 0; transition: opacity 120ms; }
+.homeAlbumCard:hover .homeAlbumArt > span, .homeAlbumCard:focus-visible .homeAlbumArt > span { opacity: 1; }
+.homeAlbumCard > strong { font-size: 12px; font-weight: 450; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
+.homeAlbumCard > small { color: var(--faint); font-size: 10px; margin-top: 5px; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
+.homeTrackGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px 18px; padding-bottom: 20px; }
+.homeTrack { display: flex; gap: 10px; align-items: center; min-width: 0; padding: 8px; text-align: left; border: 0; border-radius: 5px; background: transparent; color: var(--text); cursor: pointer; }
+.homeTrack:hover { background: var(--panel); }
+.homeTrack > .cover { flex-shrink: 0; width: 33px; height: 33px; }
+.homeTrack > span { min-width: 0; flex: 1; display: grid; gap: 4px; }
+.homeTrack strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; font-weight: 400; }
+.homeTrack small { font-size: 10px; color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.homeTrack > svg { color: var(--faint); flex-shrink: 0; }
+.homeWelcome { display: grid; justify-items: center; text-align: center; gap: 14px; padding: 12vh 24px 40px; }
+.homeWelcomeRecord { display: grid; place-items: center; color: var(--accent); width: 110px; height: 110px; border: 1px solid var(--border-strong); border-radius: 50%; background: repeating-radial-gradient(circle, transparent 0 8px, var(--border) 9px 10px); }
+.homeWelcome h3 { font-weight: 500; font-size: 25px; letter-spacing: -.03em; margin-top: 12px; }
+.homeWelcome p { color: var(--muted); font-size: 12px; max-width: 280px; line-height: 1.7; }
+.homeWelcome .primaryAction { font-size: 12px; padding: 10px 15px; margin-top: 8px; }
+
+.desktopShell .userPlaylistsView { padding: 24px; gap: 20px; }
+.desktopShell .playlistsIntro { padding: 0; gap: 14px; }
+.desktopShell .playlistsIntro h2 { font-size: 30px; margin-top: 7px; letter-spacing: -.035em; }
+.desktopShell .playlistsIntro > div > span { font-size: 9px; letter-spacing: .07em; }
+.desktopShell .playlistsIntro p { margin-top: 6px; font-size: 11px; color: var(--faint); }
+.desktopShell .playlistsIntro > .primaryAction { font-size: 11px; padding: 8px 12px; }
+.desktopShell .playlistDetailView { padding: 0; }
+.desktopShell .playlistHero { border-radius: 0; min-height: 205px; padding: 44px 24px 20px; gap: 22px; }
+.desktopShell .playlistHeroCover { width: 134px; }
+.desktopShell .playlistHeroText h2 { font-size: 34px; margin: 8px 0 12px; }
+.desktopShell .playlistActionBar { padding: 16px 22px; border-bottom: 1px solid var(--border); }
+.desktopShell .playlistTrackHost { margin: 0; }
+.desktopShell > .playerBar { grid-column: 1 / -1; grid-row: 3; min-height: 82px; padding: 10px 17px; gap: 20px; border-top: 1px solid var(--border-strong); background: color-mix(in srgb, var(--shell) 80%, var(--panel)); grid-template-columns: minmax(0, 1fr) minmax(260px, 1fr) minmax(210px, .7fr); }
+.desktopShell .playerBar .transport { gap: 1px; }
+.desktopShell .playerBar .playButton { width: 32px; height: 32px; }
+.desktopShell .playerBar .playerTitleButton strong { font-size: 12px; font-weight: 450; }
+.desktopShell .playerBar .playerArtistButton { font-size: 10px; }
+.desktopShell .playerBar .playerCover .cover { width: 43px; height: 43px; border-radius: 4px; }
+.desktopShell .playerBar .playerUtilities { gap: 9px; }
+.desktopShell .playerBar .volume { flex: 0 1 105px; width: 105px; }
+.desktopShell .playerBar .iconButton.active { color: var(--accent-ink); }
+.desktopShell .playerBar .queueButtonCount { display: none; }
+.desktopShell .playerBar .playerTrackActions > button:last-child { display: none; }
+:root[data-covers="hide"] .homeAlbumArt, :root[data-covers="hide"] .collectionArtwork, :root[data-covers="hide"] .lyricsCompanionArtwork { display: none; }
+
+/* The expanded lyric view keeps the artwork large and the words unobstructed. */
+@media (min-width: 761px) {
+  .lyricsCompanionArtwork { width: min(100%, 42vh, 430px); }
+  .lyricsMode .nowPlayingDetails { gap: 12px; }
+  .lyricsMode .heroTitleRow h2.heroTrackTitle { font-size: clamp(22px, 2.5vw, 31px); }
+  .lyricsMode .lyricsPanel { border: 0; box-shadow: none; background: transparent; }
+  .lyricsMode .lyricsHeader, .lyricsMode .lyricsFollowBar { background: transparent; border-color: #ffffff0a; }
+  .lyricsMode .lyricsScroll { padding-inline: 22px; }
+  .lyricsMode .lyricsScroll p.active { transform: none; }
+}
+@media (max-width: 1200px) {
+  .shellToolbar .searchBox { width: 214px; }
+  .shellToolbar .searchBox kbd { display: none; }
+}
+@media (max-width: 1099px) {
+  .toolbarPanels { display: none; }
+  .desktopShell > .playerBar { grid-template-columns: minmax(0, 1fr) minmax(230px, 1fr) auto; gap: 12px; }
+  .desktopShell .playerBar .volume { width: 80px; flex-basis: 80px; }
+  .desktopShell .playerBar .playerLyricsButton { display: none; }
+  .desktopShell .shellToolbar .topBarLocation { display: none; }
+}
+@media (max-width: 900px) {
+  .desktopShell > .sidebar, .desktopShell > .sidebar.compact { width: 60px; padding: 12px 5px 7px; }
+  .toolbarBrand { width: 60px; justify-content: center; padding: 0; }
+  .toolbarBrand > span, .toolbarBrand > small { display: none; }
+  .desktopShell .sidebar .navTreeToggle { display: none; }
+  .desktopShell .navTreeChildren, .desktopShell .navTreeChildren.collapsed { display: grid; margin: 0; padding: 0; border: 0; gap: 2px; }
+  .desktopShell .navTreeChildren .navItem > svg { display: block; }
+  .desktopShell .sidebarCollections .navGroupLabel, .desktopShell .sidebarAlbum > span, .desktopShell .sidebarAlbum > svg { display: none; }
+  .desktopShell .sidebarAlbum { padding: 6px; justify-content: center; }
+  .desktopShell .sidebarAlbum > .cover { width: 30px; height: 30px; }
+  .desktopShell .sidebar .sidebarCollections { margin-top: 16px; }
+  .desktopShell .sidebar .navItem { justify-content: center; padding: 8px; }
+  .desktopShell .sidebar .navGroup { margin-top: 9px; }
+  .desktopShell .sidebar .navItem > span { display: none; }
+  .desktopShell .playerBar .expandPlayerButton { display: none; }
+}
+@media (max-width: 700px) {
+  .desktopShell { grid-template-rows: 46px minmax(0, 1fr) auto; }
+  .desktopShell > .shellToolbar { height: 46px; min-height: 46px; gap: 6px; padding-right: 10px; }
+  .shellToolbar .topBarSearch { flex: 1; }
+  .shellToolbar .searchBox { width: 100%; max-width: none; }
+  .shellToolbar .quickScanButton { display: none; }
+  .desktopShell .libraryHero { padding: 18px 17px; gap: 16px; }
+  .desktopShell .libraryHero h2 { font-size: 26px; }
+  .desktopShell .collectionArtwork { width: 108px; }
+  .desktopShell .libraryListToolbar { padding-inline: 11px; }
+  .homeView { padding: 20px 17px; }
+  .homeShortcuts { gap: 7px; }
+  .shortcutPlay { display: none; }
+  .homeShortcut { padding: 7px; }
+  .shortcutIcon { width: 30px; height: 35px; }
+  .shortcutLink { gap: 7px; }
+  .homeAlbumGrid { grid-template-columns: repeat(auto-fill, minmax(125px, 1fr)); gap: 20px 12px; }
+  .desktopShell .albumCollection, .desktopShell .artistCollection { padding: 20px 10px; }
+  .desktopShell .userPlaylistsView { padding: 20px 16px; }
+  .desktopShell > .playerBar { grid-template-columns: minmax(0, 1fr) auto; min-height: 116px; padding: 8px 14px; gap: 3px 10px; }
+  .desktopShell .playerBar .transport { grid-column: 1 / -1; grid-row: 2; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 12px; }
+  .desktopShell .playerBar .playerUtilities { grid-column: 2; grid-row: 1; }
+  .desktopShell .playerBar .nowPlaying { grid-column: 1; grid-row: 1; }
+  .desktopShell .playlistHero { min-height: 155px; padding: 43px 16px 16px; gap: 16px; }
+  .desktopShell .playlistHeroCover { width: 92px; }
+  .desktopShell .playlistHeroText h2 { font-size: 27px; }
+  .desktopShell .playlistActionBar { padding: 12px 14px; }
+}
+@media (max-width: 480px) {
+  .desktopShell > .sidebar, .desktopShell > .sidebar.compact { width: 46px; padding-inline: 3px; }
+  .toolbarBrand { width: 46px; }
+  .shellToolbar .titleGroup { gap: 0; }
+  .shellToolbar .titleGroup .iconButton { width: 27px; }
+  .shellToolbar .navigationButtons .iconButton:last-child { display: none; }
+  .desktopShell .sidebar .navItem { min-height: 33px; padding: 7px; }
+  .desktopShell .sidebarCollections { display: none; }
+  .desktopShell .libraryHero { padding: 16px 12px; }
+  .desktopShell .collectionHero { flex-direction: row; align-items: center; gap: 12px; }
+  .desktopShell .collectionArtwork { width: 76px; align-self: flex-start; margin-top: 5px; }
+  .desktopShell .collectionHero h2 { font-size: 23px; }
+  .desktopShell .collectionHero .libraryDescription { font-size: 11px; }
+  .desktopShell .collectionHero .libraryEyebrow { font-size: 8px; }
+  .desktopShell .libraryActions { gap: 6px; }
+  .desktopShell .libraryActions > button { min-height: 30px; padding: 6px 9px; font-size: 10px; }
+  .desktopShell .libraryActions .libraryPlay { min-width: 68px; }
+  .desktopShell .collectionBack { flex-basis: 100%; }
+  .homeView { padding: 17px 12px; }
+  .homeHeading h2 { font-size: 25px; }
+  .homeHeading .secondaryAction { padding-inline: 7px; font-size: 10px; }
+  .homeShortcuts { grid-template-columns: minmax(0, 1fr); gap: 7px; margin-bottom: 24px; }
+  .shortcutPlay { display: grid; }
+  .homeShortcut { padding: 7px 10px; }
+  .shortcutIcon { width: 33px; height: 33px; }
+  .shortcutLink strong { font-size: 12px; }
+  .homeAlbumGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 19px 12px; }
+  .homeTrackGrid { grid-template-columns: minmax(0, 1fr); }
+  .homeSectionHeading h3 { font-size: 16px; }
+  .desktopShell .albumCollection .cardGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .desktopShell .artistCardGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .desktopShell .artistCardGrid .artistAvatar { width: 95px; height: 95px; }
+  .desktopShell > .playerBar { min-height: 135px; padding-inline: 11px; }
+  .desktopShell .playerBar .transport { display: flex; flex-direction: column; gap: 0; }
+  .desktopShell .playlistHero { padding: 48px 14px 16px; min-height: 145px; flex-direction: row; align-items: center; }
+  .desktopShell .playlistHeroCover { width: 77px; }
+  .desktopShell .playlistHeroText h2 { font-size: 24px; }
+}
+@media (max-height: 600px) and (min-width: 481px) and (max-width: 700px) {
+  .desktopShell .libraryHero { padding-block: 12px; }
+  .desktopShell .collectionArtwork { width: 82px; }
+  .desktopShell .libraryHero h2 { font-size: 24px; margin-block: 5px; }
+  .desktopShell .libraryActions { margin-top: 9px; }
+  .desktopShell .playlistHero { min-height: 100px; padding: 12px 16px 12px 50px; }
+  .desktopShell .playlistHeroCover { width: 72px; }
+  .desktopShell .playlistHeroText h2 { font-size: 25px; }
+  .desktopShell .playlistActionBar { padding-block: 9px; }
+  .desktopShell > .playerBar { min-height: 105px; }
+}

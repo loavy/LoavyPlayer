@@ -254,6 +254,7 @@ pub async fn export_track_lyrics(
         "txt" => lyrics
             .plain_text
             .filter(|text| !text.trim().is_empty())
+            .map(|text| crate::commands::strip_word_timestamps(&text))
             .or_else(|| {
                 lyrics
                     .synced_text

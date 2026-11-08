@@ -18,7 +18,7 @@ import {
   SkipForward,
   Volume2
 } from "lucide-react";
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { audioEngine } from "../lib/audioEngine";
 import { displayAlbum, displayArtist, displayTrackTitle, formatDuration } from "../lib/format";
 import { useLibraryActions } from "../lib/LibraryContext";
@@ -26,6 +26,8 @@ import { useAudio } from "../lib/useAudio";
 import { Cover } from "./Cover";
 import { LyricsPanel } from "./LyricsPanel";
 import { QueuePanel } from "./QueuePanel";
+import { MusicVisualizer } from "./MusicVisualizer";
+import { SegmentedTabs } from "./SegmentedTabs";
 
 type Props = {
   onClose: () => void;
@@ -35,6 +37,7 @@ type Props = {
 
 export function NowPlayingView({ onClose, onToggleFavorite, onOpenMenu }: Props) {
   const audio = useAudio();
+  const tabsId = useId();
   const { openAlbum, openArtist } = useLibraryActions();
   const viewRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
@@ -154,15 +157,13 @@ export function NowPlayingView({ onClose, onToggleFavorite, onOpenMenu }: Props)
     >
       {coverUrl && <div className="nowPlayingBackdrop" style={{ backgroundImage: `url("${coverUrl}")` }} />}
       <div className="nowPlayingTint" />
+      <MusicVisualizer className="expandedVisualizer" />
 
       <header className="nowPlayingHeader" aria-label="Now playing controls">
         <button ref={closeRef} className="glassIconButton nowPlayingClose" onClick={onClose} title="Close now playing" aria-label="Close now playing">
           <ChevronDown size={23} />
         </button>
-        <div className="nowPlayingModeSwitch" role="group" aria-label="Now playing presentation">
-          <button className={mode === "artwork" ? "active" : ""} aria-pressed={mode === "artwork"} onClick={() => selectMode("artwork")}><Image size={15} /> Artwork</button>
-          <button className={mode === "lyrics" ? "active" : ""} aria-pressed={mode === "lyrics"} onClick={() => selectMode("lyrics")}><Quote size={15} /> Lyrics</button>
-        </div>
+        <SegmentedTabs className="nowPlayingModeSwitch" id={tabsId} label="Now playing presentation" value={mode} onChange={selectMode} panelId={`${tabsId}-panel`} options={[{ value: "artwork", label: "Artwork", icon: <Image size={15} /> }, { value: "lyrics", label: "Lyrics", icon: <Quote size={15} /> }]} />
         <button className="glassIconButton nowPlayingFullscreen" onClick={() => void toggleFullscreen()} title={fullscreen ? "Exit fullscreen" : "Enter fullscreen"} aria-label={fullscreen ? "Exit fullscreen" : "Enter fullscreen"}>
           {fullscreen ? <Minimize size={20} /> : <Expand size={20} />}
         </button>
@@ -176,7 +177,7 @@ export function NowPlayingView({ onClose, onToggleFavorite, onOpenMenu }: Props)
           <button className="primaryAction" onClick={onClose}>Browse your music</button>
         </section>
       ) : (
-        <section className={mode === "lyrics" ? "nowPlayingStage lyricsMode" : "nowPlayingStage artworkMode"} aria-labelledby="now-playing-track-title">
+        <section id={`${tabsId}-panel`} role="tabpanel" className={mode === "lyrics" ? "nowPlayingStage lyricsMode" : "nowPlayingStage artworkMode"} aria-labelledby={`${tabsId}-${mode}`}>
           <section className="nowPlayingVisual" aria-label={mode === "artwork" ? "Album artwork" : undefined}>
             {mode === "artwork" ? (
               <div className="nowPlayingArtwork">
@@ -187,6 +188,7 @@ export function NowPlayingView({ onClose, onToggleFavorite, onOpenMenu }: Props)
           </section>
 
           <section className="nowPlayingDetails" aria-label="Playback details">
+            {mode === "lyrics" && <div className="lyricsCompanionArtwork"><Cover path={audio.current.coverPath} title={audio.current.album || undefined} size="lg" /></div>}
             <div className="playingStatus"><span /> {audio.playing ? "Playing now" : "Paused"}</div>
             <div className="heroTitleRow">
               <div className="heroTitleCopy">

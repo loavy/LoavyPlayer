@@ -75,6 +75,9 @@ export type FetcherDescriptor = {
 };
 
 export type ViewKey =
+  | "home"
+  | "stats"
+  | "spotify"
   | "songs"
   | "albums"
   | "artists"

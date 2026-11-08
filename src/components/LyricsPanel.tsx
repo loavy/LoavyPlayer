@@ -1,5 +1,5 @@
-import { Download, FileUp, Focus, Globe, LoaderCircle, Minus, Pencil, Plus, Save, Search, SearchX, Timer, Trash2, X } from "lucide-react";
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { AlignCenter, AlignLeft, ChevronDown, ChevronUp, Copy, Download, FileUp, Focus, Globe, LoaderCircle, Minus, Pencil, Plus, RotateCcw, Save, Search, SearchX, SlidersHorizontal, Timer, Trash2, X } from "lucide-react";
+import { useEffect, useId, useMemo, useRef, useState, type CSSProperties } from "react";
 import { api } from "../lib/api";
 import { errorMessage, useLibraryActions } from "../lib/LibraryContext";
 import { useAudio } from "../lib/useAudio";
@@ -8,6 +8,11 @@ import { ConfirmDialog } from "./OverlayDialogs";
 import { activeLyricIndex, lrcOffset, lyricTimestamp, parseLrc, plainLyrics, shiftLyrics } from "../lib/lyrics";
 import { audioEngine } from "../lib/audioEngine";
 import { LyricsSearch } from "./LyricsSearch";
+import { lyricsPreferences, useLyricsPreferences } from "../lib/lyricsPreferences";
+import { formatDuration } from "../lib/format";
+import { LyricWave } from "./LyricWave";
+import { WordTimingEditor } from "./WordTimingEditor";
+import { SegmentedTabs } from "./SegmentedTabs";
 
 const missedLookups = new Map<number, number>();
 const draftKey = (id: number) => `loavy.lyricsDraft.${id}`;
@@ -20,6 +25,7 @@ export function LyricsPanel({ track }: { track: Track | null }) {
   const [lyrics, setLyrics] = useState<TrackLyrics | null>(null);
   const [loading, setLoading] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [editorMode, setEditorMode] = useState<"text" | "words">("text");
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -33,6 +39,12 @@ export function LyricsPanel({ track }: { track: Track | null }) {
   const [offline, setOffline] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const reading = useLyricsPreferences();
+  const [readingOpen, setReadingOpen] = useState(false);
+  const [findOpen, setFindOpen] = useState(false);
+  const [findQuery, setFindQuery] = useState("");
+  const [findCursor, setFindCursor] = useState(0);
+  const findRef = useRef<HTMLInputElement | null>(null);
   const editorRef = useRef<HTMLTextAreaElement | null>(null);
   const activeLineRef = useRef<HTMLParagraphElement | null>(null);
   const lyricsScrollRef = useRef<HTMLDivElement | null>(null);
@@ -47,6 +59,7 @@ export function LyricsPanel({ track }: { track: Track | null }) {
     setSearching(false);
     setFinding(false);
     setToolsOpen(false);
+    setReadingOpen(false); setFindOpen(false); setFindQuery(""); setFindCursor(0);
     setOnlineMessage(null);
     setFollowing(true);
     setLoadError(null);
@@ -99,7 +112,47 @@ export function LyricsPanel({ track }: { track: Track | null }) {
   }
 
   const timedLines = useMemo(() => parseLrc(lyrics?.syncedText || ""), [lyrics?.syncedText]);
-  const activeIndex = activeLyricIndex(timedLines, audio.position);
+  const timingOffset = track ? reading.offsets[track.id] || 0 : 0;
+  const position = audio.current?.id === track?.id ? audio.position : 0;
+  const activeIndex = activeLyricIndex(timedLines, position + timingOffset);
+  const lineEnds = useMemo(() => {
+    const ends: number[] = [];
+    let end = audio.duration || track?.durationMs || (timedLines[timedLines.length - 1]?.at || 0) + 6000;
+    for (let index = timedLines.length - 1; index >= 0; index--) {
+      if (index < timedLines.length - 1 && timedLines[index].at !== timedLines[index + 1].at) end = timedLines[index + 1].at;
+      ends[index] = Math.max(timedLines[index].at + 1, end);
+    }
+    return ends;
+  }, [timedLines, audio.duration, track?.durationMs]);
+  const displayLines = useMemo(() => timedLines.length ? timedLines.map(line => line.text) : (lyrics?.plainText || "").split(/\r?\n/), [timedLines, lyrics?.plainText]);
+  const matches = useMemo(() => { const query = findQuery.trim().toLocaleLowerCase(); return query ? displayLines.flatMap((text, index) => text.toLocaleLowerCase().includes(query) ? [index] : []) : []; }, [displayLines, findQuery]);
+  const matchedLine = matches.length ? matches[findCursor % matches.length] : -1;
+  const nextLine = timedLines[activeIndex + 1];
+  const countdown = nextLine ? Math.max(0, Math.ceil((nextLine.at - position - timingOffset) / 1000)) : 0;
+  const readingStyle = { "--lyric-size": reading.size === "small" ? .86 : reading.size === "large" ? 1.2 : 1 } as CSSProperties;
+  // Playback ticks update the small status area; long lyric documents only
+  // rebuild their lines when the active line, search, or permissions change.
+  const lyricElements = useMemo(() => timedLines.map((line, index) => <p
+    key={line.key}
+    ref={index === activeIndex ? activeLineRef : undefined}
+    className={`${activeIndex >= 0 && line.at === timedLines[activeIndex].at ? "active" : index < activeIndex ? "past" : ""}${findOpen && index === matchedLine ? " lyricMatch" : ""}`}
+    data-lyric-index={index}
+    aria-current={index === activeIndex ? "true" : undefined}
+  ><time className="lyricTimestamp" aria-hidden="true">{formatDuration(line.at) === "--:--" ? "0:00" : formatDuration(line.at)}</time><button className="lyricLineButton" onClick={() => seekLine(line.at)} disabled={audio.localControlBlocked || audio.current?.id !== track?.id} title={audio.localControlBlocked ? "Playback is controlled by the Jam host" : "Jump to this line"}>{reading.wave && line.text && !findQuery.trim() && activeIndex >= 0 && line.at === timedLines[activeIndex].at ? <LyricWave line={line} end={lineEnds[index]} trackId={track?.id || 0} offset={timingOffset} /> : highlight(line.text || "♪", findQuery)}</button></p>), [timedLines, lineEnds, activeIndex, findOpen, matchedLine, findQuery, reading.wave, audio.localControlBlocked, audio.current?.id, track?.id, timingOffset]);
+
+  useEffect(() => { if (findOpen) findRef.current?.focus(); }, [findOpen]);
+  useEffect(() => {
+    if (matchedLine < 0 || !findOpen) return;
+    const container = lyricsScrollRef.current, line = container?.querySelector<HTMLElement>(`[data-lyric-index="${matchedLine}"]`);
+    if (!container || !line) return;
+    container.scrollTo({ top: Math.max(0, container.scrollTop + line.getBoundingClientRect().top - container.getBoundingClientRect().top - container.clientHeight / 2 + line.clientHeight / 2), behavior: "instant" });
+  }, [matchedLine, findOpen, findQuery]);
+
+  function openFind() { setFindOpen(true); setFollowing(false); setReadingOpen(false); }
+  async function copyLyrics() {
+    try { await navigator.clipboard.writeText(lyrics?.syncedText ? plainLyrics(lyrics.syncedText) : lyrics?.plainText || ""); notify("Lyrics copied.", "success"); }
+    catch { notify("Could not copy lyrics. You can download a text file instead.", "error"); }
+  }
 
   useEffect(() => {
     const container = lyricsScrollRef.current;
@@ -120,7 +173,7 @@ export function LyricsPanel({ track }: { track: Track | null }) {
 
   function seekLine(at: number) {
     if (audio.current?.id !== track?.id || audio.localControlBlocked) return;
-    if (audioEngine.seek(at)) { audioEngine.commitSeek(); setFollowing(true); }
+    if (audioEngine.seek(Math.max(0, at - timingOffset))) { audioEngine.commitSeek(); setFindOpen(false); setFindQuery(""); setFollowing(true); }
   }
 
   function beginEdit() {
@@ -129,7 +182,9 @@ export function LyricsPanel({ track }: { track: Track | null }) {
     setFinding(false);
     setDraft(readDraft(track.id) ?? lyrics?.syncedText ?? lyrics?.plainText ?? "");
     setEditing(true);
+    setEditorMode("text");
     setSearching(false);
+    setFindOpen(false); setReadingOpen(false);
   }
 
   function updateDraft(value: string) {
@@ -143,8 +198,10 @@ export function LyricsPanel({ track }: { track: Track | null }) {
     const start = field.selectionStart === 0 ? 0 : draft.lastIndexOf("\n", field.selectionStart - 1) + 1;
     const endIndex = draft.indexOf("\n", field.selectionStart);
     const end = endIndex < 0 ? draft.length : endIndex;
-    const line = draft.slice(start, end).replace(/^(?:\[\d{1,3}:[0-5]\d(?:[.:]\d{1,3})?\])+/, "");
-    const replacement = lyricTimestamp(audio.position + lrcOffset(draft)) + line;
+    const original = draft.slice(start, end);
+    const line = original.replace(/^(?:\[\d{1,3}:[0-5]\d(?:[.:]\d{1,3})?\])+/, "");
+    const target = audio.position + lrcOffset(draft), previous = parseLrc(original)[0]?.at;
+    const replacement = lyricTimestamp(target) + (previous !== undefined && /<\d{1,3}:[0-5]\d/.test(line) ? shiftLyrics(line, target - previous) : line);
     updateDraft(draft.slice(0, start) + replacement + draft.slice(end));
     requestAnimationFrame(() => { field.focus(); const next = Math.min(start + replacement.length + 1, field.value.length); field.setSelectionRange(next, next); });
   }
@@ -263,7 +320,10 @@ export function LyricsPanel({ track }: { track: Track | null }) {
   }
 
   return (
-    <section className="lyricsPanel" aria-labelledby={headingId} aria-busy={loading || saving}>
+    <section className="lyricsPanel" data-reading-focus={reading.focus} data-reading-align={reading.align} style={readingStyle} aria-labelledby={headingId} aria-busy={loading || saving} onKeyDown={event => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "f" && !editing && !searching && lyrics) { event.preventDefault(); event.stopPropagation(); openFind(); }
+      if (event.key === "Escape" && (findOpen || readingOpen || toolsOpen)) { event.preventDefault(); event.stopPropagation(); setFindOpen(false); setFindQuery(""); setReadingOpen(false); setToolsOpen(false); }
+    }}>
       <header className="lyricsHeader">
         <div className="lyricsHeaderCopy">
           <h2 id={headingId} className="lyricsHeading">Lyrics</h2>
@@ -273,8 +333,18 @@ export function LyricsPanel({ track }: { track: Track | null }) {
           {!editing && !searching && <><button className="glassTextButton" onClick={openSearch} disabled={loading || saving} title="Search online lyrics"><Search size={16} /> Find</button>
           <button className="glassTextButton" onClick={beginEdit} disabled={loading || saving} title={lyrics ? "Edit lyrics" : "Paste lyrics"}><Pencil size={16} />{readDraft(track.id) !== null ? "Resume draft" : "Edit"}</button>
           <button className="glassIconButton" disabled={loading || saving} onClick={() => setToolsOpen(value => !value)} title="Download and lyric options" aria-label="Download and lyric options" aria-expanded={toolsOpen}><Download size={17} /></button></>}
+          {!editing && !searching && <button className="glassIconButton" onClick={() => { setReadingOpen(value => !value); setFindOpen(false); setFindQuery(""); setToolsOpen(false); }} aria-label="Lyrics reading settings" title="Reading and timing" aria-expanded={readingOpen}><SlidersHorizontal size={16} /></button>}
         </div>
       </header>
+
+      {readingOpen && !editing && !searching && <div className="lyricsReadingControls" aria-label="Lyrics reading settings">
+        <div className="lyricsWaveSetting"><button className="glassTextButton" aria-label="Word wave" aria-pressed={reading.wave} onClick={() => lyricsPreferences.update({ wave: !reading.wave })}><Focus size={14} />Word wave {reading.wave ? "on" : "off"}</button><small>{!timedLines.length ? "Available with synchronized lyrics." : timedLines.some(line => line.words?.length) ? "Uses word timestamps where supplied; other timing is estimated." : "Estimated word timing between line timestamps."}</small></div>
+        <div><label>Text size<select aria-label="Lyrics text size" value={reading.size} onChange={event => lyricsPreferences.update({ size: event.target.value as typeof reading.size })}><option value="small">Small</option><option value="normal">Comfortable</option><option value="large">Large</option></select></label><div className="lyricAlignment" role="group" aria-label="Lyrics alignment"><button className="glassIconButton" aria-label="Align lyrics left" aria-pressed={reading.align === "left"} onClick={() => lyricsPreferences.update({ align: "left" })}><AlignLeft size={15} /></button><button className="glassIconButton" aria-label="Center lyrics" aria-pressed={reading.align === "center"} onClick={() => lyricsPreferences.update({ align: "center" })}><AlignCenter size={15} /></button></div><button className="glassTextButton" aria-pressed={reading.focus} onClick={() => lyricsPreferences.update({ focus: !reading.focus })}><Focus size={14} />Focus</button></div>
+        {!!timedLines.length && <div className="lyricTiming"><span>Timing offset<small>Positive values show lyrics sooner, on this device.</small></span><div><button className="glassIconButton" aria-label="Show lyrics 0.25 seconds later" disabled={timingOffset <= -10000} onClick={() => lyricsPreferences.offset(track.id, timingOffset - 250)}><Minus size={13} /></button><output aria-label="Lyrics timing offset">{timingOffset > 0 ? "+" : ""}{(timingOffset / 1000).toFixed(2)}s</output><button className="glassIconButton" aria-label="Show lyrics 0.25 seconds sooner" disabled={timingOffset >= 10000} onClick={() => lyricsPreferences.offset(track.id, timingOffset + 250)}><Plus size={13} /></button><button className="glassIconButton" aria-label="Reset lyrics timing" disabled={!timingOffset} onClick={() => lyricsPreferences.offset(track.id, 0)}><RotateCcw size={13} /></button></div></div>}
+        {!!lyrics && <div><button className="glassTextButton" onClick={openFind}><Search size={14} />Search in lyrics</button><button className="glassTextButton" onClick={() => void copyLyrics()}><Copy size={14} />Copy lyrics</button></div>}
+      </div>}
+
+      {findOpen && !editing && !searching && <div className="lyricsFindBar"><Search size={14} /><input ref={findRef} aria-label="Search in lyrics" placeholder="Find a word or line" value={findQuery} onChange={event => { setFindQuery(event.target.value); setFindCursor(0); }} onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); setFindCursor(value => matches.length ? (value + (event.shiftKey ? matches.length - 1 : 1)) % matches.length : 0); } }} /><span role="status">{findQuery ? matches.length ? `${findCursor % matches.length + 1}/${matches.length}` : "No matches" : ""}</span><button className="glassIconButton" aria-label="Previous lyric match" disabled={!matches.length} onClick={() => setFindCursor(value => (value + matches.length - 1) % matches.length)}><ChevronUp size={14} /></button><button className="glassIconButton" aria-label="Next lyric match" disabled={!matches.length} onClick={() => setFindCursor(value => (value + 1) % matches.length)}><ChevronDown size={14} /></button><button className="glassIconButton" aria-label="Close lyric search" onClick={() => { setFindOpen(false); setFindQuery(""); }}><X size={14} /></button></div>}
 
       {toolsOpen && !editing && !searching && <div className="lyricsToolsBar"><div><button className="glassTextButton" onClick={() => void download("lrc")} disabled={!timedLines.length || exporting}><Download size={14} /> LRC</button><button className="glassTextButton" onClick={() => void download("txt")} disabled={!lyrics || exporting}><Download size={14} /> TXT</button><button className="glassTextButton" onClick={() => void importLyrics()} disabled={loading || saving} title="Import .lrc or .txt lyrics"><FileUp size={14} /> Import</button>{lyrics && <button className="glassIconButton" disabled={loading || saving || finding} onClick={() => setConfirmDelete(true)} title="Delete saved lyrics" aria-label="Delete saved lyrics"><Trash2 size={15} /></button>}</div><label><input type="checkbox" checked={autoSearch} onChange={event => void toggleAuto(event.target.checked)} /> Find missing lyrics online automatically</label></div>}
 
@@ -283,6 +353,9 @@ export function LyricsPanel({ track }: { track: Track | null }) {
         <div className="lyricsLoading" role="status" aria-live="polite"><LoaderCircle className="spin" size={24} /><span>Loading lyrics</span></div>
       ) : editing ? (
         <div className="lyricsEditor">
+          <SegmentedTabs label="Lyrics editor mode" value={editorMode} onChange={setEditorMode} panelId={`${headingId}-editor`} options={[{ value: "text", label: "Text", icon: <Pencil size={13} /> }, { value: "words", label: "Word timing", icon: <Timer size={13} /> }]} />
+          <div className="lyricsEditorContent" id={`${headingId}-editor`} role="tabpanel" aria-label={editorMode === "words" ? "Word timing" : "Text editor"}>
+          {editorMode === "words" ? <WordTimingEditor draft={draft} onChange={updateDraft} track={track} disabled={saving} /> : <>
           <div className="lyricsEditorTools"><button className="glassTextButton" onClick={stampLine} disabled={saving || audio.current?.id !== track.id} title="Stamp the cursor's line, then advance to the next"><Timer size={15} /> Stamp current time</button><button className="glassTextButton" onClick={() => updateDraft(shiftLyrics(draft, -250))} disabled={saving || !parseLrc(draft).length} title="Move all lines 0.25 seconds earlier"><Minus size={14} /> 0.25s</button><button className="glassTextButton" onClick={() => updateDraft(shiftLyrics(draft, 250))} disabled={saving || !parseLrc(draft).length} title="Move all lines 0.25 seconds later"><Plus size={14} /> 0.25s</button></div>
           <textarea
             ref={editorRef}
@@ -294,6 +367,8 @@ export function LyricsPanel({ track }: { track: Track | null }) {
             placeholder="Paste plain text lyrics, or LRC lines such as [01:24.50]…"
             aria-label="Lyrics text"
           />
+          </>}
+          </div>
           <div>
             <span>Draft kept on this device. Stamp lines while listening, then save.</span>
             <button className="glassTextButton" onClick={() => setEditing(false)} disabled={saving}><X size={16} /> Cancel</button>
@@ -307,20 +382,11 @@ export function LyricsPanel({ track }: { track: Track | null }) {
           onWheel={() => setFollowing(false)} onTouchStart={() => setFollowing(false)}
           onPointerDown={(event) => { if (event.target === event.currentTarget) setFollowing(false); }}
           onKeyDown={(event) => { if (["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End"].includes(event.key)) setFollowing(false); }}>
-          {timedLines.map((line, index) => (
-            <p
-              key={line.key}
-              ref={index === activeIndex ? activeLineRef : undefined}
-              className={index === activeIndex ? "active" : index < activeIndex ? "past" : ""}
-              aria-current={index === activeIndex ? "true" : undefined}
-            >
-              <button className="lyricLineButton" onClick={() => seekLine(line.at)} disabled={audio.localControlBlocked || audio.current?.id !== track.id} title={audio.localControlBlocked ? "Playback is controlled by the Jam host" : "Jump to this line"}>{line.text || "♪"}</button>
-            </p>
-          ))}
+          {lyricElements}
         </div>
       ) : lyrics?.plainText === "[Instrumental]" ? <div className="lyricsEmpty lyricsEmptyInline"><Globe size={32} /><h2>Let the music speak</h2><p>This version is marked as instrumental. Find another version if that doesn't sound right.</p><button className="secondaryAction" onClick={openSearch}>Find another version</button></div> : lyrics?.plainText ? (
-        <div className="lyricsScroll plainLyrics" role="region" aria-label="Lyrics text" tabIndex={0}>
-          {lyrics.plainText.split(/\r?\n/).map((line, index) => <p key={`${index}-${line}`}>{line || "\u00a0"}</p>)}
+        <div ref={lyricsScrollRef} className="lyricsScroll plainLyrics" role="region" aria-label="Lyrics text" tabIndex={0}>
+          {lyrics.plainText.split(/\r?\n/).map((line, index) => <p data-lyric-index={index} className={findOpen && index === matchedLine ? "lyricMatch" : undefined} key={`${index}-${line}`}>{highlight(line || "\u00a0", findQuery)}</p>)}
         </div>
       ) : (
         <div className="lyricsEmpty lyricsEmptyInline">
@@ -331,7 +397,7 @@ export function LyricsPanel({ track }: { track: Track | null }) {
         </div>
         )}
       </div>
-      {!!lyrics && !editing && !searching && !loading && <footer className="lyricsFollowBar"><span>{timedLines.length ? audio.localControlBlocked ? "Synced with your host" : "Click a line to jump to it" : "Plain lyrics · add timestamps in Edit to enable seeking"}</span>{!!timedLines.length && <button className="glassTextButton" aria-pressed={following} onClick={() => setFollowing((value) => !value)}><Focus size={15} />{following ? "Following song" : "Follow song"}</button>}</footer>}
+      {!!lyrics && !editing && !searching && !loading && <footer className="lyricsFollowBar"><span>{timedLines.length ? audio.localControlBlocked ? "Synced with your host" : following && countdown > 3 ? `Next line in ${countdown}s` : "Click a line to jump to it" : "Plain lyrics · add timestamps in Edit to enable seeking"}</span>{!!timedLines.length && <button className="glassTextButton" aria-pressed={following} onClick={() => { setFollowing((value) => !value); setFindOpen(false); setFindQuery(""); }}><Focus size={15} />{following ? "Following song" : "Follow song"}</button>}</footer>}
 
       {confirmDelete && (
         <ConfirmDialog
@@ -353,4 +419,13 @@ function sourceLabel(source: string) {
   if (source === "local-file") return "an imported file";
   if (source === "manual") return "manual entry";
   return source;
+}
+
+function highlight(text: string, search: string) {
+  const query = search.trim();
+  if (!query) return text;
+  const lower = text.toLocaleLowerCase(), needle = query.toLocaleLowerCase();
+  const result = []; let cursor = 0, found = lower.indexOf(needle);
+  while (found >= 0) { result.push(text.slice(cursor, found), <mark key={found}>{text.slice(found, found + query.length)}</mark>); cursor = found + query.length; found = lower.indexOf(needle, cursor); }
+  result.push(text.slice(cursor)); return result;
 }

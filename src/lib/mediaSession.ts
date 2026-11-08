@@ -1,6 +1,7 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { audioEngine } from "./audioEngine";
 import { displayAlbum, displayArtist, displayTrackTitle } from "./format";
+import { spotify } from "./spotify";
 
 type Cleanup = () => void;
 
@@ -28,26 +29,31 @@ export function installMediaSession(): Cleanup {
   }
 
   setAction("play", () => {
+    if (spotify.get().active) { if (!spotify.get().playback?.is_playing) void spotify.play(); return; }
     if (!audioEngine.snapshot().playing) void audioEngine.toggle();
   });
   setAction("pause", () => {
+    if (spotify.get().active) { if (spotify.get().playback?.is_playing) void spotify.pause(); return; }
     if (audioEngine.snapshot().playing) void audioEngine.toggle();
   });
-  setAction("previoustrack", () => void audioEngine.previous());
-  setAction("nexttrack", () => void audioEngine.next());
-  setAction("stop", () => void audioEngine.stop());
+  setAction("previoustrack", () => { if (spotify.get().active) void spotify.skip("previous"); else void audioEngine.previous(); });
+  setAction("nexttrack", () => { if (spotify.get().active) void spotify.skip("next"); else void audioEngine.next(); });
+  setAction("stop", () => { if (spotify.get().active) void spotify.pause(); else void audioEngine.stop(); });
   setAction("seekto", (details) => {
     if (typeof details.seekTime !== "number" || !Number.isFinite(details.seekTime)) return;
+    if (spotify.get().active) { void spotify.seek(details.seekTime * 1000); return; }
     audioEngine.seek(details.seekTime * 1_000);
     audioEngine.commitSeek();
   });
   setAction("seekbackward", (details) => {
+    if (spotify.get().active) { void spotify.seek((spotify.get().playback?.progress_ms || 0) - (details.seekOffset ?? 10) * 1000); return; }
     const snapshot = audioEngine.snapshot();
     const offsetSeconds = details.seekOffset ?? 10;
     audioEngine.seek(Math.max(0, snapshot.position - offsetSeconds * 1_000));
     audioEngine.commitSeek();
   });
   setAction("seekforward", (details) => {
+    if (spotify.get().active) { void spotify.seek((spotify.get().playback?.progress_ms || 0) + (details.seekOffset ?? 10) * 1000); return; }
     const snapshot = audioEngine.snapshot();
     const offsetSeconds = details.seekOffset ?? 10;
     audioEngine.seek(Math.min(snapshot.duration || Number.MAX_SAFE_INTEGER, snapshot.position + offsetSeconds * 1_000));
@@ -55,7 +61,14 @@ export function installMediaSession(): Cleanup {
   });
 
   function sync() {
-    const snapshot = audioEngine.snapshot();
+    const remote = spotify.get();
+    const item = remote.playback?.item;
+    const snapshot = remote.active ? {
+      current: item ? { id: -1, path: item.uri, title: item.name, artist: item.artists.map(artist => artist.name).join(", "), album: item.album?.name, coverPath: item.album?.images?.[0]?.url, fileName: item.name, durationMs: item.duration_ms } : null,
+      playing: !!remote.playback?.is_playing,
+      duration: item?.duration_ms || 0,
+      position: remote.playback?.progress_ms || 0,
+    } : audioEngine.snapshot();
     const track = snapshot.current;
     const nextMetadataKey = track
       ? [track.id, track.path, track.title, track.artist, track.album, track.coverPath].join("\u0000")
@@ -113,10 +126,12 @@ export function installMediaSession(): Cleanup {
   }
 
   const unsubscribe = audioEngine.subscribe(sync);
+  const unsubscribeSpotify = spotify.subscribe(sync);
   sync();
 
   return () => {
     unsubscribe();
+    unsubscribeSpotify();
     installedActions.forEach((action) => {
       try {
         session.setActionHandler(action, null);

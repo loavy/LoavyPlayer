@@ -19,7 +19,7 @@ const QUEUE_OVERSCAN = 6;
 
 type QueuePanelAudio = Pick<
   AudioSnapshot,
-  "current" | "playing" | "currentIndex" | "upNext" | "localControlBlocked"
+  "current" | "playing" | "currentIndex" | "upNext" | "queue" | "localControlBlocked"
 >;
 
 function selectQueuePanelAudio(snapshot: AudioSnapshot): QueuePanelAudio {
@@ -28,6 +28,7 @@ function selectQueuePanelAudio(snapshot: AudioSnapshot): QueuePanelAudio {
     playing: snapshot.playing,
     currentIndex: snapshot.currentIndex,
     upNext: snapshot.upNext,
+    queue: snapshot.queue,
     localControlBlocked: snapshot.localControlBlocked
   };
 }
@@ -37,10 +38,11 @@ function sameQueuePanelAudio(left: QueuePanelAudio, right: QueuePanelAudio) {
     && left.playing === right.playing
     && left.currentIndex === right.currentIndex
     && left.upNext === right.upNext
+    && left.queue === right.queue
     && left.localControlBlocked === right.localControlBlocked;
 }
 
-export function QueuePanel({ onClose }: { onClose: () => void }) {
+export function QueuePanel({ onClose, embedded = false }: { onClose: () => void; embedded?: boolean }) {
   const audio = useAudioSelector(selectQueuePanelAudio, sameQueuePanelAudio);
   const panelRef = useRef<HTMLDivElement>(null);
   const queueListRef = useRef<HTMLDivElement>(null);
@@ -58,6 +60,7 @@ export function QueuePanel({ onClose }: { onClose: () => void }) {
   const visibleTracks = audio.upNext.slice(visibleStart, visibleEnd);
 
   useEffect(() => {
+    if (embedded) return;
     const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const previousRootOverflow = document.documentElement.style.overflow;
     const previousBodyOverflow = document.body.style.overflow;
@@ -101,7 +104,7 @@ export function QueuePanel({ onClose }: { onClose: () => void }) {
       document.body.style.overflow = previousBodyOverflow;
       if (previousFocus?.isConnected) previousFocus.focus();
     };
-  }, []);
+  }, [embedded]);
 
   useEffect(() => {
     const element = queueListRef.current;
@@ -171,9 +174,8 @@ export function QueuePanel({ onClose }: { onClose: () => void }) {
     list.scrollTo({ top: Math.max(0, Math.min(maximum, nextScrollTop)) });
   }
 
-  return createPortal(
-    <div className="queueBackdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-      <div className="queuePanel" ref={panelRef} role="dialog" aria-modal="true" aria-label="Playback queue" tabIndex={-1}>
+  const panel = (
+      <div className={embedded ? "queuePanel embeddedQueue" : "queuePanel"} ref={panelRef} role={embedded ? "region" : "dialog"} aria-modal={embedded ? undefined : true} aria-label="Playback queue" tabIndex={-1}>
         <header className="queueHeader">
           <div><ListMusic size={20} /><span><strong>Queue</strong><small>{audio.upNext.length} next up</small></span></div>
           <button className="iconButton" onClick={onClose} aria-label="Close queue"><X size={19} /></button>
@@ -182,6 +184,7 @@ export function QueuePanel({ onClose }: { onClose: () => void }) {
         {audio.localControlBlocked && <p className="queuePermission">The room host controls playback and the queue.</p>}
 
         <div className="queueContent">
+          {embedded && audio.currentIndex > 0 && <section className="queueSection queueHistory"><header><span>History</span></header>{audio.queue.slice(Math.max(0, audio.currentIndex - 2), audio.currentIndex).map((track, offset) => <button className="queueHistoryTrack" key={`${track.id}:${offset}`} onClick={() => void audioEngine.playQueuedItem(Math.max(0, audio.currentIndex - 2) + offset)} disabled={audio.localControlBlocked}><Cover path={track.coverPath} title={track.album || undefined} size="sm" /><span><strong>{displayTrackTitle(track)}</strong><small>{displayArtist(track.artist)}</small></span></button>)}</section>}
           <section className="queueSection">
             <header><span>Now playing</span></header>
             {audio.current ? (
@@ -267,7 +270,7 @@ export function QueuePanel({ onClose }: { onClose: () => void }) {
           </section>
         </div>
       </div>
-    </div>,
-    document.body
   );
+  if (embedded) return panel;
+  return createPortal(<div className="queueBackdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>{panel}</div>, document.body);
 }

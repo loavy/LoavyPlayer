@@ -1,6 +1,6 @@
 # Third-Party Notices
 
-Loavy Player 5.8.1 can download and execute separately maintained command-line tools on demand. Those tools are not part of Loavy Player's proprietary source license. Their respective licenses continue to apply.
+Loavy Player can download and execute separately maintained command-line tools on demand. Those tools are not part of Loavy Player's proprietary source license. Their respective licenses continue to apply.
 
 ## SpotiFLAC
 

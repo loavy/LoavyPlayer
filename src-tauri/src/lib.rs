@@ -10,6 +10,7 @@ mod models;
 mod playlist_art;
 mod room;
 mod state;
+mod spotify;
 
 use std::sync::atomic::Ordering;
 
@@ -18,6 +19,7 @@ use tauri::{Emitter, Manager, WindowEvent};
 
 pub fn run() {
     tauri::Builder::default()
+        .manage(std::sync::Arc::new(spotify::SpotifyState::default()))
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             commands::show_main_window(app);
         }))
@@ -57,6 +59,13 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            spotify::spotify_status,
+            spotify::spotify_connect,
+            spotify::spotify_disconnect,
+            spotify::spotify_sdk_token,
+            spotify::spotify_request,
+            spotify::spotify_open,
+            commands::set_window_appearance,
             commands::set_background_mode,
             commands::open_mini_player,
             commands::set_mini_player_always_on_top,

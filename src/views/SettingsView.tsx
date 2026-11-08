@@ -1,6 +1,17 @@
 import { FolderPlus, KeyRound, Paintbrush, RefreshCw, ShieldCheck, Sparkles, Trash2 } from "lucide-react";
+import type { CSSProperties } from "react";
 import { Switch } from "../components/Switch";
+import { AudioSettingsPanel } from "../components/AudioSettingsPanel";
 import type { FetcherDescriptor, MusicFolder, ScanProgress, ScanSummary } from "../types";
+
+const ACCENT_PRESETS = [
+  { name: "Honey", value: "#f2b661" },
+  { name: "Rose", value: "#f08aa6" },
+  { name: "Lilac", value: "#b49cf2" },
+  { name: "Lagoon", value: "#7cc8d6" },
+  { name: "Fern", value: "#8fd19e" },
+  { name: "Ember", value: "#f2876b" }
+];
 
 type Props = {
   folders: MusicFolder[];
@@ -21,6 +32,10 @@ type Props = {
   cornerStyle: string;
   backgroundStyle: string;
   highContrast: boolean;
+  glass: boolean;
+  glassOpacity: number;
+  onGlassChange: (enabled: boolean) => void;
+  onGlassOpacityChange: (opacity: number) => void;
   showTrackFormat: boolean;
   onAddFolder: () => void;
   onRemoveFolder: (folderId: number) => void;
@@ -111,8 +126,13 @@ export function SettingsView(props: Props) {
         )}
       </div>
 
+      <div className="settingsPanel audioSettingsPanel"><header><Sparkles size={19} /><h2>Sound</h2></header><AudioSettingsPanel /></div>
       <div className="settingsPanel">
         <header><Paintbrush size={19} /><h2>Appearance</h2></header>
+        <div className="glassSettings">
+          <label className="soundToggle"><span><strong>Glass & blur</strong><small>Translucent surfaces and native desktop blur on Windows.</small></span><Switch label="Glass and blur" checked={props.glass} onChange={props.onGlassChange} /></label>
+          <label className="crossfadeControl"><span><strong>Surface opacity</strong><output>{props.glassOpacity}%</output></span><input aria-label="Surface opacity" type="range" min={40} max={95} step={5} disabled={!props.glass} value={props.glassOpacity} onChange={(event) => props.onGlassOpacityChange(Number(event.target.value))} /><small>Lower opacity lets more of your desktop show through.</small></label>
+        </div>
         <div className="settingsPanelIntro">
           <p>Shape the look and behavior of lists, cards, and the player shell.</p>
         </div>
@@ -130,13 +150,20 @@ export function SettingsView(props: Props) {
                 <option value="light">Light</option>
               </select>
             </label>
-            <label className="field">
+            <div className="field accentField" role="group" aria-label="Accent color">
               <div className="fieldMeta">
                 <span>Accent</span>
-                <small>Brand color</small>
+                <small>{ACCENT_PRESETS.find((preset) => preset.value === props.accent.toLowerCase())?.name || "Custom"}</small>
               </div>
-              <input type="color" value={props.accent} onChange={(event) => props.onAccentChange(event.target.value)} />
-            </label>
+              <div className="accentSwatches">
+                {ACCENT_PRESETS.map((preset) => (
+                  <button key={preset.value} type="button" className={preset.value === props.accent.toLowerCase() ? "accentSwatch active" : "accentSwatch"} style={{ "--swatch": preset.value } as CSSProperties} onClick={() => props.onAccentChange(preset.value)} aria-label={`Use ${preset.name} accent`} aria-pressed={preset.value === props.accent.toLowerCase()} title={preset.name} />
+                ))}
+                <label className="accentCustom" title="Pick any color">
+                  <input type="color" value={props.accent} onChange={(event) => props.onAccentChange(event.target.value)} aria-label="Custom accent color" />
+                </label>
+              </div>
+            </div>
             <label className="field">
               <div className="fieldMeta">
                 <span>Density</span>

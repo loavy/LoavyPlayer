@@ -80,6 +80,10 @@ try {
   await send("Emulation.setDeviceMetricsOverride", { width: 1100, height: 1100, deviceScaleFactor: 1, mobile: false });
   await send("Page.navigate", { url: `http://127.0.0.1:${server.address().port}` });
   await until("!!document.querySelector('.downloadUrlField input')");
+  await evaluate("document.querySelector('#downloader-download-tab').focus();document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true}))");
+  await until("document.querySelector('#downloader-naming-tab').getAttribute('aria-selected')==='true'");
+  await evaluate("document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'Home',bubbles:true}))");
+  await until("document.querySelector('#downloader-download-tab').getAttribute('aria-selected')==='true'");
   await input(".downloadUrlField input", "https://example.com/audio");
   await until("document.querySelector('#web-source-tab').getAttribute('aria-selected') === 'true'");
   await click("input[value='mp3']");

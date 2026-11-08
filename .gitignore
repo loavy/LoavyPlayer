@@ -1,15 +1,40 @@
+# ---------------------------------------------------------------
+# Loavy Player
+# ---------------------------------------------------------------
+
 # Dependencies
 node_modules/
+.npm/
+.pnpm-store/
 
-# Frontend build output
+# Frontend build output and caches
 dist/
+dist-ssr/
+.vite/
+*.tsbuildinfo
+coverage/
+*.local
 
-# Rust/Tauri build output
+# Rust / Tauri build output (also holds test screenshots and build logs)
 src-tauri/target/
-src-tauri/target/**
+target/
 
 # Tauri generated schemas; recreated by the CLI
 src-tauri/gen/
+
+# Installers and packages (publish them on GitHub Releases instead)
+*.exe
+*.msi
+*.msix
+*.msixbundle
+*.appx
+*.appxbundle
+*.rpm
+*.deb
+*.AppImage
+*.dmg
+*.zip
+*.7z
 
 # Logs
 *.log
@@ -17,35 +42,43 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
+installer-build.status
 
-# Local environment/secrets
+# Local environment and secrets
 .env
 .env.*
 !.env.example
-
-# Editor and OS noise
-.vscode/
-.idea/
-.DS_Store
-Thumbs.db
-
-# Windows installer outputs
-*.msi
-*.exe
-*.msix
-*.appx
-
-# Signing certificates and private keys
 *.pfx
 *.p12
 *.cer
+*.crt
 *.key
 *.pem
+*.jks
+*.keystore
 
-# Local app/runtime data
+# Local app and runtime data
 *.sqlite
 *.sqlite3
+*.sqlite-journal
 *.db
+*.db-journal
 
-./docs
-docs
+# Editors
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+*~
+
+# Operating system and OneDrive noise
+.DS_Store
+Thumbs.db
+ehthumbs.db
+desktop.ini
+$RECYCLE.BIN/
+~$*
+
+# Local notes (not published)
+/docs/

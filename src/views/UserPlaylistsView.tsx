@@ -154,7 +154,7 @@ export function UserPlaylistsView({ tracks, onOpenFolders }: Props) {
   }
 
   return <section className="userPlaylistsView" data-playlist-source="folder">
-    <header className="playlistsIntro"><div><span>CURATED BY YOU</span><h2>Every mood. Every moment.</h2><p>Your music, in collections that feel like you.</p></div>
+    <header className="playlistsIntro"><div><span>YOUR LIBRARY</span><h2>Playlists</h2><p>{folders.length} collections</p></div>
       <button className="primaryAction" onClick={() => setCreating(true)}><Plus size={17} /> New playlist</button>
     </header>
     <div className="playlistCollectionToolbar">

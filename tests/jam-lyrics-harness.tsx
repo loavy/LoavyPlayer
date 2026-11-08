@@ -5,18 +5,25 @@ import { RoomView } from "../src/views/RoomView";
 import App from "../src/App";
 import { LibraryActionsProvider } from "../src/lib/LibraryContext";
 import { audioEngine } from "../src/lib/audioEngine";
-import { parseLrc, activeLyricIndex, shiftLyrics, plainLyrics } from "../src/lib/lyrics";
+import { parseLrc, activeLyricIndex, shiftLyrics, plainLyrics, lyricWaveWords } from "../src/lib/lyrics";
 import { parseJamAddress, jamInvite } from "../src/lib/jam";
+import { editableLyricLines, setWordTiming } from "../src/lib/wordTiming";
 import type { Track } from "../src/types";
 import "../src/styles.css";
 import "../src/redesign.css";
+import "../src/desktop.css";
+import "../src/audio-glass.css";
+import "../src/listening-redesign.css";
+import "../src/afterglow.css";
+import "../src/jam-room.css";
+Object.defineProperty(window, "AudioContext", { value: undefined, configurable: true });
 
 const track: Track = { id: 1, path: "C:\\Music\\test.mp3", fileName: "test.mp3", fileExt: "mp3", fileSize: 100, modifiedAt: 0, title: "Somewhere together", artist: "Loavy sessions", album: "Our evening", durationMs: 180000, favorite: false, dateAdded: 0, playCount: 0 };
 const lines = Array.from({ length: 35 }, (_, i) => `[${String(Math.floor(i * 4 / 60)).padStart(2, "0")}:${String(i * 4 % 60).padStart(2, "0")}.00]${["The room is full of familiar voices", "We watch the city lights", "A song for the way home", "Stay here a little longer"][i % 4]}`).join("\n");
 const stopped = { running: false, connectedUsers: 0, networkAddresses: [], users: [] };
 const disconnected = { connected: false, allowGuestControl: false };
 const mock = (window as any).jamTest = {
-  track, parseLrc, activeLyricIndex, shiftLyrics, plainLyrics, parseJamAddress, jamInvite, audioEngine,
+  track, parseLrc, activeLyricIndex, shiftLyrics, plainLyrics, lyricWaveWords, editableLyricLines, setWordTiming, parseJamAddress, jamInvite, audioEngine,
   status: { ...stopped } as any, client: { ...disconnected } as any,
   lyrics: { trackId: 1, syncedText: lines, plainText: null, source: "manual" },
   fail: "", calls: [] as { command: string; args: any }[], notices: [] as string[], clipboard: "",
@@ -33,10 +40,10 @@ const paused = new WeakMap<HTMLMediaElement, boolean>();
 const sources = new WeakMap<HTMLMediaElement, string>();
 Object.defineProperty(HTMLMediaElement.prototype, "paused", { get() { return paused.get(this) ?? true; } });
 Object.defineProperty(HTMLMediaElement.prototype, "src", { get() { return sources.get(this) || ""; }, set(value) { sources.set(this, value); } });
-HTMLMediaElement.prototype.play = async function () { paused.set(this, false); this.dispatchEvent(new Event("play")); };
+HTMLMediaElement.prototype.play = async function () { mock.currentMedia = this; paused.set(this, false); this.dispatchEvent(new Event("play")); };
 HTMLMediaElement.prototype.pause = function () { if (paused.get(this) === false) { paused.set(this, true); this.dispatchEvent(new Event("pause")); } };
 HTMLMediaElement.prototype.load = function () {};
-Object.defineProperty(navigator, "clipboard", { value: { writeText: async (value: string) => { mock.clipboard = value; } } });
+Object.defineProperty(navigator, "clipboard", { value: { writeText: async (value: string) => { mock.clipboard = value; }, readText: async () => mock.clipboard } });
 (window as any).__TAURI_INTERNALS__ = {
   transformCallback: (callback: (event: unknown) => void) => { callbacks.set(++callbackId, callback); return callbackId; },
   convertFileSrc: (path: string) => path,

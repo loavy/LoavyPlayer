@@ -8,7 +8,7 @@ async function bootstrap() {
   const [{ default: App }, { installMediaSession }] = await Promise.all([
     import("./App"),
     import("./lib/mediaSession"),
-    import("./styles.css").then(() => import("./redesign.css"))
+    import("./styles.css").then(() => import("./redesign.css")).then(() => import("./desktop.css")).then(() => import("./audio-glass.css")).then(() => import("./spotify.css")).then(() => import("./listening-redesign.css")).then(() => import("./afterglow.css")).then(() => import("./jam-room.css")).then(() => import("./downloader.css")).then(() => import("./spotify-studio.css"))
   ]);
   const disposeMediaSession = installMediaSession();
 

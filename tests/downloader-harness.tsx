@@ -2,6 +2,10 @@ import { createRoot } from "react-dom/client";
 import { DownloaderView } from "../src/views/DownloaderView";
 import "../src/styles.css";
 import "../src/redesign.css";
+import "../src/listening-redesign.css";
+import "../src/desktop.css";
+import "../src/afterglow.css";
+import "../src/downloader.css";
 
 // Native commands are controlled independently so the browser test can exercise
 // the order of progress events, command responses, and tool-health refreshes.

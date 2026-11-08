@@ -33,6 +33,7 @@ import type {
 } from "../types";
 
 export const api = {
+  setWindowAppearance: (theme: string, glass: boolean) => invoke<boolean>("set_window_appearance", { theme, glass }),
   setBackgroundMode: (enabled: boolean) => invoke<void>("set_background_mode", { enabled }),
   selectMusicFolder: () => invoke<MusicFolder | null>("select_music_folder"),
   listMusicFolders: () => invoke<MusicFolder[]>("list_music_folders"),

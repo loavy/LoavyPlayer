@@ -1,0 +1,76 @@
+import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
+import { once } from 'node:events';
+import { createServer } from 'node:http';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import path from 'node:path';
+import { build } from 'esbuild';
+const root=path.resolve(import.meta.dirname,'..'), artifacts=path.join(root,'src-tauri/target/spotify-browser');
+await mkdir(artifacts,{recursive:true});
+const bundle=await build({absWorkingDir:root,entryPoints:['tests/spotify-harness.tsx'],bundle:true,write:false,outdir:artifacts,jsx:'automatic',define:{'process.env.NODE_ENV':'"development"'}});
+const assets=new Map(bundle.outputFiles.map(file=>[path.basename(file.path),file.contents]));
+const html='<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/spotify-harness.css"></head><body><div id="root"></div><script src="/spotify-harness.js"></script></body></html>';
+const server=createServer((req,res)=>{const name=req.url.split('?')[0].slice(1);res.setHeader('Content-Type',name.endsWith('.js')?'text/javascript':name.endsWith('.css')?'text/css':'text/html');res.end(assets.get(name)??html);});
+server.listen(0,'127.0.0.1');await once(server,'listening');
+const profile=path.join(artifacts,`profile-${Date.now()}`);
+const child=spawn(process.env.DOWNLOADER_TEST_BROWSER||'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',['--headless=new','--disable-gpu','--mute-audio','--no-first-run','--no-default-browser-check','--remote-debugging-port=0',`--user-data-dir=${profile}`,'about:blank'],{windowsHide:true,stdio:'ignore'});
+const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+let socket; const errors=[];
+try{
+ let port;for(let i=0;i<150;i++){try{port=(await readFile(path.join(profile,'DevToolsActivePort'),'utf8')).split('\n')[0];break;}catch{await delay(100);}}
+ assert.ok(port);const targets=await(await fetch(`http://127.0.0.1:${port}/json/list`)).json();socket=new WebSocket(targets.find(t=>t.type==='page').webSocketDebuggerUrl);await once(socket,'open');
+ let id=0;const pending=new Map();
+ socket.addEventListener('message',({data})=>{const m=JSON.parse(data);if(m.method==='Runtime.exceptionThrown')errors.push(m.params.exceptionDetails.exception?.description||m.params.exceptionDetails.text);const p=pending.get(m.id);if(p){clearTimeout(p.timer);pending.delete(m.id);m.error?p.reject(new Error(m.error.message)):p.resolve(m.result);}});
+ const send=(method,params={})=>new Promise((resolve,reject)=>{const n=++id,timer=setTimeout(()=>reject(new Error(`Timed out: ${method}`)),20000);pending.set(n,{resolve,reject,timer});socket.send(JSON.stringify({id:n,method,params}));});
+ const evaluate=async expression=>{const r=await send('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true});if(r.exceptionDetails)throw new Error(r.exceptionDetails.exception?.description||expression);return r.result.value;};
+ const until=async expression=>{for(let i=0;i<200;i++){if(await evaluate(expression))return;await delay(50);}throw new Error(`Condition failed: ${expression}`);};
+ const click=selector=>evaluate(`document.querySelector(${JSON.stringify(selector)}).click()`);
+ const input=(selector,value)=>evaluate(`(()=>{const el=document.querySelector(${JSON.stringify(selector)});Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(el,${JSON.stringify(value)});el.dispatchEvent(new Event('input',{bubbles:true}));})()`);
+ const size=async(width,height)=>{await send('Emulation.setDeviceMetricsOverride',{width,height,deviceScaleFactor:1,mobile:false});await delay(100);};
+ const shot=async name=>{const r=await send('Page.captureScreenshot',{format:'png'});await writeFile(path.join(artifacts,name),Buffer.from(r.data,'base64'));};
+ const fit=async()=>{assert.deepEqual(await evaluate("['.spotifyView','.spotifySetup','.spotifyDevicePanel','.playerBar'].filter(s=>{const e=document.querySelector(s);return e&&e.scrollWidth>e.clientWidth+1})"),[],'Spotify surfaces fit their pane');assert.ok(await evaluate('document.querySelector(".playerBar").getBoundingClientRect().height')<=160,'Player stays compact and leaves room to browse');};
+ await send('Runtime.enable');await send('Page.enable');await size(1240,850);await send('Page.navigate',{url:`http://127.0.0.1:${server.address().port}/?full-app&design`});
+ await until("!!document.querySelector('[aria-label=\"Spotify Client ID\"]')");await shot('spotify-setup-desktop.png');await fit();
+ await evaluate("spotifyTest.service.connect('bad')");assert.ok(await evaluate("spotifyTest.service.get().error.includes('32-character')"));assert.equal(await evaluate("spotifyTest.calls.some(c=>c.command==='spotify_connect')"),false);
+ await input('[aria-label="Spotify Client ID"]','a'.repeat(32));await click('.spotifyConnectButton');await until('spotifyTest.service.get().connecting');await evaluate('spotifyTest.service.disconnect()');await delay(300);assert.equal(await evaluate('spotifyTest.service.get().connected'),false,'Cancelled login cannot reconnect later');
+ await click('.spotifyConnectButton');await until('document.querySelectorAll(".spotifyPlaylistCard").length===6');await fit();
+ assert.equal(await evaluate('spotifyTest.service.get().profile.display_name'),'Loavy listener');
+ await input('[aria-label="Filter Spotify playlists"]','night');await until('document.querySelectorAll(".spotifyPlaylistCard").length===1');
+ await input('[aria-label="Filter Spotify playlists"]','no-such-playlist');await until('document.querySelectorAll(".spotifyPlaylistCard").length===0');
+ assert.ok(await evaluate('document.querySelector(".spotifyEmpty").textContent.includes("No playlists match")'));
+ await input('[aria-label="Filter Spotify playlists"]','');await until('document.querySelectorAll(".spotifyPlaylistCard").length===6');
+ await evaluate("document.querySelector('[aria-label=\"Sort Spotify playlists\"]').value='name';document.querySelector('[aria-label=\"Sort Spotify playlists\"]').dispatchEvent(new Event('change',{bubbles:true}))");
+ assert.equal(await evaluate("[...document.querySelectorAll('.spotifyPlaylistCard strong')].map(e=>e.textContent).join('|')"),await evaluate("spotifyTest.playlists.map(p=>p.name).sort((a,b)=>a.localeCompare(b)).join('|')"),'Playlist sorting only changes the visible library order');
+ await evaluate("document.querySelector('[aria-label=\"Sort Spotify playlists\"]').value='spotify';document.querySelector('[aria-label=\"Sort Spotify playlists\"]').dispatchEvent(new Event('change',{bubbles:true}))");
+
+ await evaluate('spotifyTest.service.morePlaylists()');assert.equal(await evaluate('spotifyTest.service.get().playlists.length'),7);
+ await click('.spotifyPlaylistCard');await until('document.querySelectorAll(".spotifyTrack").length===2');await evaluate('spotifyTest.service.moreItems()');assert.equal(await evaluate('spotifyTest.service.get().items.length'),3,'Both renamed item and legacy track fields are supported');
+ assert.ok(await evaluate("spotifyTest.calls.some(c=>c.args.path?.includes('/items?limit=50&offset=3'))"),'Pagination counts unavailable entries');
+ await shot('spotify-playlist-desktop.png');
+ await click('.spotifyTrackPlay');await until('!!document.querySelector(".spotifyPlayerBar")');assert.equal(await evaluate('spotifyTest.service.get().playback.is_playing'),true);assert.equal(await evaluate('navigator.mediaSession.metadata.title'),'First light');
+ await click('[aria-label="Pause Spotify"]');assert.equal(await evaluate('spotifyTest.service.get().playback.is_playing'),false);
+ await evaluate('spotifyTest.service.seek(85000)');assert.equal(await evaluate('spotifyTest.service.get().playback.progress_ms'),85000);
+ await evaluate('spotifyTest.service.skip("next")');assert.equal(await evaluate('navigator.mediaSession.metadata.title'),'A quiet place');
+ await evaluate('spotifyTest.service.volume(42)');assert.equal(await evaluate('spotifyTest.service.get().playback.device.volume_percent'),42);
+ await evaluate('spotifyTest.startLocal()');await until('!spotifyTest.service.get().active&&spotifyTest.audio.snapshot().playing');
+ await evaluate('spotifyTest.service.play(spotifyTest.songs[0])');assert.equal(await evaluate('spotifyTest.audio.snapshot().playing'),false,'Spotify pauses local music');
+ await evaluate('spotifyTest.service.setRoomBlocked(true)');const callsBefore=await evaluate('spotifyTest.calls.length');await evaluate('spotifyTest.service.play(spotifyTest.songs[1])');assert.equal(await evaluate('spotifyTest.calls.length'),callsBefore,'Spotify cannot interrupt an active Jam');await evaluate('spotifyTest.service.setRoomBlocked(false)');
+ await evaluate('spotifyTest.service.enableSDK()');assert.equal(await evaluate('spotifyTest.service.get().sdkState'),'unavailable');assert.ok(await evaluate('spotifyTest.service.get().sdkMessage.includes("protected playback")'),'Unsupported DRM has an explicit Connect fallback');
+ await evaluate('spotifyTest.enableFakeSDK();spotifyTest.service.enableSDK()');assert.equal(await evaluate('spotifyTest.service.get().sdkState'),'ready');assert.equal(await evaluate('spotifyTest.service.get().selectedDevice'),'sdk-device');
+ assert.equal(await evaluate('Object.values(localStorage).some(value=>value.includes(spotifyTest.sdkToken))'),false,'SDK access tokens are never persisted');
+ await click('[aria-label="Use selected Spotify device"]');assert.ok(await evaluate("spotifyTest.calls.some(c=>c.args.method==='PUT' && c.args.body?.device_ids?.[0]==='sdk-device')"),'The device action transfers playback to the selected device');
+ await input('[aria-label="Search Spotify"]','pages');await click('.spotifySearch button[type=submit]');await until('spotifyTest.service.get().results.length===2&&!spotifyTest.service.get().searching');
+ await click('.spotifyResults .spotifyLoadMore');await until('spotifyTest.service.get().results.length===3&&!spotifyTest.service.get().searching');
+ assert.equal(await evaluate('spotifyTest.service.get().resultsMore'),false,'Search pagination appends new songs and stops at the last page');
+ assert.ok(await evaluate("spotifyTest.calls.some(c=>c.args.path?.includes('q=pages')&&c.args.path.includes('offset=2'))"),'More search results use the next offset');
+
+ await evaluate("spotifyTest.service.search('old');spotifyTest.service.search('new song')");await delay(220);assert.equal(await evaluate('spotifyTest.service.get().results[0].name'),'new song','Late search results cannot replace a newer search');
+ await evaluate('spotifyTest.failPlayback=true;spotifyTest.service.play(spotifyTest.songs[0])');assert.ok(await evaluate('spotifyTest.service.get().error.includes("Premium")'));await evaluate('spotifyTest.failPlayback=false;spotifyTest.service.clearError()');
+ await evaluate('spotifyTest.service.setOffline(true)');const offlineCalls=await evaluate('spotifyTest.calls.length');await evaluate('spotifyTest.service.play(spotifyTest.songs[0])');assert.equal(await evaluate('spotifyTest.calls.length'),offlineCalls,'Offline mode blocks Spotify requests');await evaluate('spotifyTest.service.setOffline(false)');
+ await evaluate("spotifyTest.service.search('');spotifyTest.service.play(spotifyTest.songs[0])");
+ for(const [width,height] of [[960,760],[640,620],[390,760]]){await size(width,height);await fit();await shot(`spotify-connected-${width}.png`);}
+ await evaluate('spotifyTest.service.disconnect()');assert.equal(await evaluate('spotifyTest.service.get().profile'),null);assert.equal(await evaluate('spotifyTest.service.get().items.length'),0);assert.equal(await evaluate('spotifyTest.sdkConnected'),false);assert.equal(await evaluate('!!document.querySelector(".spotifyPlayerBar")'),false);
+ await size(640,620);await shot('spotify-setup-640.png');await fit();
+ assert.deepEqual(errors,[],'No unhandled browser errors');
+ console.log('Spotify checks passed: setup, cancelled login, account/library pagination, playlist item variants, playback/seek/volume, media session, local/Jam/offline isolation, DRM fallback, SDK lifecycle, stale searches, disconnect cleanup, and responsive layouts.');await send('Browser.close');
+}finally{socket?.close();child.kill();server.close();}

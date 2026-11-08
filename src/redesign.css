@@ -1,24 +1,29 @@
-/* The collection design system. Loaded after the shared feature styles. */
+/* Loavy's music-first design system. Loaded after the shared feature styles. */
 :root {
-  --bg: #101112;
-  --shell: #141516;
-  --panel: #191b1d;
-  --panel-2: #222426;
-  --panel-3: #2c2f31;
-  --text: #f2f1ed;
-  --muted: #a1a5a6;
-  --faint: #818688;
-  --border: #ffffff0c;
-  --border-strong: #ffffff20;
+  --bg: #090f11;
+  --shell: #080e10;
+  --panel: #101a1d;
+  --panel-2: #1a272b;
+  --panel-3: #28383c;
+  --text: #edf3f3;
+  --muted: #97a6aa;
+  --faint: #7c9095;
+  --border: #b6d4dc12;
+  --border-strong: #b6d4dc29;
   --shadow: #00000020;
   --surface-radius: 12px;
   --control-radius: 8px;
   --content-pad: 24px clamp(18px, 2.6vw, 40px) 24px;
+  --accent-ink: var(--accent);
+  --song-row-height: 52px;
 }
+:root[data-density="compact"] { --song-row-height: 48px; }
+:root[data-density="spacious"] { --song-row-height: 64px; }
 :root[data-theme="light"] {
-  --bg: #f7f6f2; --shell: #eeede8; --panel: #fffefa; --panel-2: #e9e8e2;
-  --panel-3: #deded6; --text: #232725; --muted: #656b67; --faint: #727970;
+  --bg: #f5f8f8; --shell: #edf2f2; --panel: #ffffff; --panel-2: #e5edee;
+  --panel-3: #d6e2e4; --text: #203035; --muted: #586e75; --faint: #667c82;
   --border: #17231c0e; --border-strong: #17231c26; --shadow: #17231c0a;
+  --accent-ink: color-mix(in srgb, var(--accent) 35%, #173f48);
 }
 :root[data-cards="flat"] { --surface-radius: 4px; --shadow: transparent; }
 :root[data-cards="glass"] { --panel: color-mix(in srgb, var(--shell) 84%, transparent); }
@@ -32,26 +37,86 @@ button, input, select, textarea { font: inherit; }
 button { -webkit-tap-highlight-color: transparent; }
 button svg { flex-shrink: 0; }
 .appShell { grid-template-columns: auto minmax(0, 1fr); }
-.appShell .sidebar { width: 208px; padding: 26px 14px 18px; background: var(--shell); box-shadow: none; backdrop-filter: none; }
+.appShell .sidebar { width: 216px; padding: 22px 12px 12px; background: var(--shell); box-shadow: none; backdrop-filter: none; }
 .appShell .sidebar.compact { width: 72px; padding-inline: 10px; }
-.brand { margin: 0 10px 35px; gap: 9px; font-size: 29px; font-weight: 650; letter-spacing: -.07em; }
+.brand { margin: 0 12px 30px; gap: 10px; font-size: 25px; font-weight: 650; letter-spacing: -.055em; }
 .brandMark { width: 30px; height: 34px; background: transparent; color: var(--accent); box-shadow: none; }
 .brandDot { color: var(--accent); }
 .sidebar nav { gap: 3px; scrollbar-gutter: auto; }
-.sidebar .navItem { min-height: 41px; border-radius: 7px; padding: 10px 12px; gap: 12px; font-weight: 450; }
+.navGroup { display: grid; gap: 3px; margin-bottom: 21px; }
+.navGroupLabel { display: flex; align-items: center; gap: 7px; padding: 0 12px 10px; color: var(--faint); font-size: 10px; font-weight: 550; letter-spacing: .08em; text-transform: uppercase; white-space: nowrap; }
+.sidebarFooter { flex-shrink: 0; border-top: 1px solid var(--border); padding-top: 9px; }
+.localLibraryNote { display: flex; align-items: center; gap: 7px; padding: 15px 12px 6px; font-size: 10px; color: var(--faint); white-space: nowrap; }
+.localLibraryNote > span { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); }
+.sidebar.compact .navGroupLabel, .sidebar.compact .localLibraryNote { display: none; }
+.sidebar.compact .navGroup { margin-bottom: 14px; }
+.sidebar .navItem { min-height: 37px; border-radius: 6px; padding: 9px 12px; gap: 12px; font-size: 13px; font-weight: 450; }
 .sidebar .navItem:hover { transform: none; background: var(--panel-2); }
-.sidebar .navItem.active { background: var(--panel-2); box-shadow: none; font-weight: 600; }
+.sidebar .navItem.active { background: color-mix(in srgb, var(--accent) 12%, var(--shell)); color: var(--accent-ink); box-shadow: none; font-weight: 550; }
+.sidebar .navItem.active svg, .virtualTable .trackRow.current .titleCell strong { color: var(--accent-ink); }
 .sidebar .navItem.active::before { display: none; }
-.sidebar .navItem:nth-child(4), .sidebar .navItem:nth-child(9), .sidebar .navItem:last-child { margin-top: 17px; }
-.mainPane .topBar { min-height: 76px; padding: 14px clamp(18px, 2.6vw, 40px); border: 0; background: transparent; backdrop-filter: none; gap: 16px; flex-shrink: 0; flex-direction: row; align-items: center; }
-.titleGroup h1 { font-size: 21px; font-weight: 600; letter-spacing: -.035em; }
+.mainPane .topBar { min-height: 60px; padding: 10px clamp(18px, 2.6vw, 40px); border: 0; border-bottom: 1px solid var(--border); background: transparent; backdrop-filter: none; gap: 16px; flex-shrink: 0; flex-direction: row; align-items: center; }
+.titleGroup h1 { font-size: 13px; font-weight: 500; letter-spacing: 0; color: var(--muted); }
 .topMeta { font-size: 11px; gap: 8px; margin-top: 5px; }
 .topMeta span, .topMeta strong, .topMeta .metaPillButton { border: 0; padding: 0; min-height: 16px; background: transparent; color: var(--muted); }
 .topMeta strong { color: var(--accent); }
-.mainPane .searchBox { min-width: 0; width: min(350px, 32vw); border-radius: 8px; background: var(--panel); padding: 10px 12px; }
+.mainPane .searchBox { min-width: 0; width: min(350px, 32vw); border-radius: 6px; background: var(--panel); padding: 8px 11px; }
 .searchBox:focus-within { box-shadow: none; }
 .quickScanButton { border-radius: 8px; width: 36px; height: 36px; flex-basis: 36px; background: transparent; }
 .contentArea { background: transparent; }
+.titleGroup { min-width: 0; gap: 8px; }
+.titleGroup .navigationButtons { gap: 2px; }
+.topBarLocation { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.topBarLocation h1 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.connectionBadge { color: var(--accent); font-size: 10px; border: 1px solid var(--border-strong); border-radius: 4px; padding: 2px 5px; }
+.searchBox input { font-size: 12px; }
+.searchBox kbd { flex-shrink: 0; white-space: nowrap; border: 1px solid var(--border-strong); border-radius: 3px; padding: 1px 4px; color: var(--faint); font-family: inherit; font-size: 9px; }
+.searchClear { display: grid; place-items: center; padding: 0; border: 0; background: transparent; color: var(--muted); cursor: pointer; }
+
+/* Collection pages share the same typography, actions and track table. */
+.librarySongPage { height: 100%; overflow: auto; gap: 0; scrollbar-gutter: stable; overscroll-behavior: contain; }
+.libraryHero { display: flex; align-items: center; gap: 28px; flex: 0 0 auto; padding: 16px 4px 28px; }
+.libraryHeroCopy { min-width: 0; flex: 1; }
+.libraryEyebrow { display: inline-flex; align-items: center; gap: 7px; color: var(--faint); font-size: 10px; font-weight: 550; letter-spacing: .11em; text-transform: uppercase; }
+.libraryHero h2, .collectionIntro h2 { margin: 10px 0; color: var(--text); font-size: clamp(30px, 3.5vw, 48px); font-weight: 600; letter-spacing: -.045em; line-height: 1.1; overflow-wrap: anywhere; }
+.libraryDescription { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.6; }
+.libraryFacts { display: flex; flex-wrap: wrap; align-items: center; gap: 0; margin-top: 9px; color: var(--faint); font-size: 11px; }
+.libraryFacts > span + span::before { content: "·"; padding-inline: 8px; }
+.libraryActions { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; margin-top: 20px; }
+.libraryActions > button { min-height: 35px; padding: 8px 16px; font-size: 12px; }
+.libraryActions .libraryPlay { min-width: 92px; background: var(--accent); color: #102125; }
+.libraryActions .collectionBack { display: inline-flex; align-items: center; gap: 6px; border: 0; color: var(--muted); background: transparent; cursor: pointer; padding-inline: 6px; }
+.libraryHeroDecoration { display: grid; place-items: center; width: 160px; height: 160px; color: color-mix(in srgb, var(--accent) 30%, var(--bg)); flex-shrink: 0; background: radial-gradient(circle, color-mix(in srgb, var(--accent) 5%, transparent), transparent 70%); }
+.collectionArtwork { width: clamp(120px, 17vw, 190px); flex-shrink: 0; }
+.collectionArtwork .cover.lg { display: grid; width: 100%; height: auto; min-height: 0; aspect-ratio: 1; border-radius: var(--surface-radius); box-shadow: 0 12px 28px #0003; }
+.libraryListToolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 15px 10px; border-top: 1px solid var(--border); flex: 0 0 auto; }
+.libraryListToolbar > span { font-size: 12px; font-weight: 550; }
+.libraryListToolbar small { font-size: 10px; font-weight: 400; color: var(--faint); margin-left: 6px; }
+.libraryListToolbar select { border: 0; border-radius: 4px; background: var(--bg); color: var(--muted); padding: 5px; max-width: 160px; font-size: 11px; cursor: pointer; }
+.librarySongPage > .pageSongTable { display: block; flex: 0 0 auto; height: auto; overflow: visible; contain: none; }
+.librarySongPage .tableHeader { background: var(--panel); }
+.albumCollection, .artistCollection { height: 100%; overflow: auto; scrollbar-gutter: stable; }
+.collectionIntro { padding: 16px 12px 26px; }
+.collectionIntro p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.7; }
+.collectionIntro p > span { color: var(--faint); white-space: nowrap; }
+.collectionIntro p > span::before { content: "·"; padding-inline: 8px; }
+.albumCollection .cardGrid { height: auto; overflow: visible; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 20px 10px; padding: 0; }
+.albumCardArtwork { position: relative; display: block; width: 100%; }
+.albumCardArtwork .cover.lg { width: 100%; height: auto; aspect-ratio: 1; min-height: 0; border-radius: var(--surface-radius); }
+.albumOpenIcon { position: absolute; display: grid; place-items: center; right: 10px; bottom: 10px; width: 34px; height: 34px; border-radius: 50%; background: var(--accent); color: #102125; opacity: 0; transform: translateY(4px); transition: opacity 140ms, transform 140ms; }
+.mediaCard:hover .albumOpenIcon, .mediaCard:focus-visible .albumOpenIcon { opacity: 1; transform: none; }
+.albumCollection .mediaCard h3 { font-size: 13px; margin-top: 13px; }
+.albumCollection .mediaCard p { font-size: 12px; }
+.albumCollection .mediaCard small { color: var(--faint); font-size: 10px; }
+.artistCollection .artistList { height: auto; overflow: visible; }
+.artistCollection .artistRow { padding: 14px; border-radius: 6px; background: transparent; }
+.artistCollection .artistRow:hover { background: var(--panel); transform: none; }
+.artistCollection .artistAvatar { width: 44px; height: 44px; border-radius: 50%; background: var(--panel-2); color: var(--accent); box-shadow: none; }
+.emptyRecord { display: grid; place-items: center; width: 104px; height: 104px; border-radius: 50%; margin: 0 auto 18px; color: var(--accent); border: 1px solid var(--border-strong); background: repeating-radial-gradient(circle, transparent 0 8px, var(--border) 9px 10px), var(--panel); }
+.libraryEmpty { align-content: center; justify-items: center; }
+.libraryEmpty h2 { font-size: clamp(26px, 3.5vw, 40px); letter-spacing: -.045em; font-weight: 550; }
+.libraryEmpty p { max-width: 360px; line-height: 1.8; }
+.libraryEmpty .primaryAction { margin-top: 10px; }
 .tableSurface, .settingsPanel, .collectionHeader, .mediaCard, .artistRow { background: var(--panel); box-shadow: none; border-color: var(--border); }
 .primaryAction { box-shadow: none; border-radius: var(--control-radius); font-weight: 650; }
 .secondaryAction { border-radius: var(--control-radius); background: transparent; border-color: var(--border-strong); box-shadow: none; font-weight: 500; }
@@ -68,11 +133,11 @@ button svg { flex-shrink: 0; }
 .virtualTable .songsGrid { grid-template-columns: minmax(0, 1.8fr) minmax(0, .9fr) minmax(0, .9fr) 104px; gap: 16px; padding-inline: 12px; }
 .virtualTable.hasManagement .songsGrid { grid-template-columns: minmax(0, 1.8fr) minmax(0, .9fr) minmax(0, .9fr) 194px; }
 .virtualTable .songsGrid > span:nth-child(2), .virtualTable .songsGrid > span:nth-child(3) { display: block; }
-.virtualTable .tableHeader { background: transparent; color: var(--faint); font-size: 10px; font-weight: 550; padding-block: 12px; }
+.virtualTable .tableHeader { background: var(--panel); color: var(--faint); font-size: 11px; font-weight: 500; padding-block: 11px; border-block: 1px solid var(--border); }
 .virtualTable .tableHeader > span:last-child { text-align: right; padding-right: 34px; }
-.virtualTable .trackRow { border-bottom: 0; padding-block: 5px; border-radius: 6px; }
+.virtualTable .trackRow { border-bottom: 1px solid var(--border); padding-block: 5px; border-radius: 0; }
 .virtualTable .trackRow:hover { background: var(--panel); }
-.virtualTable .trackRow.current { background: color-mix(in srgb, var(--accent) 8%, var(--panel)); box-shadow: none; }
+.virtualTable .trackRow.current { background: color-mix(in srgb, var(--accent) 13%, var(--panel)); box-shadow: none; }
 .trackRow.current::before { box-shadow: none; width: 2px; }
 .virtualTable .titleCell { gap: 10px; }
 .virtualTable .titleCell > span:last-child { flex: 1; min-width: 0; }
@@ -224,7 +289,10 @@ button svg { flex-shrink: 0; }
 .playerBar .seekRow span { min-width: 0; white-space: nowrap; text-align: center; }
 .playerBar .playerUtilities .queueButton { width: 32px; min-width: 32px; padding: 0; }
 .playerBar .playerUtilities .volume input { display: block; min-width: 0; width: 100%; }
-.playerBar .playButton { background: var(--text); color: var(--bg); box-shadow: none; width: 36px; height: 36px; animation: none; }
+.playerBar .playButton { background: transparent; color: var(--text); box-shadow: none; width: 36px; height: 36px; animation: none; border-radius: 6px; }
+.playerBar .playButton:hover:not(:disabled) { background: var(--panel-2); transform: none; }
+.playerBar .transportButtons .iconButton { color: var(--muted); }
+.playerBar .transportButtons .iconButton.active { color: var(--accent); }
 .playerBar .playerCover .cover { width: 48px; height: 48px; box-shadow: none; }
 .playerBar .playerTitleButton strong { font-weight: 550; font-size: 13px; }
 .playerBar .playerTrackActions { display: flex; }
@@ -248,6 +316,8 @@ button svg { flex-shrink: 0; }
   .appShell .sidebar, .appShell .sidebar.compact { width: 66px; padding: 22px 8px 10px; }
   .sidebar .brand { margin: 0 auto 28px; }
   .sidebar .brand > span, .sidebar .navItem > span { display: none; }
+  .sidebar .navGroupLabel, .sidebar .localLibraryNote { display: none; }
+  .sidebar .navGroup { margin-bottom: 13px; }
   .sidebar .navItem { justify-content: center; padding: 10px; }
   .topMeta { display: none; }
   .playlistsIntro h2 { font-size: 30px; }
@@ -261,6 +331,15 @@ button svg { flex-shrink: 0; }
   .topBarSearch { flex: 1; }
   .titleGroup h1 { font-size: 17px; }
   .contentArea { padding: 14px 16px; }
+  .topBarLocation { display: none; }
+  .libraryHero { padding-block: 8px 20px; gap: 16px; }
+  .libraryHero h2, .collectionIntro h2 { font-size: 32px; }
+  .libraryHeroDecoration { display: none; }
+  .libraryDescription { font-size: 12px; }
+  .collectionArtwork { width: 115px; }
+  .collectionIntro { padding: 8px 6px 20px; }
+  .albumCollection .cardGrid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px 4px; }
+  .playerBar .expandPlayerButton { display: none; }
   .playlistsIntro { align-items: flex-start; gap: 16px; flex-wrap: wrap; }
   .playlistsIntro h2 { font-size: 30px; }
   .playlistsIntro p { margin-top: 8px; }
@@ -291,6 +370,15 @@ button svg { flex-shrink: 0; }
   .contentArea { padding: 10px 12px; }
   .mainPane .searchBox { padding: 8px; }
   .mainPane .searchBox input { font-size: 11px; }
+  .searchBox kbd { display: none; }
+  .libraryHero h2, .collectionIntro h2 { font-size: 28px; }
+  .collectionHero { align-items: flex-start; flex-direction: column; gap: 16px; }
+  .collectionArtwork { width: 100px; }
+  .libraryActions { margin-top: 14px; gap: 6px; }
+  .libraryActions > button { padding-inline: 11px; }
+  .libraryListToolbar { padding-inline: 4px; }
+  .albumCollection .cardGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .albumCollection .mediaCard { padding: 6px; }
   .userPlaylistsView .playlistGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px 12px; }
   .playlistGridItem .playlistCard > strong { font-size: 13px; margin-top: 10px; }
   .playlistGridItem .playlistCard > span:last-child { font-size: 10px; }
@@ -347,6 +435,11 @@ button svg { flex-shrink: 0; }
   .playlistHeroMeta { font-size: 10px; gap: 6px; }
   .playlistActionBar { padding-block: 9px; }
   .appShell .playerBar { min-height: 110px; padding-block: 6px; }
+  .libraryHero { padding-block: 3px 12px; gap: 14px; }
+  .libraryHero h2 { font-size: 26px; margin-block: 5px; }
+  .libraryHero .libraryDescription, .libraryHero .libraryEyebrow { display: none; }
+  .libraryActions { margin-top: 9px; }
+  .collectionArtwork { width: 90px; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: 1ms !important; transition-duration: 1ms !important; scroll-behavior: auto !important; } }
 
@@ -467,7 +560,22 @@ button svg { flex-shrink: 0; }
   .lyricsPanel .lyricsEditor > div:last-child > span { flex-basis: 100%; }
 }
 
+/* An artwork companion keeps the song in view alongside the lyrics. */
+.lyricsCompanionArtwork { width: min(100%, 30vh, 270px); aspect-ratio: 1; margin-inline: auto; }
+.lyricsCompanionArtwork .cover.lg { width: 100%; height: 100%; min-height: 0; border-radius: 12px; box-shadow: 0 20px 60px #0004; }
+@media (min-width: 761px) {
+  .nowPlayingStage.lyricsMode { grid-template-columns: minmax(280px, .9fr) minmax(0, 1.1fr); gap: clamp(28px, 5vw, 80px); }
+  .lyricsMode .nowPlayingVisual { grid-column: 2; grid-row: 1; }
+  .lyricsMode .nowPlayingDetails { grid-column: 1; grid-row: 1; gap: 14px; }
+  .lyricsMode .playingStatus, .lyricsMode .heroAlbum { display: none; }
+  .lyricsMode .heroTitleRow h2.heroTrackTitle { font-size: clamp(22px, 2.5vw, 34px); }
+  .lyricsMode .heroArtistLink { font-size: 14px; }
+  .lyricsMode .heroControls { grid-template-columns: 36px 40px 52px 40px 36px; gap: 8px; }
+  .lyricsMode .heroPlayButton { width: 52px; height: 52px; }
+  .lyricsMode .heroSecondaryControls .glassTextButton { min-height: 30px; padding-block: 5px; }
+}
 @media (max-width: 760px) {
+  .lyricsCompanionArtwork { display: none; }
   .nowPlayingStage.lyricsMode { grid-template-rows: minmax(0, 1fr) auto; gap: 10px; }
   .lyricsMode .nowPlayingDetails { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "title controls" "progress progress" "secondary secondary"; align-items: center; gap: 7px 12px; padding: 0 4px 4px; overflow: visible; }
   .lyricsMode .playingStatus, .lyricsMode .heroAlbum { display: none; }

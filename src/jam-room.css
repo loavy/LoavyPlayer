@@ -1,0 +1,365 @@
+/*
+ * Room (Jam), 12.4. A listening room: a dark stage with a record sliding out of its sleeve,
+ * the people listening seated along the bottom, and quiet cards for inviting and joining.
+ */
+
+.jamView.jamRoom {
+  --jam-ink: #0c0910;
+  --jam-paper: #f6efe6;
+  --jam-live: #ff5d6c;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  padding: 6px 4px 28px 2px;
+  container-type: inline-size;
+}
+/* The column keeps its natural height inside the scroll area. */
+.jamView.jamRoom > * { flex-shrink: 0; }
+.jamRoom [hidden] { display: none !important; }
+.jamRoom h2, .jamRoom h3, .jamRoom p { margin: 0; }
+
+/* ---------- Header (setup) ---------- */
+.jamRoomHeader { display: flex; align-items: flex-end; justify-content: space-between; flex-wrap: wrap; gap: 14px 24px; padding-top: 8px; }
+.jamRoomTitle { min-width: 0; }
+.jamRoomTitle h2 { font-family: var(--font-display); font-size: clamp(36px, 5cqw, 54px); font-weight: 600; font-stretch: 88%; letter-spacing: -.015em; line-height: 1; }
+.jamRoomTitle p { margin-top: 12px; max-width: 52ch; color: var(--muted); font-size: 14px; line-height: 1.55; }
+
+.jamRoom .jamConnectionPill { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border: 1px solid var(--border-strong); border-radius: 999px; background: color-mix(in srgb, var(--text) 4%, transparent); color: var(--muted); font-size: 12px; font-weight: 500; letter-spacing: 0; text-transform: none; white-space: nowrap; }
+.jamRoom .jamConnectionPill > span { width: 7px; height: 7px; border-radius: 50%; background: var(--faint); }
+.jamRoom .jamConnectionPill[data-state="live"] > span { background: #5ee08f; box-shadow: 0 0 0 3px #5ee08f2e; }
+.jamRoom .jamConnectionPill[data-state="stale"] > span { background: var(--warning); box-shadow: 0 0 0 3px color-mix(in srgb, var(--warning) 25%, transparent); }
+
+/* ---------- Notices ---------- */
+.jamRoom .jamNotice { display: flex; align-items: center; gap: 10px; margin: 0; padding: 11px 12px 11px 16px; border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent); border-radius: 14px; background: color-mix(in srgb, var(--accent) 9%, transparent); color: var(--text); font-size: 13px; line-height: 1.45; }
+.jamRoom .jamNotice > span { flex: 1; min-width: 0; }
+.jamRoom .jamNotice > svg { flex-shrink: 0; color: var(--accent-ink); }
+.jamRoom .jamNotice.error { border-color: color-mix(in srgb, var(--danger) 40%, transparent); background: color-mix(in srgb, var(--danger) 10%, transparent); }
+.jamRoom .jamNotice .secondaryAction { flex-shrink: 0; min-height: 32px; padding: 0 14px; font-size: 12px; }
+
+/* ---------- Mode choice ---------- */
+.jamRoom .jamModeSwitch { width: 100%; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; }
+.jamRoom .jamModeSwitch .tabIndicator { display: none; }
+.jamRoom .jamModeSwitch > button {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  align-items: center;
+  column-gap: 14px;
+  row-gap: 2px;
+  min-height: 78px;
+  padding: 16px 18px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--panel) 55%, transparent);
+  color: var(--muted);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 160ms ease, background 160ms ease, box-shadow 200ms ease;
+}
+.jamRoom .jamModeSwitch > button:hover { border-color: var(--border-strong); background: color-mix(in srgb, var(--panel-2) 70%, transparent); }
+.jamRoom .jamModeSwitch > button > svg { grid-row: 1 / span 2; box-sizing: content-box; width: 20px; height: 20px; padding: 11px; border-radius: 13px; background: color-mix(in srgb, var(--text) 7%, transparent); color: var(--muted); transition: background 160ms, color 160ms; }
+.jamRoom .jamModeSwitch > button > span { align-self: end; color: var(--text); font-size: 15px; font-weight: 600; }
+.jamRoom .jamModeSwitch .tabHint { align-self: start; font-size: 12.5px; font-style: normal; color: var(--faint); }
+.jamRoom .jamModeSwitch > button.active { border-color: color-mix(in srgb, var(--accent) 50%, transparent); background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 17%, transparent), color-mix(in srgb, var(--accent) 4%, transparent)); box-shadow: 0 18px 40px -28px var(--accent); }
+.jamRoom .jamModeSwitch > button.active > svg { background: var(--accent); color: var(--on-accent); }
+.jamRoom .jamModeSwitch > button.active .tabHint { color: var(--muted); }
+.jamRoom .jamModeSwitch > button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+/* ---------- Grids & cards ---------- */
+.jamSetupGrid, .jamLiveGrid { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); align-items: start; gap: 16px; }
+.jamLiveGrid { grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); }
+.jamRoom[data-connected="true"] .jamLiveGrid { grid-template-columns: minmax(0, 1fr); }
+.jamRoom .jamSetupGrid > *, .jamRoom .jamLiveGrid > * { grid-area: auto; grid-column: auto; width: auto; }
+.jamRoom .jamCard {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+  margin: 0;
+  padding: 22px;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: color-mix(in srgb, var(--panel) 66%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text) 4%, transparent);
+}
+.jamRoom .jamCard > header { display: flex; align-items: flex-start; gap: 12px; margin: 0; padding: 0; border: 0; }
+.jamRoom .jamCard > header > div { flex: 1; min-width: 0; }
+.jamRoom .jamCard > header h3 { font-family: var(--font-display); font-size: 19px; font-weight: 600; line-height: 1.2; }
+.jamRoom .jamCard > header p { margin-top: 3px; color: var(--muted); font-size: 12.5px; line-height: 1.45; }
+.jamRoom .jamCard > header > button { flex-shrink: 0; }
+.jamRoom .jamPanelIcon { display: grid; place-items: center; flex-shrink: 0; width: 38px; height: 38px; border-radius: 12px; background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent-ink); }
+.jamRoom .jamPanelIcon > svg { width: 18px; height: 18px; padding: 0; background: none; }
+
+/* ---------- Fields ---------- */
+.jamRoom .field { display: grid; gap: 7px; margin: 0; padding: 0; border: 0; }
+.jamRoom .field > span { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--muted); font-size: 12px; font-weight: 600; }
+.jamRoom .field input:not([type="checkbox"]) { width: 100%; min-height: 42px; padding: 0 14px; border: 1px solid var(--border-strong); border-radius: 12px; background: color-mix(in srgb, var(--bg) 55%, transparent); color: var(--text); font: inherit; font-size: 14px; transition: border-color 140ms, box-shadow 140ms; }
+.jamRoom .field input::placeholder { color: var(--faint); }
+.jamRoom .field input:focus { outline: none; border-color: color-mix(in srgb, var(--accent) 60%, transparent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 14%, transparent); }
+.jamRoom .field input:disabled { opacity: .6; }
+.jamRoom .jamPasswordInput { position: relative; display: flex; align-items: center; min-width: 0; }
+.jamRoom .jamPasswordInput .jamFieldIcon { position: absolute; left: 13px; color: var(--faint); pointer-events: none; }
+.jamRoom .jamPasswordInput input:not([type="checkbox"]) { padding-left: 38px; padding-right: 46px; }
+.jamRoom .jamPasswordInput > button { position: absolute; right: 5px; width: 34px; height: 34px; border-radius: 9px; }
+.jamRoom .roomFieldHint { margin: 0; color: var(--faint); font-size: 11.5px; line-height: 1.5; }
+.jamRoom .jamFieldPair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.jamRoom .roomPathPicker { display: flex; gap: 8px; min-width: 0; }
+.jamRoom .roomPathPicker .secondaryAction { flex-shrink: 0; min-height: 42px; padding: 0 14px; }
+
+/* Guests can pick songs: one row, one switch. */
+.jamRoom .jamPermissionCard { display: flex; align-items: center; gap: 12px; margin: 0; padding: 14px; border: 1px solid var(--border); border-radius: 14px; background: color-mix(in srgb, var(--text) 3%, transparent); cursor: pointer; }
+.jamRoom .jamPermissionCard > span:nth-child(2) { display: grid; flex: 1; gap: 2px; min-width: 0; }
+.jamRoom .jamPermissionCard strong { font-size: 13.5px; font-weight: 600; }
+.jamRoom .jamPermissionCard small { color: var(--muted); font-size: 12px; }
+.jamRoom .jamPermissionIcon { flex: 0 0 34px; display: grid; place-items: center; flex-shrink: 0; width: 34px; height: 34px; border-radius: 10px; background: color-mix(in srgb, var(--text) 7%, transparent); color: var(--muted); }
+.jamRoom .jamSwitch { appearance: none; position: relative; flex-shrink: 0; width: 42px; height: 24px; margin: 0; border-radius: 999px; background: var(--panel-3); cursor: pointer; transition: background 160ms ease; }
+.jamRoom .jamSwitch::before { content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px #0006; transition: transform 180ms cubic-bezier(.3,.7,.2,1); }
+.jamRoom .jamSwitch:checked { background: var(--accent); }
+.jamRoom .jamSwitch:checked::before { transform: translateX(18px); }
+.jamRoom .jamSwitch:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.jamRoom .jamSwitch:disabled { opacity: .5; cursor: default; }
+
+.jamRoom .jamAdvanced { margin: 0; padding: 0; border: 0; font-size: 12.5px; }
+.jamRoom .jamAdvanced > summary { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-weight: 500; list-style: none; cursor: pointer; }
+.jamRoom .jamAdvanced > summary::-webkit-details-marker { display: none; }
+.jamRoom .jamAdvanced > summary::before { content: ""; width: 6px; height: 6px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(-45deg); transition: transform 160ms ease; }
+.jamRoom .jamAdvanced[open] > summary::before { transform: rotate(45deg); }
+.jamRoom .jamAdvanced > summary:hover { color: var(--text); }
+.jamRoom .jamAdvanced > div { margin-top: 12px; }
+
+.jamRoom .settingsActions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 4px 0 0; padding: 0; border: 0; }
+.jamRoom .settingsActions > button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 42px; padding: 0 18px; font-size: 13.5px; }
+.jamRoom .settingsActions > .primaryAction { padding: 0 24px; }
+.jamRoom[data-connected="false"] .roomJoinPanel .settingsActions > button:last-child { display: inline-flex; }
+.jamRoom .primaryAction, .jamRoom .secondaryAction { display: inline-flex; align-items: center; gap: 7px; }
+
+/* ---------- Join ---------- */
+.jamRoom .roomSearchButton { min-height: 34px; padding: 0 14px; font-size: 12.5px; }
+.jamRoom .nearbyRoomList { display: grid; gap: 8px; }
+.jamRoom .nearbyRoom { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; gap: 12px; width: 100%; margin: 0; padding: 11px 14px 11px 11px; border: 1px solid var(--border); border-radius: 14px; background: color-mix(in srgb, var(--text) 3%, transparent); color: var(--text); text-align: left; cursor: pointer; transition: border-color 140ms, background 140ms; }
+.jamRoom .nearbyRoom:hover:not(:disabled) { border-color: color-mix(in srgb, var(--accent) 35%, transparent); background: color-mix(in srgb, var(--text) 5%, transparent); }
+.jamRoom .nearbyRoom[data-selected="true"] { border-color: color-mix(in srgb, var(--accent) 60%, transparent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.jamRoom .nearbyRoom > span:nth-child(2) { display: grid; gap: 2px; min-width: 0; }
+.jamRoom .nearbyRoom strong { overflow: hidden; font-size: 14px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.jamRoom .nearbyRoom small { overflow: hidden; color: var(--muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.jamRoom .nearbyRoomIcon { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 50%; background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent-ink); }
+.jamRoom .roomDiscoveryBadge { padding: 4px 9px; border: 0; border-radius: 999px; background: color-mix(in srgb, var(--text) 7%, transparent); color: var(--muted); font-size: 11px; font-weight: 500; white-space: nowrap; }
+.jamRoom .nearbyRoomCheck { color: var(--faint); }
+.jamRoom .nearbyRoom[data-selected="true"] .nearbyRoomCheck { color: var(--accent-ink); }
+.jamRoom .nearbyEmpty { display: flex; align-items: center; gap: 12px; margin: 0; padding: 16px 18px; border: 1px dashed var(--border-strong); border-radius: 14px; color: var(--muted); font-size: 13px; line-height: 1.5; }
+.jamRadar { position: relative; flex-shrink: 0; width: 20px; height: 20px; border-radius: 50%; background: color-mix(in srgb, var(--accent) 35%, transparent); }
+.jamRadar::after { content: ""; position: absolute; inset: 0; border-radius: 50%; border: 2px solid var(--accent); animation: jamPing 1.4s ease-out infinite; }
+@keyframes jamPing { from { transform: scale(.6); opacity: 1; } to { transform: scale(1.9); opacity: 0; } }
+.jamRoom .roomManualDivider { display: flex; align-items: center; gap: 12px; margin: 2px 0; color: var(--faint); font-size: 12px; }
+.jamRoom .roomManualDivider::before, .jamRoom .roomManualDivider::after { content: ""; flex: 1; height: 1px; background: var(--border); }
+.jamRoom .roomManualDivider > span { position: static; padding: 0; background: none; letter-spacing: 0; text-transform: none; }
+.jamRoom .jamResult { display: flex; align-items: center; gap: 8px; margin: 0; color: var(--muted); font-size: 12.5px; }
+.jamRoom .jamResult.ok { color: #6fd99b; }
+
+/* ---------- Welcome aside ---------- */
+.jamRoom .jamWelcomePanel { gap: 14px; padding: 22px 24px 24px; background: radial-gradient(120% 70% at 50% 0%, color-mix(in srgb, var(--accent) 13%, transparent), transparent 70%), color-mix(in srgb, var(--panel) 55%, transparent); }
+.jamRoom .jamWelcomePanel h3 { font-family: var(--font-display); font-size: 24px; font-weight: 600; font-stretch: 90%; line-height: 1.15; }
+.jamRoom .jamWelcomePanel > p { color: var(--muted); font-size: 13px; line-height: 1.6; }
+.jamRoom .jamOrbitArt { position: relative; display: grid; place-items: center; height: 168px; margin: 0; }
+.jamRoom .jamOrbitArt > i { position: absolute; top: 50%; left: 50%; border: 1px solid color-mix(in srgb, var(--accent) 24%, transparent); border-radius: 50%; translate: -50% -50%; background: none; }
+.jamRoom .jamOrbitArt > i:nth-child(1) { width: 92px; height: 92px; }
+.jamRoom .jamOrbitArt > i:nth-child(2) { width: 132px; height: 132px; border-style: dashed; opacity: .8; }
+.jamRoom .jamOrbitArt > i:nth-child(3) { width: 164px; height: 164px; opacity: .45; }
+.jamRoom .jamOrbitArt > span { position: relative; display: grid; place-items: center; width: 64px; height: 64px; border-radius: 50%; background: radial-gradient(circle at 35% 28%, color-mix(in srgb, var(--accent) 50%, white), var(--accent) 65%); color: var(--on-accent); box-shadow: 0 0 0 8px color-mix(in srgb, var(--accent) 12%, transparent), 0 16px 40px -10px var(--accent); }
+.jamRoom .jamOrbitArt > b { position: absolute; top: 50%; left: 50%; display: grid; place-items: center; width: 30px; height: 30px; margin: -15px 0 0 -15px; border-radius: 50%; background: hsl(var(--avatar-hue) 62% 72%); color: hsl(var(--avatar-hue) 40% 14%); font-size: 12px; font-weight: 700; box-shadow: 0 0 0 3px var(--panel); }
+.jamRoom .jamOrbitArt > b:nth-of-type(1) { transform: rotate(-35deg) translateY(-66px) rotate(35deg); }
+.jamRoom .jamOrbitArt > b:nth-of-type(2) { transform: rotate(85deg) translateY(-66px) rotate(-85deg); }
+.jamRoom .jamOrbitArt > b:nth-of-type(3) { transform: rotate(200deg) translateY(-82px) rotate(-200deg); }
+.jamSteps { display: grid; gap: 14px; margin: 4px 0 0; padding: 0; list-style: none; }
+.jamSteps li { display: grid; grid-template-columns: 28px minmax(0, 1fr); align-items: start; gap: 12px; }
+.jamSteps li > span { display: grid; place-items: center; width: 28px; height: 28px; border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent); border-radius: 50%; color: var(--accent-ink); font-family: var(--font-display); font-size: 13px; font-weight: 600; }
+.jamRoom .jamWelcomePanel .jamSteps strong { display: block; color: var(--text); font-size: 13.5px; font-weight: 600; }
+.jamRoom .jamWelcomePanel .jamSteps small { display: block; margin-top: 2px; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.jamRoom .jamWelcomePanel .jamSteps li > div { padding: 0; border: 0; }
+.jamRoom .jamGuideButton { display: inline-flex; align-items: center; gap: 6px; padding: 0; border: 0; background: none; color: var(--accent-ink); font-size: 12.5px; font-weight: 600; cursor: pointer; }
+.jamRoom .jamGuideButton:hover:not(:disabled) { text-decoration: underline; text-underline-offset: 3px; }
+.jamRoom .jamWelcomePanel > .jamGuideButton { align-self: flex-start; }
+
+/* ---------- The stage ---------- */
+.jamStage {
+  --sleeve: 220px;
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: calc(var(--sleeve) * 1.42) minmax(0, 1fr);
+  grid-template-areas: "record info" "listeners listeners";
+  align-items: center;
+  gap: 26px 34px;
+  padding: 32px 32px 20px;
+  border: 1px solid color-mix(in srgb, var(--accent) 24%, transparent);
+  border-radius: 26px;
+  background: var(--jam-ink);
+  color: var(--jam-paper);
+  box-shadow: 0 30px 60px -36px #000, inset 0 1px 0 #ffffff12;
+}
+.jamStageBackdrop { position: absolute; inset: -35%; z-index: -2; opacity: .55; filter: blur(70px) saturate(1.5); }
+.jamStageBackdrop .cover { display: block; width: 100%; height: 100%; border-radius: 0; object-fit: cover; }
+.jamStage::after { content: ""; position: absolute; inset: 0; z-index: -1; background: radial-gradient(60% 90% at 18% 50%, color-mix(in srgb, var(--accent) 18%, transparent), transparent 70%), linear-gradient(90deg, #0c091099 0%, #0c091055 45%, #0c0910b3 100%); }
+
+.jamRecordWrap { grid-area: record; position: relative; width: calc(var(--sleeve) * 1.42); height: var(--sleeve); }
+.jamSleeve { position: absolute; top: 0; left: 0; z-index: 2; width: var(--sleeve); height: var(--sleeve); overflow: hidden; border-radius: 8px; box-shadow: 0 28px 50px -22px #000, 0 0 0 1px #ffffff1a; }
+.jamSleeve .cover { display: block; width: 100%; height: 100%; min-height: 0; border-radius: 0; object-fit: cover; }
+.jamRecord {
+  position: absolute;
+  top: calc(var(--sleeve) * .03);
+  left: calc(var(--sleeve) * .3);
+  z-index: 1;
+  width: calc(var(--sleeve) * .94);
+  height: calc(var(--sleeve) * .94);
+  border-radius: 50%;
+  background:
+    radial-gradient(circle, transparent 0 33%, #ffffff0d 33.5% 34%, transparent 34.5%),
+    repeating-radial-gradient(circle, #111015 0 1.4px, #1c1a21 1.4px 2.6px),
+    #141217;
+  box-shadow: 0 18px 40px -12px #000d, inset 0 0 0 3px #26222b;
+  transition: left 700ms cubic-bezier(.2,.8,.2,1);
+  animation: jamSpin 3.6s linear infinite;
+  animation-play-state: paused;
+}
+.jamRecordWrap::after { content: ""; position: absolute; top: calc(var(--sleeve) * .03); left: calc(var(--sleeve) * .3); z-index: 1; width: calc(var(--sleeve) * .94); height: calc(var(--sleeve) * .94); border-radius: 50%; background: conic-gradient(from 20deg, transparent 0 12%, #ffffff16 18%, transparent 26% 62%, #ffffff10 68%, transparent 76%); pointer-events: none; transition: left 700ms cubic-bezier(.2,.8,.2,1); }
+.jamRoom[data-playing="true"] .jamRecord, .jamRoom[data-playing="true"] .jamRecordWrap::after { left: calc(var(--sleeve) * .46); }
+.jamRoom[data-playing="true"] .jamRecord { animation-play-state: running; }
+.jamRecordLabel { position: absolute; inset: 32%; overflow: hidden; border-radius: 50%; box-shadow: 0 0 0 2px #0009; }
+.jamRecordLabel .cover { display: block; width: 100%; height: 100%; min-height: 0; border-radius: 50%; object-fit: cover; }
+.jamRecordLabel .cover.placeholder svg { display: none; }
+.jamRecordLabel::after { content: ""; position: absolute; inset: 44%; border-radius: 50%; background: var(--jam-ink); box-shadow: 0 0 0 1px #ffffff26; }
+@keyframes jamSpin { to { transform: rotate(360deg); } }
+
+.jamStageInfo { grid-area: info; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.jamStageTop { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.jamRoom .jamLiveBadge { display: inline-flex; align-items: center; gap: 7px; margin: 0; padding: 5px 11px 5px 10px; border-radius: 999px; background: var(--jam-live); color: #fff; font-size: 12px; font-weight: 700; letter-spacing: .02em; text-transform: none; box-shadow: 0 6px 18px -6px var(--jam-live); }
+.jamEq { display: inline-flex; align-items: flex-end; gap: 2px; height: 11px; }
+.jamEq > i { width: 2.5px; height: 35%; border-radius: 2px; background: currentColor; }
+.jamRoom[data-playing="true"] .jamEq > i { animation: jamEq 820ms ease-in-out infinite alternate; }
+.jamRoom[data-playing="true"] .jamEq > i:nth-child(2) { animation-delay: -300ms; animation-duration: 640ms; }
+.jamRoom[data-playing="true"] .jamEq > i:nth-child(3) { animation-delay: -520ms; animation-duration: 980ms; }
+@keyframes jamEq { from { height: 25%; } to { height: 100%; } }
+.jamStage .jamConnectionPill { border-color: #ffffff22; background: #ffffff0f; color: #f6efe6c7; }
+.jamStageName { margin: 4px 0 0; color: #fff8ee; font-family: var(--font-display); font-size: clamp(38px, 5.4cqw, 66px); font-weight: 600; font-stretch: 85%; letter-spacing: -.02em; line-height: .98; overflow-wrap: anywhere; }
+.jamStageRole { display: flex; align-items: center; gap: 7px; color: #f6efe6b3; font-size: 13.5px; }
+.jamStageRole > svg { flex-shrink: 0; color: var(--accent); }
+.jamRoom .jamNowPlaying { display: grid; gap: 3px; max-width: none; margin-top: 12px; padding: 0 0 0 14px; border: 0; border-left: 2px solid var(--accent); background: none; }
+.jamRoom .jamNowPlaying > small { color: color-mix(in srgb, var(--accent) 75%, white); font-size: 12px; font-weight: 600; letter-spacing: 0; text-transform: none; }
+.jamRoom .jamNowPlaying > strong { overflow: hidden; color: #fff; font-size: 19px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.jamRoom .jamNowPlaying > span { overflow: hidden; color: #f6efe699; font-size: 13.5px; text-overflow: ellipsis; white-space: nowrap; }
+.jamRoom .jamTransport { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
+.jamRoom .jamTransport > button { min-height: 40px; padding: 0 18px; font-size: 13px; }
+.jamStage .secondaryAction { border-color: #ffffff26; background: #ffffff10; color: var(--jam-paper); }
+.jamStage .secondaryAction:hover:not(:disabled) { background: #ffffff1f; }
+.jamStage .secondaryAction:disabled { opacity: .45; }
+
+.jamListeners { grid-area: listeners; display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; padding-top: 18px; border-top: 1px solid #ffffff17; color: #f6efe6b3; font-size: 13px; }
+.jamListeners strong { color: #fff; font-family: var(--font-display); font-size: 15px; }
+.jamAvatarStack { display: flex; }
+.jamAvatarStack > .jamAvatar + .jamAvatar { margin-left: -9px; }
+.jamRoom .jamAvatar { display: grid; place-items: center; flex-shrink: 0; width: 34px; height: 34px; border-radius: 50%; background: hsl(var(--avatar-hue, 30) 62% 72%); color: hsl(var(--avatar-hue, 30) 40% 14%); font-size: 13px; font-weight: 700; box-shadow: 0 0 0 2.5px var(--jam-ink); }
+.jamRoom .jamAvatar[data-role="host"] { background: var(--accent); color: var(--on-accent); }
+.jamRoom .jamAvatar.more { background: #ffffff1f; color: var(--jam-paper); font-size: 11px; }
+.jamControlChip { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; padding: 5px 11px; border-radius: 999px; background: #ffffff10; font-size: 12px; }
+.jamControlChip > svg { color: var(--accent); }
+
+/* ---------- Invite & people ---------- */
+.jamRoom .roomAddressList { display: grid; gap: 8px; margin: 0; }
+.jamRoom .roomAddressRow { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px; margin: 0; padding: 10px 10px 10px 12px; border: 1px solid var(--border); border-radius: 14px; background: color-mix(in srgb, var(--bg) 40%, transparent); }
+.jamRoom .roomAddressRow[data-copied="true"] { border-color: color-mix(in srgb, var(--accent) 50%, transparent); }
+.jamRoom .roomAddressRow > span:nth-child(2) { display: grid; gap: 2px; min-width: 0; }
+.jamRoom .roomAddressRow strong { font-size: 13.5px; font-weight: 600; }
+.jamRoom .roomAddressRow small { overflow: hidden; color: var(--accent-ink); font-family: var(--font-display); font-size: 13px; font-variant-numeric: tabular-nums; letter-spacing: .02em; text-overflow: ellipsis; white-space: nowrap; }
+.jamRoom .roomAddressRow > button { min-height: 34px; padding: 0 14px; font-size: 12.5px; }
+.jamRoom .jamAddressIcon { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 11px; background: color-mix(in srgb, var(--text) 6%, transparent); color: var(--muted); }
+.jamRoom .jamInviteFoot { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 10px 20px; }
+.jamRoom .jamCopyPassword { margin: 0; }
+.jamRoom .jamNetworkHelp { margin: 0; padding: 0; border: 0; font-size: 12.5px; }
+.jamRoom .jamNetworkHelp > summary { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-weight: 500; list-style: none; cursor: pointer; }
+.jamRoom .jamNetworkHelp > summary::-webkit-details-marker { display: none; }
+.jamRoom .jamNetworkHelp > summary:hover { color: var(--text); }
+.jamRoom .jamNetworkHelp > p { margin: 8px 0; max-width: 46ch; color: var(--muted); line-height: 1.55; }
+.jamRoom .jamEndButton { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 35%, transparent); background: color-mix(in srgb, var(--danger) 7%, transparent); min-height: 34px; padding: 0 14px; font-size: 12.5px; }
+.jamRoom .jamEndButton:hover:not(:disabled) { background: color-mix(in srgb, var(--danger) 14%, transparent); }
+.jamRoom .jamEndButton svg { color: var(--danger); }
+
+.jamRoom .jamPeopleCount { display: grid; place-items: center; min-width: 32px; height: 32px; margin: 0; padding: 0 8px; border: 0; border-radius: 999px; background: color-mix(in srgb, var(--text) 7%, transparent); color: var(--text); font-family: var(--font-display); font-size: 14px; font-weight: 600; }
+.jamRoom .roomUserList { display: grid; gap: 2px; margin: 0; }
+.jamRoom .roomUserRow { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px; margin: 0; padding: 8px 8px 8px 6px; border: 0; border-radius: 12px; background: none; }
+.jamRoom .roomUserRow:hover { background: color-mix(in srgb, var(--text) 4%, transparent); }
+.jamRoom .roomUserRow .jamAvatar { box-shadow: none; }
+.jamRoom .roomUserRow > div { display: grid; gap: 1px; min-width: 0; }
+.jamRoom .roomUserRow strong { overflow: hidden; font-size: 13.5px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.jamRoom .roomUserRow > div > span { color: var(--muted); font-size: 12px; }
+.jamRoom .jamRoleBadge { padding: 3px 10px; border: 0; border-radius: 999px; background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent-ink); font-size: 11.5px; font-weight: 600; }
+.jamRoom .jamKickButton { width: 32px; height: 32px; color: var(--faint); }
+.jamRoom .jamKickButton:hover:not(:disabled) { color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent); }
+.jamRoom .jamGuestsEmpty { display: grid; gap: 4px; margin: 0; padding: 16px; border: 1px dashed var(--border-strong); border-radius: 14px; text-align: center; }
+.jamRoom .jamGuestsEmpty strong { font-size: 14px; }
+.jamRoom .jamGuestsEmpty p { color: var(--muted); font-size: 12.5px; }
+
+/* Guest card */
+.jamGuestPerks { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 0; padding: 0; list-style: none; }
+.jamGuestPerks li { display: flex; align-items: flex-start; gap: 10px; padding: 14px; border: 1px solid var(--border); border-radius: 14px; background: color-mix(in srgb, var(--text) 3%, transparent); }
+.jamGuestPerks li > svg { flex-shrink: 0; margin-top: 2px; color: var(--accent-ink); }
+.jamGuestPerks strong { display: block; font-size: 13.5px; font-weight: 600; }
+.jamGuestPerks small { display: block; margin-top: 3px; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.jamRoom .jamLeaveButton { color: var(--text); }
+
+.jamRoom .jamSessionFooter { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin: 0; padding: 0 4px; border: 0; color: var(--faint); font-size: 12px; }
+.jamRoom .jamSessionFooter > span { display: inline-flex; align-items: center; gap: 6px; }
+
+/* ---------- Light theme ---------- */
+:root[data-theme="light"] .jamRoom .jamModeSwitch > button { background: color-mix(in srgb, var(--panel) 80%, transparent); }
+:root[data-theme="light"] .jamRoom .jamCard { background: color-mix(in srgb, var(--panel) 85%, transparent); box-shadow: 0 16px 34px -28px #2b1d3766; }
+
+/* ---------- Smaller windows ---------- */
+@container (max-width: 860px) {
+  .jamSetupGrid, .jamLiveGrid { grid-template-columns: minmax(0, 1fr); }
+  .jamRoom .jamWelcomePanel { display: grid; grid-template-columns: minmax(0, 1fr); }
+  .jamStage { --sleeve: 180px; }
+}
+@container (max-width: 640px) {
+  .jamStage { --sleeve: 150px; grid-template-columns: minmax(0, 1fr); grid-template-areas: "record" "info" "listeners"; gap: 20px; padding: 22px 20px 16px; border-radius: 22px; }
+  .jamGuestPerks { grid-template-columns: minmax(0, 1fr); }
+  .jamControlChip { margin-left: 0; }
+  .jamRoom .jamOrbitArt { display: none; }
+}
+@container (max-width: 480px) {
+  .jamRoom .jamModeSwitch { gap: 8px; }
+  .jamRoom .jamModeSwitch > button { grid-template-columns: minmax(0, 1fr); min-height: 0; padding: 12px; row-gap: 8px; }
+  .jamRoom .jamModeSwitch > button > svg { grid-row: auto; }
+  .jamRoom .jamModeSwitch .tabHint { display: none; }
+  .jamRoom .jamCard { padding: 16px; border-radius: 16px; }
+  .jamRoom .jamCard > header { flex-wrap: wrap; }
+  .jamRoom .jamFieldPair { grid-template-columns: minmax(0, 1fr); }
+  .jamRoom .roomAddressRow { grid-template-columns: auto minmax(0, 1fr); }
+  .jamRoom .roomAddressRow > button { grid-column: 1 / -1; justify-content: center; }
+  .jamRoom .nearbyRoom { grid-template-columns: auto minmax(0, 1fr) auto; }
+  .jamRoom .roomDiscoveryBadge { display: none; }
+  .jamRoom .settingsActions > button { flex: 1 1 auto; }
+  .jamStageName { font-size: 34px; }
+}
+
+/* ---------- Motion preferences ---------- */
+:root[data-motion="reduced"] .jamRecord, :root[data-motion="reduced"] .jamEq > i, :root[data-motion="reduced"] .jamRadar::after { animation: none !important; }
+@media (prefers-reduced-motion: reduce) {
+  .jamRecord, .jamEq > i, .jamRadar::after { animation: none !important; }
+  .jamRecord, .jamRecordWrap::after { transition: none; }
+}
+
+/* Beat the older welcome-panel rules. */
+.jamRoom .jamWelcomePanel .jamSteps { display: grid; gap: 14px; margin: 4px 0 0; padding: 0; }
+.jamRoom .jamWelcomePanel .jamSteps li { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 12px; }
+.jamRoom .jamWelcomePanel h3 { margin: 0; letter-spacing: -.01em; }
+.jamRoom .jamWelcomePanel > p { line-height: 1.6; }
+.jamRoom .jamNoticeClose { flex-shrink: 0; width: 30px; height: 30px; color: var(--muted); }

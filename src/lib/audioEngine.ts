@@ -1,5 +1,6 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
 import type { RepeatMode, RoomPlaybackState, Track } from "../types";
+import { PlaybackTransport } from "./playbackTransport";
 
 type Listener = () => void;
 type TrackInput = Track | readonly Track[];
@@ -82,7 +83,9 @@ const BLOCKED_MESSAGE = "Playback controls are managed by the Room host.";
 
 class AudioEngine {
   private playlistKey: string | null = null;
-  private audio = new Audio();
+  private audio = new PlaybackTransport();
+  private preparedAdvance: { key: string; track: Track; index: number; queue: Track[]; originQueue: Track[]; fromIndex: number } | null = null;
+  private transitionBlocked = false;
   private listeners = new Set<Listener>();
   private queue: Track[] = [];
   private index = -1;
@@ -117,6 +120,18 @@ class AudioEngine {
 
   constructor() {
     this.audio.volume = this.volume;
+    this.audio.addEventListener("preferenceschange", () => this.prepareSuccessor());
+    this.audio.addEventListener("transition", (event) => {
+      const next = this.preparedAdvance;
+      if (!next || next.key !== (event as CustomEvent<string>).detail || this.localControlBlocked || this.transitionBlocked) return;
+      this.preparedAdvance = null;
+      this.loadGeneration++;
+      this.queue = next.queue; this.index = next.index; this.current = next.track;
+      this.position = this.audio.currentTime * 1000; this.duration = this.audio.duration * 1000;
+      this.pendingSeekMs = null; this.sourceReleased = false; this.startedForSource = true; this.playing = true;
+      this.explicitNextCount = Math.max(0, this.explicitNextCount - 1);
+      this.emitTrackStarted(next.track); this.emit(); this.scheduleSeekSessionFlush(); this.emitLocalPlaybackChanged();
+    });
 
     this.audio.addEventListener("timeupdate", () => {
       this.updateDurationFromMedia();
@@ -508,6 +523,13 @@ class AudioEngine {
       true,
       carriedExplicitNextCount
     );
+  }
+
+  /** Read the real transport clock for lightweight frame-based lyric painting. */
+  playhead(): number {
+    if (this.pendingSeekMs !== null || !this.playing) return this.position;
+    const milliseconds = this.audio.currentTime * 1000;
+    return Number.isFinite(milliseconds) ? Math.max(0, milliseconds) : this.position;
   }
 
   seek(ms: number): boolean {
@@ -943,6 +965,14 @@ class AudioEngine {
     if (changed) this.emit();
   }
 
+  setTransitionBlocked(blocked: boolean) {
+    this.transitionBlocked = blocked;
+    this.audio.transitionBlocked = blocked;
+    this.prepareSuccessor();
+  }
+
+  getPlaybackMode() { return this.audio.mode; }
+
   setCurrentFavorite(favorite: boolean) {
     const trackId = this.current?.id;
     if (trackId === undefined) return;
@@ -1045,6 +1075,7 @@ class AudioEngine {
     this.sourceReleased = false;
 
     try {
+      this.audio.configure(track);
       this.audio.src = audioSource(track.path);
       this.audio.load();
       this.applyPendingSeek();
@@ -1184,8 +1215,27 @@ class AudioEngine {
   }
 
   private emit() {
+    this.prepareSuccessor();
     this.cachedSnapshot = null;
     this.listeners.forEach((listener) => listener());
+  }
+
+  private prepareSuccessor() {
+    if (!this.current || !this.playing || this.localControlBlocked || this.transitionBlocked) {
+      this.preparedAdvance = null; this.audio.prepare(null, "", false); return;
+    }
+    let queue = this.queue;
+    let index = this.repeat === "one" ? this.index : this.index + 1;
+    if (index >= queue.length) {
+      if (this.repeat !== "all") { this.preparedAdvance = null; this.audio.prepare(null, "", false); return; }
+      if (this.shuffle) queue = this.preparedAdvance?.originQueue === this.queue && this.preparedAdvance.fromIndex === this.index ? this.preparedAdvance.queue : materializeShuffleCycle(queue, this.index);
+      index = 0;
+    }
+    const track = queue[index];
+    if (!track) return;
+    const key = `${index}:${track.id}:${track.path}`;
+    this.preparedAdvance = { key, track, index, queue, originQueue: this.queue, fromIndex: this.index };
+    this.audio.prepare(track, key, this.repeat !== "one");
   }
 
   private blockLocalControl() {

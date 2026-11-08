@@ -25,6 +25,21 @@ use crate::{
 type CommandResult<T> = Result<T, String>;
 
 #[tauri::command]
+pub fn set_window_appearance(window: tauri::WebviewWindow, theme: String, glass: bool) -> CommandResult<bool> {
+    let theme = if theme == "light" { tauri::Theme::Light } else { tauri::Theme::Dark };
+    window.set_theme(Some(theme)).map_err(|error| error.to_string())?;
+    #[cfg(windows)]
+    {
+        use tauri::window::{Color, Effect, EffectsBuilder};
+        let effects = if glass { EffectsBuilder::new().effect(Effect::Acrylic).color(Color(14, 22, 27, 70)).build() } else { EffectsBuilder::new().build() };
+        window.set_effects(effects).map_err(|error| error.to_string())?;
+        return Ok(glass);
+    }
+    #[cfg(not(windows))]
+    { let _ = glass; Ok(false) }
+}
+
+#[tauri::command]
 pub async fn import_playlist_image(state: State<'_, AppState>) -> CommandResult<Option<String>> {
     let selected = rfd::AsyncFileDialog::new()
         .set_title("Choose a playlist picture")
@@ -869,10 +884,35 @@ fn is_lrc_timestamp(tag: &str) -> bool {
     !minutes.is_empty()
         && minutes.len() <= 3
         && minutes.chars().all(|character| character.is_ascii_digit())
-        && seconds
+        && seconds.replace(':', ".")
             .parse::<f64>()
             .map(|seconds| (0.0..60.0).contains(&seconds))
             .unwrap_or(false)
+}
+
+#[cfg(test)]
+mod word_lyrics_tests {
+    #[test]
+    fn text_exports_remove_timing_but_preserve_literal_angles_and_unicode() {
+        assert_eq!(super::plain_text_from_lrc("[ar:Test]\n[00:01.00]<00:01.00>Olá <00:01.50>mundo <00:02.00>"), "Olá mundo");
+        assert_eq!(super::plain_text_from_lrc("[00:01:50]<00:01:50>Colon fractions"), "Colon fractions");
+        assert_eq!(super::strip_word_timestamps("A < B and <echo> [echo] <00:02.250>café"), "A < B and <echo> [echo] café");
+    }
+}
+
+pub(crate) fn strip_word_timestamps(mut value: &str) -> String {
+    let mut result = String::with_capacity(value.len());
+    while let Some(start) = value.find('<') {
+        result.push_str(&value[..start]);
+        let rest = &value[start + 1..];
+        // A supported timestamp is at most ten ASCII bytes; bound lookahead so
+        // literal angle brackets cannot cause quadratic scans of imported text.
+        if let Some(end) = rest.as_bytes().iter().take(12).position(|byte| *byte == b'>') {
+            if is_lrc_timestamp(&rest[..end]) { value = &rest[end + 1..]; continue; }
+        }
+        result.push('<'); value = rest;
+    }
+    result.push_str(value); result
 }
 
 pub(crate) fn plain_text_from_lrc(value: &str) -> String {
@@ -895,7 +935,8 @@ pub(crate) fn plain_text_from_lrc(value: &str) -> String {
                 }
                 remaining = next.trim_start();
             }
-            let remaining = remaining.trim();
+            let cleaned = strip_word_timestamps(remaining);
+            let remaining = cleaned.trim();
             (!remaining.is_empty() && (timestamped || !metadata_only))
                 .then(|| remaining.to_string())
         })

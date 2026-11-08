@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { ArrowDown, ArrowUp, AudioLines, Heart, MoreHorizontal, Pause, Play, Trash2 } from "lucide-react";
 import { audioEngine } from "../lib/audioEngine";
 import { displayAlbum, displayArtist, displayTrackTitle, formatDuration } from "../lib/format";
@@ -17,13 +17,14 @@ type Props = {
   playbackQueue?: Track[];
   scrollParentRef?: RefObject<HTMLElement>;
   playlistKey?: string;
+  albumView?: boolean;
   onRemoveTrack?: (track: Track) => void | Promise<void>;
   onMoveTrack?: (track: Track, index: number, direction: -1 | 1) => void | Promise<void>;
 };
 
 type OpenMenu = { track: Track; queueIndex: number; point: MenuPoint };
 
-export function VirtualSongList({ tracks, playbackQueue = tracks, scrollParentRef, playlistKey, onRemoveTrack, onMoveTrack }: Props) {
+export function VirtualSongList({ tracks, playbackQueue = tracks, scrollParentRef, playlistKey, albumView, onRemoveTrack, onMoveTrack }: Props) {
   const playback = useAudioSelector(
     (snapshot) => ({ currentId: snapshot.current?.id ?? null, playing: snapshot.playing }),
     samePlayback
@@ -64,7 +65,8 @@ export function VirtualSongList({ tracks, playbackQueue = tracks, scrollParentRe
     const root = document.documentElement;
     const updateRowHeight = () => {
       const configured = Number.parseFloat(getComputedStyle(root).getPropertyValue("--song-row-height"));
-      setRowHeight(Number.isFinite(configured) && configured > 0 ? configured : DEFAULT_ROW_HEIGHT);
+      const fontScale = Number.parseFloat(getComputedStyle(root).getPropertyValue("--font-scale")) || 1;
+      setRowHeight(Math.ceil((Number.isFinite(configured) && configured > 0 ? configured : DEFAULT_ROW_HEIGHT) * Math.max(1, fontScale)));
     };
     updateRowHeight();
     const observer = new MutationObserver(updateRowHeight);
@@ -72,7 +74,8 @@ export function VirtualSongList({ tracks, playbackQueue = tracks, scrollParentRe
     return () => observer.disconnect();
   }, []);
 
-  useEffect(() => {
+  // Reset a changed collection before the parent restores its saved view position.
+  useLayoutEffect(() => {
     const node = scrollParentRef?.current || scrollerRef.current;
     if (!node) return;
     node.scrollTop = 0;
@@ -94,9 +97,9 @@ export function VirtualSongList({ tracks, playbackQueue = tracks, scrollParentRe
   }, [height, rowHeight, scrollTop, tracks]);
 
   return (
-    <div className={`tableSurface virtualTable${scrollParentRef ? " pageSongTable" : ""}${onMoveTrack || onRemoveTrack ? " hasManagement" : ""}`} role="table" aria-label="Songs" aria-colcount={4} aria-rowcount={tracks.length + 1}>
+    <div className={`tableSurface virtualTable${scrollParentRef ? " pageSongTable" : ""}${albumView ? " albumSongTable" : ""}${onMoveTrack || onRemoveTrack ? " hasManagement" : ""}`} role="table" aria-label="Songs" aria-colcount={4} aria-rowcount={tracks.length + 1}>
       <div className="tableHeader songsGrid" role="row" aria-rowindex={1}>
-        <span role="columnheader">Title</span>
+        <span role="columnheader"><span className="trackHeadingNumber" aria-hidden="true">#</span>Title</span>
         <span role="columnheader">Artist</span>
         <span role="columnheader">Album</span>
         <span role="columnheader">Time</span>
@@ -115,6 +118,7 @@ export function VirtualSongList({ tracks, playbackQueue = tracks, scrollParentRe
                   queue={playbackQueue}
                   playlistKey={playlistKey}
                   track={track}
+                  showCover={!albumView}
                   current={playback.currentId === track.id}
                   playing={playback.currentId === track.id && playback.playing}
                   onOpenMenu={openMenu}
@@ -147,7 +151,8 @@ const SongRow = memo(function SongRow({
   first,
   last,
   rowHeight,
-  playlistKey
+  playlistKey,
+  showCover = true
 }: {
   track: Track;
   queue: Track[];
@@ -162,6 +167,7 @@ const SongRow = memo(function SongRow({
   last: boolean;
   rowHeight: number;
   playlistKey?: string;
+  showCover?: boolean;
 }) {
   const { openAlbum, openArtist } = useLibraryActions();
   const title = displayTrackTitle(track);
@@ -205,9 +211,10 @@ const SongRow = memo(function SongRow({
     >
       <span className="titleCell" role="cell">
         <button className="rowPlay" onClick={(event) => { event.stopPropagation(); activate(); }} title={playing ? "Pause" : "Play"} aria-label={`${playing ? "Pause" : "Play"} ${displayTrackTitle(track)}`}>
-          {playing ? <Pause size={15} /> : current ? <AudioLines size={15} /> : <Play size={15} />}
+          <span className="rowIndex" aria-hidden="true">{listIndex + 1}</span>
+          <span className="rowPlayGlyph">{playing ? <Pause size={15} /> : current ? <AudioLines size={15} /> : <Play size={15} />}</span>
         </button>
-        <Cover path={track.coverPath} title={track.album || undefined} size="sm" />
+        {showCover && <Cover path={track.coverPath} title={track.album || undefined} size="sm" />}
         <span>
           <strong title={title}>{title}</strong>
           <span className="trackSubtitle"><small className="trackCompactArtist" title={artist}>{artist}</small><small className="trackFormat">{track.fileExt.toUpperCase()}</small></span>

@@ -1,12 +1,23 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { ArrowLeft, ArrowRight, CheckCircle2, RefreshCw, Search, SidebarIcon, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, AudioLines, CheckCircle2, PanelRight, Quote, RefreshCw, Search, SidebarIcon, X } from "lucide-react";
+import { convertFileSrc } from "@tauri-apps/api/core";
 import { Sidebar } from "./components/Sidebar";
+import { RouteStage } from "./components/RouteStage";
 import { PlayerBar } from "./components/PlayerBar";
 import { AlbumsView } from "./views/AlbumsView";
 import { ArtistsView } from "./views/ArtistsView";
 import { SettingsView } from "./views/SettingsView";
 import { SongsView } from "./views/SongsView";
+import { HomeView } from "./views/HomeView";
+import { StatsView } from "./views/StatsView";
+import { SpotifyView } from "./views/SpotifyView";
+import { installSpotify, spotify } from "./lib/spotify";
+import { WindowControls, hasNativeWindow } from "./components/WindowControls";
+import { installListeningStats } from "./lib/listeningStats";
+import { ListeningPanel, type InspectorMode } from "./components/ListeningPanel";
+import { QueuePanel } from "./components/QueuePanel";
+import { useAudioSelector } from "./lib/useAudio";
 import { RoomView } from "./views/RoomView";
 import { FoldersView } from "./views/PlaylistsView";
 import { UserPlaylistsView } from "./views/UserPlaylistsView";
@@ -75,6 +86,10 @@ function trackMatchesPlayback(track: Track, playback: RoomPlaybackState) {
   );
 }
 
+// Afterglow (12.3) default accent. Older default accents move to the new palette; custom colors are kept.
+const DEFAULT_ACCENT = "#f2b661";
+const LEGACY_ACCENTS = new Set(["#88cbd5"]);
+
 function App() {
   const nav = useNavigation();
   const activeView = nav.route.view;
@@ -93,7 +108,7 @@ function App() {
   const [scanSummary, setScanSummary] = useState<ScanSummary | null>(null);
   const [scanProgress, setScanProgress] = useState<ScanProgress | null>(null);
   const [theme, setTheme] = useState(() => localStorage.getItem("loavy.theme") || "dark");
-  const [accent, setAccent] = useState(() => localStorage.getItem("loavy.accent") || "#48c6a8");
+  const [accent, setAccent] = useState(() => { const saved = localStorage.getItem("loavy.accent"); return !saved || LEGACY_ACCENTS.has(saved.toLowerCase()) ? DEFAULT_ACCENT : saved; });
   const [density, setDensity] = useState(() => localStorage.getItem("loavy.density") || "comfortable");
   const [cardStyle, setCardStyle] = useState(() => localStorage.getItem("loavy.cardStyle") || "soft");
   const [playerStyle, setPlayerStyle] = useState(() => localStorage.getItem("loavy.playerStyle") || "docked");
@@ -103,10 +118,21 @@ function App() {
   const [cornerStyle, setCornerStyle] = useState(() => localStorage.getItem("loavy.cornerStyle") || "rounded");
   const [backgroundStyle, setBackgroundStyle] = useState(() => localStorage.getItem("loavy.backgroundStyle") || "ambient");
   const [highContrast, setHighContrast] = useState(() => localStorage.getItem("loavy.highContrast") === "true");
+  const [glass, setGlass] = useState(() => localStorage.getItem("loavy.glass") !== "false");
+  const [glassOpacity, setGlassOpacity] = useState(() => Math.max(40, Math.min(95, Number(localStorage.getItem("loavy.glassOpacity")) || 65)));
   const [showTrackFormat, setShowTrackFormat] = useState(() => localStorage.getItem("loavy.showTrackFormat") !== "false");
   const [offlineMode, setOfflineMode] = useState(() => localStorage.getItem("loavy.offlineMode") === "true");
   const [backgroundMode, setBackgroundMode] = useState(false);
   const [compactSidebar, setCompactSidebar] = useState(false);
+  const [wideLayout, setWideLayout] = useState(() => window.matchMedia("(min-width: 1100px)").matches);
+  const [inspectorMode, setInspectorMode] = useState<InspectorMode>(() => {
+    const saved = localStorage.getItem("loavy.listeningPanel");
+    return saved === "lyrics" || saved === "closed" ? saved : "queue";
+  });
+  const [queueModalOpen, setQueueModalOpen] = useState(false);
+  const [pinnedAlbums, setPinnedAlbums] = useState<string[]>(() => {
+    try { const stored = JSON.parse(localStorage.getItem("loavy.pinnedAlbums") || "[]"); return Array.isArray(stored) ? stored.filter((item): item is string => typeof item === "string") : []; } catch { return []; }
+  });
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ message: string; tone: NoticeTone } | null>(null);
   const [roomHostRunning, setRoomHostRunning] = useState(false);
@@ -120,6 +146,36 @@ function App() {
     port: null
   });
   const deferredQuery = useDeferredValue(query);
+  useEffect(installListeningStats, []);
+  useEffect(installSpotify, []);
+  useEffect(() => { spotify.setOffline(offlineMode); }, [offlineMode]);
+  useEffect(() => {
+    document.documentElement.dataset.glass = glass && !highContrast ? "on" : "off";
+    document.documentElement.dataset.native = hasNativeWindow() ? "true" : "false";
+    document.documentElement.style.setProperty("--glass-opacity", String(glassOpacity / 100));
+    localStorage.setItem("loavy.glass", String(glass));
+    localStorage.setItem("loavy.glassOpacity", String(glassOpacity));
+  }, [glass, glassOpacity, highContrast, theme]);
+  useEffect(() => { if (hasNativeWindow()) void api.setWindowAppearance(theme, glass && !highContrast).catch((error) => notify(errorMessage(error), "error")); }, [glass, highContrast, theme]);
+
+  useEffect(() => {
+    const media = window.matchMedia("(min-width: 1100px)");
+    const update = () => setWideLayout(media.matches);
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, []);
+  useEffect(() => { localStorage.setItem("loavy.listeningPanel", inspectorMode); }, [inspectorMode]);
+  useEffect(() => { localStorage.setItem("loavy.pinnedAlbums", JSON.stringify(pinnedAlbums)); }, [pinnedAlbums]);
+
+  function toggleQueue() {
+    if (wideLayout) setInspectorMode((mode) => mode === "queue" ? "closed" : "queue");
+    else setQueueModalOpen(true);
+  }
+
+  function focusSearch() {
+    if (activeView !== "songs" && activeView !== "albums" && activeView !== "artists") setActiveView("songs");
+    searchInputRef.current?.focus();
+  }
 
   const refreshLibrary = useCallback(async () => {
     const [nextTracks, nextAlbums, nextArtists, nextFolders, nextFetchers] = await Promise.all([
@@ -201,6 +257,8 @@ function App() {
       }>).detail;
       if (!detail) return;
       setRoomHostRunning(detail.hostRunning);
+      audioEngine.setTransitionBlocked(detail.hostRunning || detail.client.connected);
+      spotify.setRoomBlocked(detail.hostRunning || detail.client.connected);
       roomClientStatusRef.current = detail.client;
       audioEngine.setLocalControlBlocked(detail.client.connected && !detail.client.allowGuestControl, () => {
         setError("The host does not allow guests to change songs.");
@@ -211,6 +269,8 @@ function App() {
     return () => {
       window.removeEventListener("loavy:room-status", handleRoomStatus);
       audioEngine.setLocalControlBlocked(false);
+      audioEngine.setTransitionBlocked(false);
+      spotify.setRoomBlocked(false);
     };
   }, []);
 
@@ -642,6 +702,9 @@ function App() {
   }
 
   const title = {
+    home: "Home",
+    stats: "Listening stats",
+    spotify: "Spotify",
     songs: "Songs",
     albums: "Albums",
     artists: "Artists",
@@ -657,10 +720,14 @@ function App() {
 
   function renderView() {
     if (loading) return <section className="emptyState"><h2>Loading library</h2><p>Preparing the local database.</p></section>;
+    if (activeView === "home") return <HomeView tracks={tracks} albums={albums} onNavigate={setActiveView} />;
+    if (activeView === "stats") return <StatsView tracks={tracks} />;
+    if (activeView === "spotify") return <SpotifyView />;
     if (activeView === "albums") {
       return (
         <AlbumsView
-          albums={albums}
+          albums={albums.filter((album) => !deferredQuery.trim() || `${album.title} ${album.artist || ""}`.toLocaleLowerCase().includes(deferredQuery.trim().toLocaleLowerCase()))}
+          searching={Boolean(deferredQuery.trim())}
           onOpenAlbum={(album) => openAlbum(album.title || "Unknown Album")}
         />
       );
@@ -668,7 +735,9 @@ function App() {
     if (activeView === "artists") {
       return (
         <ArtistsView
-          artists={artists}
+          tracks={tracks}
+          artists={artists.filter((artist) => !deferredQuery.trim() || artist.name.toLocaleLowerCase().includes(deferredQuery.trim().toLocaleLowerCase()))}
+          searching={Boolean(deferredQuery.trim())}
           onOpenArtist={(artist) => openArtist(artist.name)}
         />
       );
@@ -694,6 +763,10 @@ function App() {
           cornerStyle={cornerStyle}
           backgroundStyle={backgroundStyle}
           highContrast={highContrast}
+          glass={glass}
+          glassOpacity={glassOpacity}
+          onGlassChange={setGlass}
+          onGlassOpacityChange={setGlassOpacity}
           showTrackFormat={showTrackFormat}
           onAddFolder={addFolder}
           onRemoveFolder={removeFolder}
@@ -724,6 +797,10 @@ function App() {
     return (
       <SongsView
         tracks={filteredTracks}
+        title={title}
+        onOpenSettings={() => setActiveView("settings")}
+        pinned={collectionFilter?.type === "album" && pinnedAlbums.includes(collectionFilter.value)}
+        onTogglePin={collectionFilter?.type === "album" ? () => setPinnedAlbums((current) => current.includes(collectionFilter.value) ? current.filter((name) => name !== collectionFilter.value) : [...current, collectionFilter.value]) : undefined}
         collectionFilter={collectionFilter}
         onClearCollectionFilter={() => setCollectionFilter(null)}
         emptyKind={activeView === "favorites" ? "favorites" : activeView === "recent" ? "recent" : deferredQuery ? "search" : "library"}
@@ -741,50 +818,49 @@ function App() {
     openAlbum,
     notify
   }), [notify, openAlbum, openArtist, refreshLibrary]);
+  const showInspector = wideLayout && inspectorMode !== "closed" && activeView !== "spotify";
+  const navigationCounts = useMemo(() => ({ songs: tracks.length, albums: albums.length, artists: artists.length, favorites: tracks.filter(track => track.favorite).length }), [tracks, albums.length, artists.length]);
 
   return (
     <LibraryActionsProvider value={libraryActions}>
-    <div className="appShell">
-      <Sidebar active={activeView} onSelect={selectView} compact={compactSidebar} />
-      <main className="mainPane">
-        <header className="topBar">
+    <div className={`appShell desktopShell${showInspector ? " inspectorOpen" : ""}`} data-sidebar={compactSidebar ? "compact" : "expanded"}>
+      <AppAtmosphere />
+        <header className="topBar shellToolbar" data-tauri-drag-region>
+          <div className="toolbarBrand" data-tauri-drag-region><AudioLines size={21} /><span>loavy</span><small>PLAYER</small></div>
           <div className="titleGroup">
             <div className="navigationButtons">
               <button className="iconButton" onClick={() => navigation.back()} disabled={!nav.canBack} aria-label="Go back" title="Back (mouse back button or Alt+Left)"><ArrowLeft size={17} /></button>
               <button className="iconButton" onClick={() => navigation.forward()} disabled={!nav.canForward} aria-label="Go forward" title="Forward (mouse forward button or Alt+Right)"><ArrowRight size={17} /></button>
             </div>
-            <button className="iconButton" onClick={() => setCompactSidebar(!compactSidebar)} title="Toggle sidebar">
+            <button className="iconButton" onClick={() => setCompactSidebar(!compactSidebar)} title="Toggle sidebar" aria-label="Toggle sidebar" aria-expanded={!compactSidebar}>
               <SidebarIcon size={18} />
             </button>
-            <div>
+            <div className="topBarLocation">
               <h1>{title}</h1>
-              <div className="topMeta">
-                <span>{tracks.length} songs</span>
-                <span>{albums.length} albums</span>
-                <span>{artists.length} artists</span>
-                {collectionFilter && (
-                  <button className="metaPillButton" onClick={() => setCollectionFilter(null)} title="Clear collection filter">
-                    {collectionFilter.type}: {collectionFilter.value}
-                    <X size={13} />
-                  </button>
-                )}
-                {scanning && <strong>Scanning</strong>}
-                {offlineMode && <strong>Offline</strong>}
-              </div>
+              {offlineMode && <span className="connectionBadge">Offline</span>}
             </div>
           </div>
           <div className="topBarSearch">
             <button className="quickScanButton" onClick={() => void scan()} disabled={scanning} title={scanning ? "Scanning library" : "Quick scan library"} aria-label={scanning ? "Scanning library" : "Quick scan library"}>
               <RefreshCw size={17} className={scanning ? "spin" : ""} />
             </button>
-            <label className="searchBox">
+            <div className="searchBox">
               <Search size={17} />
-              <input ref={searchInputRef} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search songs, artists, albums" aria-label="Search library" />
-            </label>
+              <input ref={searchInputRef} value={query} onChange={(event) => { setQuery(event.target.value); if (activeView === "home") setActiveView("songs"); }} placeholder="Search your library" aria-label="Search library" />
+              {query ? <button className="searchClear" onClick={() => setQuery("")} aria-label="Clear search"><X size={14} /></button> : <kbd>Ctrl L</kbd>}
+            </div>
           </div>
+          <div className="toolbarPanels" hidden={activeView === "spotify"}>
+            <button className={inspectorMode === "lyrics" ? "iconButton active" : "iconButton"} onClick={() => setInspectorMode((mode) => mode === "lyrics" ? "closed" : "lyrics")} title="Lyrics panel" aria-label="Toggle lyrics panel" aria-pressed={inspectorMode === "lyrics"}><Quote size={17} /></button>
+            <button className={inspectorMode !== "closed" ? "iconButton active" : "iconButton"} onClick={() => setInspectorMode((mode) => mode === "closed" ? "queue" : "closed")} title="Listening panel" aria-label="Toggle listening panel" aria-expanded={inspectorMode !== "closed"}><PanelRight size={18} /></button>
+          </div>
+          <WindowControls />
         </header>
+      <Sidebar active={activeView} onSelect={selectView} compact={compactSidebar} albums={albums} pinnedAlbums={pinnedAlbums} currentAlbum={collectionFilter?.type === "album" ? collectionFilter.value : null} onOpenAlbum={openAlbum} onSearch={focusSearch} counts={navigationCounts} />
+      <main className="mainPane">
         {error && <div className="errorBanner" role="alert"><span>{error}</span><button onClick={() => setError(null)} aria-label="Dismiss error"><X size={16} /></button></div>}
         <div className="contentArea">
+          <RouteStage routeKey={JSON.stringify([nav.route, deferredQuery, loading])}>
           <div className="persistentViewHost" hidden={activeView !== "room"}><RoomView onError={setError} /></div>
           <div className="persistentViewHost" hidden={activeView !== "downloader"}>
             <DownloaderView
@@ -797,9 +873,12 @@ function App() {
             />
           </div>
           {activeView !== "downloader" && renderView()}
+          </RouteStage>
         </div>
       </main>
-      <PlayerBar />
+      {showInspector && <ListeningPanel mode={inspectorMode} onModeChange={setInspectorMode} />}
+      <PlayerBar onQueueToggle={toggleQueue} queueOpen={wideLayout ? inspectorMode === "queue" : queueModalOpen} onLyricsToggle={wideLayout ? () => setInspectorMode((mode) => mode === "lyrics" ? "closed" : "lyrics") : undefined} lyricsOpen={wideLayout && inspectorMode === "lyrics"} />
+      {queueModalOpen && <QueuePanel onClose={() => setQueueModalOpen(false)} />}
       {notice && <div className={`toastNotice ${notice.tone}`} role="status"><CheckCircle2 size={17} /><span>{notice.message}</span><button onClick={() => setNotice(null)} aria-label="Dismiss notification"><X size={15} /></button></div>}
     </div>
     </LibraryActionsProvider>
@@ -807,3 +886,8 @@ function App() {
 }
 
 export default App;
+
+function AppAtmosphere() {
+  const cover = useAudioSelector((state) => state.current?.coverPath);
+  return <div className={`appAtmosphere${cover ? " hasArtwork" : ""}`} aria-hidden="true" style={cover ? { backgroundImage: `url(${JSON.stringify(convertFileSrc(cover))})` } : undefined} />;
+}

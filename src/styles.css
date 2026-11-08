@@ -1,5 +1,5 @@
 :root {
-  --accent: #48c6a8;
+  --accent: #88cbd5;
   --accent-strong: color-mix(in srgb, var(--accent) 82%, white);
   --bg: #070a10;
   --shell: #0b1019;

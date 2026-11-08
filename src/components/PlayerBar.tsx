@@ -1,5 +1,5 @@
-import { Heart, ListMusic, MoreHorizontal, Pause, Play, Repeat, Repeat1, Shuffle, SkipBack, SkipForward, Volume2 } from "lucide-react";
-import { useState, type CSSProperties, type MouseEvent as ReactMouseEvent } from "react";
+import { Expand, Heart, ListMusic, MoreHorizontal, Pause, Play, Quote, Repeat, Repeat1, Shuffle, SkipBack, SkipForward, SlidersHorizontal, Volume2 } from "lucide-react";
+import { useEffect, useState, type CSSProperties, type MouseEvent as ReactMouseEvent } from "react";
 import { audioEngine } from "../lib/audioEngine";
 import { toggleAudioTrackFavorite } from "../lib/favoriteActions";
 import { formatDuration, displayArtist, displayTrackTitle } from "../lib/format";
@@ -10,13 +10,22 @@ import { NowPlayingView } from "./NowPlayingView";
 import { QueuePanel } from "./QueuePanel";
 import { SongContextMenu } from "./SongContextMenu";
 import type { MenuPoint } from "./ContextMenu";
+import { AudioSettingsDialog } from "./AudioSettingsPanel";
+import { MusicVisualizer } from "./MusicVisualizer";
+import { useSpotify } from "../lib/spotify";
+import { SpotifyPlayerBar } from "./SpotifyPlayerBar";
 
-export function PlayerBar() {
+type Props = { onQueueToggle?: () => void; queueOpen?: boolean; onLyricsToggle?: () => void; lyricsOpen?: boolean };
+
+export function PlayerBar({ onQueueToggle, queueOpen, onLyricsToggle, lyricsOpen }: Props = {}) {
   const audio = useAudio();
+  const spotifyState = useSpotify();
   const { notify, openArtist } = useLibraryActions();
   const [showNowPlaying, setShowNowPlaying] = useState(false);
   const [showQueue, setShowQueue] = useState(false);
+  const [showSound, setShowSound] = useState(false);
   const [menuPoint, setMenuPoint] = useState<MenuPoint | null>(null);
+  useEffect(() => { const open = () => { if (audioEngine.snapshot().current && !spotifyState.active) { localStorage.setItem("loavy.nowPlayingMode", "lyrics"); setShowNowPlaying(true); } }; window.addEventListener("loavy:open-lyrics", open); return () => window.removeEventListener("loavy:open-lyrics", open); }, [spotifyState.active]);
   const repeatIcon = audio.repeat === "one" ? <Repeat1 size={17} /> : <Repeat size={17} />;
   const favorite = Boolean(audio.current?.favorite);
   const currentTitle = audio.current ? displayTrackTitle(audio.current) : "Ready to play";
@@ -24,6 +33,8 @@ export function PlayerBar() {
   const seekProgress = audio.duration ? Math.min(100, (audio.position / audio.duration) * 100) : 0;
   const seekStyle = { "--range-progress": `${seekProgress}%` } as CSSProperties;
   const volumeStyle = { "--range-progress": `${audio.volume * 100}%` } as CSSProperties;
+
+  if (spotifyState.active) return <SpotifyPlayerBar />;
 
   async function toggleFavorite() {
     if (!audio.current || audio.current.id <= 0) return;
@@ -55,6 +66,7 @@ export function PlayerBar() {
   return (
     <>
       <footer className="playerBar">
+        <MusicVisualizer className="playerVisualizer" />
         <div className="nowPlaying" onContextMenu={openContextMenu}>
           <button className="playerArtworkButton" onClick={() => setShowNowPlaying(true)} title="Open now playing" disabled={!audio.current}>
             <span className="playerCover" aria-hidden="true">
@@ -106,7 +118,9 @@ export function PlayerBar() {
         </div>
 
         <div className="playerUtilities">
-          <button className={showQueue ? "iconButton active queueButton" : "iconButton queueButton"} onClick={() => setShowQueue(true)} title="Open queue" aria-label={`Open queue, ${audio.upNext.length} upcoming`}>
+          <button className="iconButton soundButton" onClick={() => setShowSound(true)} title="Sound settings" aria-label="Sound settings"><SlidersHorizontal size={17} /></button>
+          <button className={lyricsOpen ? "iconButton active playerLyricsButton" : "iconButton playerLyricsButton"} onClick={onLyricsToggle || (() => { localStorage.setItem("loavy.nowPlayingMode", "lyrics"); setShowNowPlaying(true); })} disabled={!audio.current} title="Show lyrics" aria-label="Show lyrics" aria-pressed={Boolean(lyricsOpen)}><Quote size={17} /></button>
+          <button className={queueOpen || showQueue ? "iconButton active queueButton" : "iconButton queueButton"} onClick={onQueueToggle || (() => setShowQueue(true))} title="Open queue" aria-label={`Open queue, ${audio.upNext.length} upcoming`} aria-pressed={queueOpen || showQueue}>
             <ListMusic size={18} />
             <span className="queueButtonLabel">Queue</span>
             {audio.upNext.length > 0 && <span className="queueButtonCount">{Math.min(audio.upNext.length, 99)}</span>}
@@ -115,10 +129,12 @@ export function PlayerBar() {
             <Volume2 size={18} />
             <input aria-label="Volume" aria-valuetext={`${Math.round(audio.volume * 100)} percent`} type="range" min={0} max={1} step={0.01} value={audio.volume} onChange={(event) => audioEngine.setVolume(Number(event.target.value))} title="Volume" style={volumeStyle} />
           </label>
+          <button className="iconButton expandPlayerButton" onClick={() => setShowNowPlaying(true)} disabled={!audio.current} title="Expand now playing" aria-label="Expand now playing"><Expand size={17} /></button>
         </div>
       </footer>
       {showNowPlaying && <NowPlayingView onClose={() => setShowNowPlaying(false)} onToggleFavorite={() => void toggleFavorite()} onOpenMenu={openMenu} />}
       {showQueue && <QueuePanel onClose={() => setShowQueue(false)} />}
+      {showSound && <AudioSettingsDialog onClose={() => setShowSound(false)} />}
       {menuPoint && audio.current && <SongContextMenu track={audio.current} point={menuPoint} playbackQueue={audio.queue} queueIndex={audio.currentIndex} onClose={() => setMenuPoint(null)} onNavigate={() => setShowNowPlaying(false)} />}
     </>
   );

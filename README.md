@@ -1,235 +1,314 @@
 <div align="center">
 
-  <img width="300" alt="icon-master" src="https://github.com/user-attachments/assets/c7a983d3-9a3d-4fee-b52b-44439e065b30" />
-  
-  # Loavy Player
+<img src="src-tauri/icons/128x128@2x.png" width="132" alt="Loavy Player icon" />
+
+# Loavy Player
+
+**A local-first music player for Windows and Fedora Linux.**<br />
+Your files, your library, your listening room. No account, no cloud, no tracking.
+
+[![Version](https://img.shields.io/badge/version-12.6.0-f2b661?style=flat-square)](https://github.com/loavy/LoavyPlayer/releases)
+[![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-2d2438?style=flat-square&logo=windows&logoColor=white)](#-windows)
+[![Fedora](https://img.shields.io/badge/Fedora-43%2B-2d2438?style=flat-square&logo=fedora&logoColor=white)](#-fedora-linux)
+[![Tauri](https://img.shields.io/badge/Tauri-2-2d2438?style=flat-square&logo=tauri&logoColor=white)](https://v2.tauri.app/)
+[![React](https://img.shields.io/badge/React-18-2d2438?style=flat-square&logo=react&logoColor=white)](https://react.dev/)
+[![Rust](https://img.shields.io/badge/Rust-stable-2d2438?style=flat-square&logo=rust&logoColor=white)](https://www.rust-lang.org/)
+
+[**Download**](https://github.com/loavy/LoavyPlayer/releases) &nbsp;|&nbsp;
+[Features](#-features) &nbsp;|&nbsp;
+[Guides](#-guides) &nbsp;|&nbsp;
+[Build from source](#-build-from-source) &nbsp;|&nbsp;
+[Troubleshooting](#-troubleshooting)
+
+<br />
+
+<img src="assets/screenshots/home.webp" width="900" alt="Loavy Player home screen with album grid, now playing card and queue" />
 
 </div>
 
-Loavy Player is a local-first desktop music player for Windows and Fedora Linux, built with Tauri, Rust, React, and TypeScript. It scans music already on your computer, reads embedded metadata and artwork, and keeps the library in a local SQLite database.
+<br />
 
-## What It Does
+## ✨ Features
 
-- Plays MP3, FLAC, WAV, OGG/OGA, Opus, M4A, and AAC files from local folders.
-- Browses songs, albums, artists, favorites, recent tracks, and folder playlists.
-- Reads embedded tags and cover art without uploading the library.
-- Provides a fullscreen Now Playing view and customizable player layout.
-- Can keep playback running in the system tray after the main window is closed.
-- Accepts Spotify track, album, and playlist links through a metadata-matching download flow.
-- Downloads supported direct media links with yt-dlp.
-- Hosts self-managed listening rooms for LAN, VPN, or port-forwarded connections.
-- Supports dark and light themes, density controls, reduced motion, and high contrast.
+<table>
+<tr>
+<td width="50%" valign="top">
 
-## Install On Windows
+### 🎧 Your music, played well
+- Plays **MP3, FLAC, WAV, OGG, Opus, M4A and AAC** from your own folders
+- Reads tags and cover art locally, stored in a fast SQLite library
+- **Gapless playback**, up to 12 s **crossfade**, 10-band **equalizer** with presets
+- Albums, artists, favorites, folder playlists and custom playlist covers
+- Keeps playing from the system tray when the window is closed
 
-During setup, Loavy asks whether to install optional **Tools**. Choosing **Yes** opens the official Microsoft Store listing for Web Media Extensions after Loavy is installed. This adds Windows support for OGG, Opus, and related web media formats. Choosing **No** skips it without affecting the main installation.
+</td>
+<td width="50%" valign="top">
 
-After installation:
+### 📝 Lyrics that move with the song
+- Finds synced lyrics on [LRCLIB](https://lrclib.net) and saves them offline
+- **Word wave** highlight that follows the music
+- Built-in editor: stamp lines or single words while you listen
+- Import or export `.lrc` / `.txt`, per-song timing offset
 
-1. Open **Settings**.
-2. Select **Add folder** and choose a music folder.
-3. Select **Scan**.
-4. Open **Songs**, **Albums**, **Artists**, or **Folders**.
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
 
-The first scan can take a little longer when a folder contains many files or large embedded covers. Later launches use the saved database and do not automatically rebuild the whole library.
+### 📻 Listen together (Jam)
+- Host a password-protected room on your Wi-Fi or VPN
+- Everyone hears the same second of the same song
+- Guests can send songs from their own library, if you allow it
+- No Loavy server in the middle: you are the host
 
-## Install On Fedora Linux
+</td>
+<td width="50%" valign="top">
 
-Install the RPM from a terminal in the folder containing the downloaded package:
+### ⬇️ Downloader
+- Paste a link from **Spotify, YouTube, SoundCloud, Bandcamp** and more
+- Recognizes the site and the link type automatically
+- Saves **M4A, MP3, Opus or FLAC** with tags and artwork
+- Your own file and folder naming, plus a recent downloads list
+
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+
+### 🟢 Spotify, inside Loavy
+- Connect your own Spotify developer app (Premium needed for playback)
+- Browse playlists, search the catalog, pick a speaker
+- Streams only; nothing from Spotify is downloaded or stored
+
+</td>
+<td width="50%" valign="top">
+
+### 🎨 Made to look good
+- **Afterglow** design with floating panels that pick up album colors
+- Real **glass & blur** on Windows with an adjustable opacity
+- Dark and light themes, six accent presets or any color you like
+- Density, font size, high contrast and reduced motion options
+
+</td>
+</tr>
+</table>
+
+## 📸 Screenshots
+
+<table>
+<tr>
+<td width="50%"><img src="assets/screenshots/library.webp" alt="Songs view with the current song highlighted" /><p align="center"><sub><b>Library</b>: every song, sortable, with the queue beside it</sub></p></td>
+<td width="50%"><img src="assets/screenshots/now-playing.webp" alt="Full-screen now playing view" /><p align="center"><sub><b>Now playing</b>: artwork, controls and lyrics in full screen</sub></p></td>
+</tr>
+<tr>
+<td width="50%"><img src="assets/screenshots/jam.webp" alt="A live Jam with listeners and invite addresses" /><p align="center"><sub><b>Jam</b>: a live room with listeners, invites and controls</sub></p></td>
+<td width="50%"><img src="assets/screenshots/downloader.webp" alt="Downloader with a Spotify album link recognized" /><p align="center"><sub><b>Downloader</b>: paste a link, pick a format, done</sub></p></td>
+</tr>
+<tr>
+<td width="50%"><img src="assets/screenshots/spotify.webp" alt="Spotify page with playlists and search" /><p align="center"><sub><b>Spotify</b>: your playlists and search, in Spotify green</sub></p></td>
+<td width="50%"><img src="assets/screenshots/glass-light.webp" alt="Light theme with glass turned on" /><p align="center"><sub><b>Glass</b>: light theme with the desktop showing through</sub></p></td>
+</tr>
+</table>
+
+<sub>Screenshots use sample songs and generated artwork.</sub>
+
+## 📦 Install
+
+### 🪟 Windows
+
+1. Download **`Loavy-Player-<version>-Windows-x64-Setup.exe`** from [Releases](https://github.com/loavy/LoavyPlayer/releases).
+2. Run it. Setup offers optional **Tools**: choosing **Yes** opens Microsoft's free [Web Media Extensions](https://apps.microsoft.com/detail/9n5tdp8vcmhs), which adds OGG and Opus support to Windows.
+3. Open Loavy and follow [First steps](#-first-steps).
+
+### 🐧 Fedora Linux
 
 ```sh
 sudo dnf install ./Loavy*.rpm
 ```
 
-Then launch **Loavy Player** from your applications menu. In **Settings**, add a music folder and select **Scan**. Remove the application with `sudo dnf remove loavy-player`; your personal library data stays in your user profile.
+Launch **Loavy Player** from your applications menu. To remove it: `sudo dnf remove loavy-player` (your library data stays in your profile).
 
-The container build below targets Fedora 43 and newer on the build machine's architecture (normally x86_64). Playback uses WebKitGTK and the system's GStreamer codecs. Available formats depend on installed codecs; AAC/M4A may need additional codec packages. Background playback needs a desktop with system-tray support, such as KDE Plasma or GNOME with an AppIndicator extension.
+> [!NOTE]
+> On Linux, playback uses WebKitGTK and your system's GStreamer codecs, so AAC/M4A may need extra codec packages. Tray playback needs a desktop with tray support (KDE Plasma, or GNOME with an AppIndicator extension). The downloader uses tools you install yourself: `yt-dlp`, `ffmpeg`, Node.js 22+ or Deno 2.3+, and `spotdl` for Spotify links.
 
-Linux downloader tools are optional and managed by you. Install `yt-dlp`, `ffmpeg`, and Node.js 22+ (or Deno 2.3+) on `PATH`; Spotify links also need `spotdl`. Restart Loavy after installing tools. On Linux, **Repair tools** checks these installations and reports missing tools; it does not download Windows executables or change system packages. Local library playback does not require these downloader tools.
+## 🚀 First steps
 
-## Downloader
+1. Open **Settings** and choose **Add folder** for each place you keep music.
+2. Select **Scan**. The first scan can take a while for big folders; after that, Loavy starts from its saved library.
+3. Go **Home**. Pick an album, or press play on **All songs**.
 
-Open **Downloader** and choose a source. The default destination is:
+Make it yours in **Settings → Appearance**: theme, accent color, glass, density and motion.
 
-```text
-Downloads/Loavy Player
-```
+## 📖 Guides
 
-Use the folder button beside **Save to** to choose another destination. M4A, MP3, Opus, and FLAC output are available; M4A is the recommended default for good quality without unnecessary transcoding.
+<details>
+<summary><b>🎚️ Sound: equalizer, gapless, crossfade and listening stats</b></summary>
 
-The destination and audio format are remembered on this device. Use **Paste** or enter a link directly; Loavy detects Spotify links and their collection type automatically. Format cards and an example filename show how the output will be saved. Expand **Download tools** to inspect tool health or repair an installation. Completed files can be revealed individually, and collection warnings remain available even when some tracks succeed.
+<br />
 
-Use the **Naming** tab to choose how downloaded files and collection folders are organized. The default filename is `{artist} - {title}` (the audio extension is added automatically), and the default collection folder is `{album_artist}/{album}`. Metadata token buttons can insert track, disc, date, ISRC, playlist, and position fields; these choices are saved on this device. Folder structure applies to albums and direct-link playlists by default and can optionally be enabled for single tracks. Spotify playlists keep their tracks together in the selected destination.
+- **Equalizer**: select the sliders icon in the player (or **Settings → Sound**). Ten bands, with Flat, Bass boost, Rock, Pop, Jazz, Electronic, Vocals and Late night presets. Moving a band makes it **Custom**. Headroom is managed automatically.
+- **Gapless playback** is on by default: the next song is prepared ahead of time on the same audio clock.
+- **Crossfade** overlaps songs by up to 12 seconds with equal-power curves. Set it to 0 for gapless joins without overlap.
+- Very large files (over 48 MB), very long tracks or formats that can't be decoded fall back to normal playback.
+- **Listening stats** (in the library sidebar) shows real listening time, plays, daily activity and your top songs, artists and albums for the week, month or year. A play counts after 30 seconds, or half of a shorter song. Everything stays in the local database.
 
-### Spotify links
+</details>
 
-Paste a public `open.spotify.com` track, album, or playlist URL in the **Spotify** tab. Loavy uses spotDL to read the catalog metadata, find a matching public audio upload (normally through YouTube/YouTube Music), download it, and embed the title, artist, album, and artwork. The **Naming** settings control the resulting filenames and folders.
+<details>
+<summary><b>🗂️ Library, playlists and folders</b></summary>
 
-Spotify supplies identity and metadata only: Loavy does **not** download Spotify's audio stream. The quality is limited by the matched source. Selecting FLAC converts that source into a FLAC file; it cannot recreate lossless detail that was not present in the source.
+<br />
 
-On Windows, the first Spotify download installs pinned releases of spotDL and FFmpeg in Loavy's app-data `tools` folder. Loavy also installs a managed Deno runtime if a supported JavaScript runtime is unavailable. Managed downloads are checksum-verified before use. On Linux, the downloader uses system tools as described above.
+- **Folders** turns your folder structure into playlists. **Play folder** queues the folder and everything inside it.
+- **Playlists** → **New playlist**, or open one and choose **Edit playlist** to set its name, description, color, cover picture and banner. Pictures (PNG, JPEG, WebP up to 12 MB) are copied into Loavy's data folder, so moving the original is fine.
+- Renaming a playlist in Loavy never renames folders or moves files.
+- Pin albums to the sidebar from their page. The queue and lyrics can stay docked on wide windows.
+- Library search filters songs, albums and artists at once.
 
-### Direct links
+</details>
 
-Paste a supported public media URL in the **Direct link** tab and choose whether it is a single item or playlist. Loavy uses yt-dlp for extraction and FFmpeg for the selected output format. On Windows, the first direct download installs those managed tools in the app-data `tools` folder. See the [yt-dlp supported sites list](https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md) for extractor coverage.
+<details>
+<summary><b>📝 Lyrics</b></summary>
 
-For YouTube downloads, Loavy uses its managed Deno runtime, Deno 2.3+ on `PATH`, or Node.js 22+ on `PATH`. On Windows, it installs managed Deno automatically when none is available. Other supported sites can download without a JavaScript runtime.
+<br />
 
-The downloader does not bypass subscriptions, DRM, private access, or regional restrictions. Only download media you own or have permission to save, and follow the source website's terms.
+- Open **Lyrics** from the player or the side panel. Loavy uses your saved lyrics first, then searches LRCLIB. Automatic matches need the same title and artist and a duration within 2 seconds, and synced lyrics are preferred.
+- **Find** lets you pick another version. Click a synced line to jump there.
+- **Word wave** lifts and highlights words in time. Enhanced LRC word timings are used when present; otherwise the timing is estimated across the line.
+- The sliders icon holds reading options: text size, alignment, focus mode, **Search in lyrics** (Ctrl+F) and a per-song timing offset (±10 s in 0.25 s steps).
+- **Edit** to fix text or add timing: put the cursor on a line and select **Stamp current time** as it plays. **Edit → Word timing** stamps single words.
+- Save lyrics as `.lrc` / `.txt`, import your own, or turn online search off. **Offline mode** in Settings blocks all online lyric requests.
 
-To add a downloaded track to the library, save it inside a configured music folder and run **Scan** from Settings.
+Only the title and artist (or your search) are sent to LRCLIB. Your audio is never uploaded.
 
-## Folder Playlists
+</details>
 
-The **Folders** view uses your existing directory structure as a set of playlists. Breadcrumbs navigate subfolders, and **Play folder** queues indexed tracks from the selected folder and its descendants.
+<details>
+<summary><b>📻 Listen together with a Jam</b></summary>
 
-Open **Playlists** for an artwork-led collection view with search and sorting. Choose **New playlist**, or open an existing playlist and select **Edit playlist** to personalize its displayed name, description, signature color, cover picture, and banner. The editor previews your changes and lets you adjust the banner's vertical position. **Reset look** restores the default appearance; **Save changes** applies it.
+<br />
 
-PNG, JPEG, and WebP pictures up to 12 MB are copied into Loavy's app-data folder, so moving the original image does not break the artwork. Styles are saved locally and appear in the **Add to playlist** picker too. Changing a displayed playlist name does not rename its folder or move its songs. Use a song's menu to add it to a playlist.
+**Start a Jam**
 
-Song columns adapt to the available pane width, while playlist artwork, navigation, and playback controls adjust to smaller windows. Dark/light themes, density, custom accent colors, and reduced-motion preferences remain available in **Settings**.
+1. Make sure everyone is on the same Wi-Fi, or on the same VPN (Tailscale, ZeroTier, Radmin VPN, Hamachi, WireGuard…).
+2. Open **Room** → **Start a Jam**. Give it a name and a password (at least 4 characters).
+3. Turn on **Guests can pick songs** if friends should be able to play songs too. Their songs are saved to a folder you choose.
+4. Select **Start Jam** and allow Loavy through the Windows Firewall on private networks.
+5. In **Invite friends**, select **Copy invite** for the network your friends use, and send the password separately.
 
-Playlist detail pages use one scrollbar for the banner, actions, and songs. Scroll over the songs to move the banner away and use the full page height. Long lists still render only nearby rows. The currently active playlist displays its playing/paused state and song title; its play button pauses or resumes the existing queue.
+**Join a Jam**
 
-Mouse back/forward buttons, **Alt+Left/Right**, and the top navigation arrows move through tabs, playlist details, albums, artists, and folder locations. Navigation waits while an edit dialog is open. The pop-up Mini Player option has been removed; playback controls remain in the main window.
+1. Open **Room** → **Join friends**.
+2. Select **Search** to find Jams on your network, or **Paste invite**.
+3. Enter the password and your name, then **Join Jam**. **Test connection** checks the details without joining.
 
-## Lyrics
+**Good to know**
 
-Open the now-playing view and select **Lyrics**. Loavy first loads your saved lyrics, then searches [LRCLIB](https://lrclib.net/docs) online if none are saved. Automatic matches require the same title and artist and a duration within two seconds, and prefer synchronized lyrics. Matches are saved for offline use. Your song files and audio are never uploaded; only title/artist metadata or your search query is sent to LRCLIB.
+| | |
+|---|---|
+| Same computer | `127.0.0.1` |
+| Same Wi-Fi / LAN | the host's Wi-Fi or Ethernet address |
+| Different networks | join the same VPN and use the host's VPN address |
+| Room port | TCP `39177` |
+| Nearby search | UDP `39176` |
 
-Use **Find** to search by title and artist, preview alternatives, and choose another version. Timed versions support clicking a line to seek. Scroll freely to pause automatic following, then select **Follow song** to return to the current line. The active line stays centered when the window is resized. Plain text remains readable without inventing timing. In host-controlled Jams, seeking is disabled for guests.
+Some mesh VPNs block the nearby search; pasting the invite still works. A public internet IP is not a VPN address and usually won't work. Guests first try to play the host's song from their own library and otherwise stream the host's copy.
 
-Use the **download icon** to save `.lrc` (timed) or `.txt` (plain) lyrics through the Windows save dialog, import your own `.lrc`/`.txt` file, remove saved lyrics, or turn automatic online search off. **Offline mode** in Settings disables online lyric requests too. Removing lyrics suppresses automatic lookup for that song; you can still choose another version with **Find**.
+</details>
 
-**Edit** lets you change the text or add timing. Put the cursor on a line and select **Stamp current time** while listening; the cursor advances to the next line. The **− / + 0.25s** buttons shift all timestamps earlier or later. Imported LRC offset tags are respected. Select **Save** to apply changes; unfinished drafts survive closing the editor, changing songs, and restarting. Edits remain on your device and are never published to LRCLIB.
+<details>
+<summary><b>⬇️ Downloader</b></summary>
 
-Provider coverage varies; some songs have only plain lyrics or no match. Network failures offer manual search/import instead of blocking playback. Lyrics for unmatched host streams are currently unavailable; local song matches can use their saved lyrics.
+<br />
 
-## Room & Jam Mode
+1. Open **Downloader** and paste a link (or select **Paste**). Loavy shows which site it recognized.
+2. Choose what to get (a single song, an album or a playlist) when the link doesn't decide it for you.
+3. Pick a **Format**: **M4A** (recommended), **MP3**, **Opus** or **FLAC**.
+4. Check **Save to** (default `Downloads/Loavy Player`) and select **Download**.
 
-Room & Jam Mode creates a private, host-managed listening session. Loavy synchronizes play, pause, seeking, and song changes without a central Loavy server.
+The progress card shows each step (Read, Download, Convert, Tag, Save). When it's done, open the files straight from the result or from **Recent downloads**. The **File names** tab sets how files and folders are named (default `{artist} - {title}` in `{album_artist}/{album}`), with a live preview.
 
-### Start a room
+**Spotify links** give Loavy the right title, artist, album and cover through spotDL. The audio itself comes from a matching public YouTube upload, so quality depends on that match; FLAC can't add detail that isn't there.
 
-1. Connect everyone to the same Wi-Fi/LAN or the same VPN.
-2. Open **Room**, select **Start a Jam**, and choose a name and a password of at least four characters. Port and guest-limit options are under **Connection settings**.
-3. Enable **Guests can change songs** if guests should be allowed to control playback.
-4. When guest control is enabled, received songs default to the host's **Music** folder; choose another folder if preferred.
-5. Select **Start Jam** and allow Loavy through Windows Firewall on private networks.
-6. Select **Copy invite** for the Wi-Fi or VPN adapter your friends can reach. Share the password separately; it is not included in the invite.
+On Windows, Loavy installs pinned, checksum-verified copies of yt-dlp, FFmpeg, spotDL and Deno the first time they're needed. The **Tools ready** button at the top shows their status and can repair them.
 
-The status panel lists every usable network adapter. Friends on the same Wi-Fi should use the Wi-Fi/LAN address. Friends connecting remotely through Tailscale, ZeroTier, Radmin VPN, Hamachi, WireGuard, or a similar service must use the address belonging to that VPN adapter. A public internet IP is not the VPN address and will not normally work.
+> [!IMPORTANT]
+> The downloader does not bypass subscriptions, DRM, private content or region locks. Only download media you own or have permission to save, and follow each site's terms.
 
-### Join a room
+To see downloads in your library, save them inside one of your music folders and run **Scan**.
 
-1. Wait until the host has started the room.
-2. Open **Room**, select **Join friends**, then paste the shared invite or select **Search** under **Rooms nearby**.
-3. Select a discovered room if needed, enter its password and your display name, then choose **Join Jam**.
-4. You can also enter `host:port` or the host's address and port separately. Use **Check only** to test the details first. Invites beginning with `loavy://jam?` are pasted into Loavy; they do not require an OS link handler.
+</details>
 
-The live Jam card shows the current song. Hosts can see connected guests, remove a guest, or **End Jam** to disconnect everyone. Guests can **Leave Jam** to regain local playback control. Session monitoring continues when you visit other tabs. Host playback changes are sent promptly, with periodic synchronization to correct drift. Silent authentication connections time out instead of leaving the form waiting indefinitely.
+<details>
+<summary><b>🟢 Spotify</b></summary>
 
-Nearby discovery uses UDP broadcast/multicast. Some routed mesh VPNs block that traffic even though direct connections work, so manual entry remains available.
+<br />
 
-### Guest-selected songs
+This is a personal preview: you connect it with your own free Spotify developer app. Playback needs Spotify Premium, and development apps allow up to five people.
 
-When guest control is enabled, a guest can select a song from their own Loavy library. Playback begins after a small initial buffer while the rest of the file continues transferring. The completed file remains in the folder chosen by the host; duplicate filenames receive a numbered suffix instead of replacing an existing file.
+1. Create an app in the [Spotify developer dashboard](https://developer.spotify.com/dashboard) with **Web API** and **Web Playback SDK** turned on.
+2. Add this redirect URI exactly: `http://127.0.0.1:43891/spotify/callback`
+3. Add your account under **Users and Access**.
+4. Paste the app's **Client ID** in Loavy's Spotify page and select **Connect Spotify**. Sign in in your browser, then come back.
+5. Use **Playing on…** to choose where music plays: **This computer**, or any Spotify Connect device.
 
-Guests first try to match host playback against their local libraries. If no local match exists, they stream the host's copy.
+Sign-in uses Authorization Code with PKCE. Tokens stay in memory only, so you sign in again after restarting Loavy; only the Client ID is saved. Spotify audio stays in Spotify's own player and never reaches Loavy's EQ, stats, downloader or Jams. Start or end a Jam before switching to Spotify.
 
-### Connection checklist
+</details>
 
-- Same computer: use `127.0.0.1`.
-- Same Wi-Fi/LAN: use the host's Wi-Fi or Ethernet adapter address.
-- Different physical networks: join the same VPN and use the host's VPN adapter address.
-- Default room port: TCP `39177`.
-- Nearby discovery: UDP `39176`.
-- If the room is not discovered, use manual connection before changing firewall settings.
-- Stop the room when the session is finished.
+<details>
+<summary><b>🎨 Appearance and glass</b></summary>
 
-## Privacy
+<br />
 
-- Audio is read directly from local storage.
-- Library data and settings are stored on the device.
-- Offline mode disables optional online metadata requests.
-- Downloader requests go to the pasted site or, for Spotify links, to Spotify metadata services and matched YouTube/YouTube Music media. Managed tools come from pinned, checksum-verified GitHub releases.
-- Rooms are hosted by the user; Loavy does not provide a central room service.
+- **Theme**: dark or light. **Accent**: Honey, Rose, Lilac, Lagoon, Fern, Ember, or a custom color.
+- **Glass & blur** (Windows): your desktop shows through the window with acrylic blur. **Surface opacity** controls how see-through the panels are. High contrast switches to solid surfaces.
+- **Background**: **Ambient glow** (picks up the album colors), **Subtle glow** or **Solid**.
+- **Density**, **font size**, **corners**, **reduced motion** and **high contrast** are all in **Settings → Appearance**.
 
-See the full [Loavy Player privacy policy](PRIVACY.md).
+</details>
 
-## Development
+## ⌨️ Shortcuts
 
-### Windows Requirements
+| Action | Keys |
+|---|---|
+| Search your library | <kbd>Ctrl</kbd> + <kbd>L</kbd> |
+| Back / forward | <kbd>Alt</kbd> + <kbd>←</kbd> / <kbd>→</kbd>, or mouse back/forward buttons |
+| Search inside lyrics | <kbd>Ctrl</kbd> + <kbd>F</kbd> in the lyrics panel |
+| Next / previous match | <kbd>Enter</kbd> / <kbd>Shift</kbd> + <kbd>Enter</kbd> |
+| Move between tabs | <kbd>←</kbd> <kbd>→</kbd> <kbd>Home</kbd> <kbd>End</kbd> |
+| Stamp a word while timing | <kbd>Space</kbd> on the Stamp button |
 
-- Node.js 20 or newer.
-- Rust stable with the MSVC toolchain.
-- Microsoft C++ Build Tools and WebView2, as required by [Tauri 2 on Windows](https://v2.tauri.app/start/prerequisites/).
+## 🛠️ Build from source
 
-Install dependencies and run the desktop app:
+### Requirements
 
-```powershell
+| | Windows | Fedora |
+|---|---|---|
+| Node.js | 20+ (22+ for the browser tests) | `nodejs npm` |
+| Rust | stable, MSVC toolchain via [rustup](https://rustup.rs/) | `cargo rust` |
+| System | [Microsoft C++ Build Tools and WebView2](https://v2.tauri.app/start/prerequisites/) | see the `dnf install` line below |
+
+### Run it
+
+```sh
 npm install
-npm run desktop:dev
+npm run desktop:dev      # the full desktop app with hot reload
+npm run dev              # frontend only, in the browser (no native features)
 ```
 
-Run only the browser frontend:
+### Build installers
+
+**Windows**
 
 ```powershell
-npm run dev
+npm run desktop:build    # NSIS installer in src-tauri/target/release/bundle/nsis/
+npm run desktop:store    # Microsoft Store build with the offline WebView2 installer
 ```
 
-The browser-only frontend cannot call native library, room, dialog, or downloader commands. Use `desktop:dev` to test the complete app.
+Or double-click **`build-installer.cmd`**: it builds and copies `Loavy-Player-<version>-Windows-x64-Setup.exe` to `Downloads\Loavy Player`. The log goes to `src-tauri/target/installer-build.log`. You can pass another destination folder as the first argument.
 
-### Verify
-
-```powershell
-npm run build
-cargo test --manifest-path src-tauri/Cargo.toml
-```
-
-Downloader interface regression checks run in hidden headless Microsoft Edge with mocked native commands:
-
-```powershell
-npm run test:downloader
-npm run test:jam
-```
-
-This check requires Node.js 22+ and Edge at its standard Windows installation path (or set `DOWNLOADER_TEST_BROWSER` to a Chromium browser executable). It covers completion event ordering, failed status refreshes, cancellation, saved preferences, and responsive layouts. Screenshots are written to `src-tauri/target/downloader-browser`. These checks do not contact Spotify or YouTube.
-
-The Jam/lyrics browser check covers automatic online lookup, offline mode, search previews, export requests, timing edits, draft recovery, seeking, manual scrolling, stale requests, invite handling, host permissions, and responsive layouts. It uses mocked native commands; screenshots are in `src-tauri/target/jam-lyrics-browser`. Rust tests also check provider errors and song matching, silent/closed authentication connections, and host shutdown notifications. Run `cargo test --manifest-path src-tauri/Cargo.toml live_lrclib_search_returns_usable_lyrics -- --ignored` for the optional live provider check. A real two-computer LAN/VPN session is still needed to validate network-specific behavior.
-
-After building the Windows release, close any running Loavy instance and run `npm run test:desktop`. This launches the actual release executable with your existing app profile, verifies startup and native downloader status checks, and saves a screenshot and logs in `src-tauri/target/startup-check`. It closes only the test process when finished. This catches native startup failures that browser mocks cannot reproduce, including oversized downloader futures overflowing the Windows UI-thread stack.
-
-To exercise the native downloader in all four formats with generated audio served over localhost, use an isolated tools/data folder. This opt-in test may download the pinned managed tools from GitHub:
-
-```powershell
-$env:LOAVY_DOWNLOADER_TEST_DATA = Join-Path (Get-Location) 'src-tauri/target/downloader-native'
-cargo test --manifest-path src-tauri/Cargo.toml native_downloader_converts_local_audio_and_saves_each_format -- --ignored
-```
-
-### Build Installers
-
-```powershell
-npm run desktop:build
-```
-
-Generated Windows bundles are written under:
-
-```text
-src-tauri/target/release/bundle/nsis/
-```
-
-For a Microsoft Store-compatible NSIS build with the offline WebView2 installer:
-
-```powershell
-npm run desktop:store
-```
-
-### Build A Fedora RPM
-
-Build on Linux. Tauri automatically merges `src-tauri/tauri.linux.conf.json`, which selects RPM packaging and Linux icons. Windows builds continue to use NSIS.
-
-With Podman installed, run these commands from the repository root:
+**Fedora** (in a container, recommended for distributing to Fedora 43+)
 
 ```sh
 podman build -t localhost/loavy-player-fedora -f packaging/fedora/Containerfile .
@@ -239,83 +318,128 @@ podman run --rm --userns=keep-id \
   -v "$PWD:/workspace:Z" localhost/loavy-player-fedora
 ```
 
-The first build downloads the Fedora build environment and Rust dependencies. Later builds reuse the image and the dependency/build cache. The container installs development packages inside its image and writes the build outputs into this checkout.
-
-Alternatively, install the build dependencies directly on Fedora:
+Or natively:
 
 ```sh
 sudo dnf install cargo rust nodejs npm gcc gcc-c++ make pkgconf-pkg-config \
   webkit2gtk4.1-devel openssl-devel libappindicator-gtk3-devel \
   librsvg2-devel libxdo-devel file rpm-build
 npm ci
-npm run desktop:fedora
+npm run desktop:fedora   # RPM in src-tauri/target/release/bundle/rpm/
 ```
 
-The installer is written to `src-tauri/target/release/bundle/rpm/`. Install it using `sudo dnf install ./src-tauri/target/release/bundle/rpm/*.rpm`. A native build targets the Fedora release used to compile it; use the Fedora 43 container when distributing to Fedora 43 and newer. See Tauri's [RPM packaging guide](https://v2.tauri.app/distribute/rpm/) and [Linux prerequisites](https://v2.tauri.app/start/prerequisites/) for platform requirements.
+### Tests
 
-## Project Layout
+```sh
+npm run build                                       # type-check and build the frontend
+cargo test --manifest-path src-tauri/Cargo.toml     # Rust tests
+```
+
+The browser checks run the real interface in headless Microsoft Edge with mocked native commands. Set `DOWNLOADER_TEST_BROWSER` to use another Chromium browser. Screenshots are saved under `src-tauri/target/`.
+
+| Command | Covers |
+|---|---|
+| `npm run test:playlists` | library, Home, playlists, queue, search, navigation, light theme, small windows |
+| `npm run test:jam` | Jam hosting and joining, invites, permissions, lyrics, word timing |
+| `npm run test:downloader` | link detection, settings, progress events, errors, file actions |
+| `npm run test:spotify` | sign-in, library paging, playback, devices, offline and Jam isolation |
+| `npm run test:audio` | playback, gapless joins, crossfade, equalizer, visualizer, listening stats |
+| `npm run test:desktop` | launches the built Windows app and checks it starts cleanly |
+
+None of the checks contact Spotify, YouTube or LRCLIB. A real two-computer Jam still needs a manual test.
+
+### Project layout
 
 ```text
 src/
-  components/        Shared navigation and playback UI
-  lib/               Tauri API client and audio helpers
-  views/             Library, downloader, room, and settings views
-
+  views/            Home, library, Room (Jam), Downloader, Spotify, Settings…
+  components/       Player bar, sidebar, queue, lyrics, now playing…
+  lib/              Audio engine, Tauri API client, lyrics, Spotify, navigation
+  styles.css …      Base styles; later sheets layer on top, in this order:
+                    redesign → desktop → audio-glass → spotify → listening-redesign
+                    → afterglow (theme + glass) → jam-room → downloader → spotify-studio
 src-tauri/src/
-  db/                SQLite schema and queries
-  downloader.rs      Downloader request routing and shared models
-  downloader/        Managed yt-dlp and Spotify-link download engines
-  library/           Folder scanner, tags, and artwork
-  room/              Host and guest room protocol
-  commands.rs        Tauri command boundary
+  commands.rs       Tauri command boundary
+  library/          Folder scanner, tags and artwork
+  db/               SQLite schema and queries
+  room/             Jam host and guest protocol
+  downloader/       yt-dlp and Spotify-link engines
+  lyrics.rs         LRCLIB lookup
+tests/              Browser harnesses (*-harness.tsx) and checks (*-browser.mjs)
+packaging/fedora/   Container for RPM builds
 ```
 
-## Troubleshooting
+## 🩺 Troubleshooting
 
-**The app does not show a new file**
+<details>
+<summary><b>A new song doesn't show up</b></summary>
 
-Make sure the file is inside a configured music folder, uses a supported format, and run **Scan** again.
+Make sure it's inside one of your music folders and in a supported format, then run **Scan** again.
+</details>
 
-**A YouTube download reports missing formats**
+<details>
+<summary><b>An Opus or OGG song is listed but won't play</b></summary>
 
-Install a current Node.js release, make sure `node` is on `PATH`, and restart Loavy. yt-dlp uses it for newer YouTube JavaScript challenges.
+On Windows, install [Web Media Extensions](https://apps.microsoft.com/detail/9n5tdp8vcmhs). On Fedora, install the GStreamer codec packages.
+</details>
 
-**A Spotify link has no matching audio**
+<details>
+<summary><b>I can't find or join my friend's Jam</b></summary>
 
-Spotify mode relies on a separate public audio match. A private, region-blocked, newly released, or unusually named track may have no suitable match even though it is playable in Spotify.
+Check you're on the same Wi-Fi or the same VPN, and use the invite for that network. If **Search** finds nothing, paste the invite instead. The host may need to allow Loavy through the firewall on private networks (TCP `39177`, UDP `39176`).
+</details>
 
-**Is Spotify FLAC output lossless?**
+<details>
+<summary><b>A YouTube download says formats are missing</b></summary>
 
-No. Spotify mode does not obtain Spotify or subscription-service audio. FLAC is offered as an output container, but conversion cannot improve the matched source quality.
+Select **Tools ready → Repair tools** on Windows. On Linux, install a current Node.js (22+) or Deno (2.3+), make sure it's on `PATH`, and restart Loavy.
+</details>
 
-**An Opus or OGG track is indexed but does not play**
+<details>
+<summary><b>A Spotify link finds no audio</b></summary>
 
-On Windows, install Microsoft's [Web Media Extensions](https://apps.microsoft.com/detail/9n5tdp8vcmhs). The standard setup installer can open this listing through its optional Tools prompt. On Fedora, check that the GStreamer codec packages are installed.
+Spotify links rely on a matching public upload. Private, region-locked, brand-new or unusually named songs may have no match even though they play in Spotify.
+</details>
 
-**A playlist finishes with fewer songs than expected**
+<details>
+<summary><b>Some playlist songs were skipped</b></summary>
 
-Private, deleted, region-blocked, or otherwise unavailable entries are skipped so the rest of the playlist can finish.
+Private, deleted or region-locked entries are skipped so the rest of the playlist can finish. The result lists what couldn't be saved.
+</details>
 
-**A website login is required**
+<details>
+<summary><b>Spotify shows no devices</b></summary>
 
-Loavy does not import browser cookies or account credentials. Use a public URL that yt-dlp can access without authentication.
+Open Spotify on your computer, phone or the web player, start any song, then refresh devices in Loavy. You can also pick **This computer** to play inside Loavy.
+</details>
 
-**The frontend build reports `crypto.getRandomValues`**
+<details>
+<summary><b><code>cargo</code> is not recognized, or the build mentions <code>crypto.getRandomValues</code></b></summary>
 
-Upgrade to Node.js 20 or newer, reopen the terminal, and run `npm install` again.
+Install Rust with [rustup](https://rustup.rs/) (stable, MSVC on Windows) and use Node.js 20 or newer. Reopen the terminal and run `npm install` again.
+</details>
 
-**`cargo` is not recognized**
+## 🔒 Privacy
 
-On Windows, install Rust with [rustup](https://rustup.rs/), select the stable MSVC toolchain, and reopen the terminal. On Fedora, install `cargo` and `rust` with DNF or use the container build above.
+- Your music is read from your disk and never uploaded.
+- Library, settings, playlists, lyrics and stats are stored on your device.
+- **Offline mode** turns off online lyrics and metadata lookups.
+- Jams are hosted by you; there is no Loavy server.
+- The downloader only contacts the site you paste (and, for Spotify links, Spotify's catalog and the matched YouTube upload).
 
-## Contributing
+Read the full [privacy policy](PRIVACY.md).
 
-Keep changes focused and consistent with the existing architecture. Before opening a pull request, run the frontend build and Rust tests, and include screenshots for visible interface changes.
+## 🤝 Contributing
 
-## License / Usage
+Keep changes focused and in line with the existing structure. Before opening a pull request, run `npm run build`, the Rust tests and the browser checks that touch your change, and add screenshots for visible interface changes.
 
-This repository does not currently include an explicit open-source license. No license is currently granted unless stated otherwise.
+## 📄 License
 
-Separately licensed downloader tools and upstream design notices are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+This repository doesn't include an open-source license yet, so no license is granted unless stated otherwise. © 2026 Loavy. All rights reserved.
 
-© 2026 Loavy. All rights reserved.
+Separately licensed tools that Loavy can download (yt-dlp, FFmpeg, spotDL) are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Spotify is a trademark of Spotify AB; Loavy is not affiliated with or endorsed by Spotify.
+
+<div align="center">
+<br />
+<sub>Made with 🎶 by <a href="https://github.com/loavy">Loavy</a></sub>
+</div>
